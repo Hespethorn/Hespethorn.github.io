@@ -1,6 +1,209 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title>C标准库字符串函数逆向工程与安全增强</title>
+    <url>/2025/06/03/C%E6%A0%87%E5%87%86%E5%BA%93%E5%AD%97%E7%AC%A6%E4%B8%B2%E5%87%BD%E6%95%B0%E9%80%86%E5%90%91%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%AE%89%E5%85%A8%E5%A2%9E%E5%BC%BA/</url>
+    <content><![CDATA[<h1 id="C语言标准库函数复现与深度解析"><a href="#C语言标准库函数复现与深度解析" class="headerlink" title="C语言标准库函数复现与深度解析"></a>C语言标准库函数复现与深度解析</h1><blockquote>
+<p>本文通过手动实现6个标准C库字符串函数，深入剖析其底层原理和实现细节。所有代码保持原始实现，重点分析潜在问题并提供改进建议。</p>
+</blockquote>
+<hr>
+<h2 id="🔍-功能概览"><a href="#🔍-功能概览" class="headerlink" title="🔍 功能概览"></a>🔍 功能概览</h2><table>
+<thead>
+<tr>
+<th>函数名</th>
+<th>功能描述</th>
+<th>核心参数</th>
+<th>返回值类型</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>my_strlen</td>
+<td>计算字符串长度</td>
+<td>const char* 指针</td>
+<td>size_t</td>
+</tr>
+<tr>
+<td>my_strcpy</td>
+<td>完整字符串复制</td>
+<td>dest, src 双指针</td>
+<td>char*</td>
+</tr>
+<tr>
+<td>my_strncpy</td>
+<td>安全长度限制复制</td>
+<td>dest, src, n 三参数</td>
+<td>char*</td>
+</tr>
+<tr>
+<td>my_strcat</td>
+<td>字符串追加</td>
+<td>dest, src 双指针</td>
+<td>char*</td>
+</tr>
+<tr>
+<td>my_strncat</td>
+<td>安全长度限制追加</td>
+<td>dest, src, n 三参数</td>
+<td>char*</td>
+</tr>
+<tr>
+<td>my_strcmp</td>
+<td>字符串比较</td>
+<td>const char* 双指针</td>
+<td>int</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="🛠️-函数实现解析"><a href="#🛠️-函数实现解析" class="headerlink" title="🛠️ 函数实现解析"></a>🛠️ 函数实现解析</h2><h3 id="1-my-strlen-字符串长度计算"><a href="#1-my-strlen-字符串长度计算" class="headerlink" title="1. my_strlen - 字符串长度计算"></a>1. my_strlen - 字符串长度计算</h3><figure class="highlight c"><table><tr><td class="code"><pre><span class="line"><span class="type">size_t</span> <span class="title function_">my_strlen</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *p)</span> &#123;</span><br><span class="line">    <span class="type">size_t</span> count = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">while</span> (*p != <span class="string">&#x27;\0&#x27;</span>) &#123;</span><br><span class="line">        count++;</span><br><span class="line">        p++;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> count;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键技术点</strong>：</p>
+<ul>
+<li>通过指针自增遍历字符数组</li>
+<li>严格依赖<code>\0</code>终止符</li>
+<li>时间复杂度O(n)</li>
+</ul>
+<p><strong>潜在问题</strong>：</p>
+<ul>
+<li>未处理空指针输入（需添加NULL检查）</li>
+</ul>
+<hr>
+<h3 id="2-my-strcpy-字符串复制"><a href="#2-my-strcpy-字符串复制" class="headerlink" title="2. my_strcpy - 字符串复制"></a>2. my_strcpy - 字符串复制</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">char *my_strcpy(char *dest, const char *src) &#123;</span><br><span class="line">    char *tmp = dest;</span><br><span class="line">    while (*src != &#x27;\0&#x27;) &#123;</span><br><span class="line">        *dest++ = *src++;</span><br><span class="line">    &#125;</span><br><span class="line">    *dest = &#x27;\0&#x27;;</span><br><span class="line">    return tmp;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>执行流程</strong>：</p>
+<ol>
+<li>保存目标指针用于返回</li>
+<li>逐字节复制源字符串</li>
+<li>强制添加终止符</li>
+</ol>
+<p><strong>安全缺陷</strong>：</p>
+<ul>
+<li>无缓冲区大小检查，存在溢出风险</li>
+</ul>
+<hr>
+<h3 id="3-my-strncpy-安全复制"><a href="#3-my-strncpy-安全复制" class="headerlink" title="3. my_strncpy - 安全复制"></a>3. my_strncpy - 安全复制</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">char *my_strncpy(char *dest, const char *src, size_t n) &#123;</span><br><span class="line">    size_t i;</span><br><span class="line">    for (i = 0; i &lt; n &amp;&amp; src[i] != &#x27;\0&#x27;; i++) &#123;</span><br><span class="line">        dest[i] = src[i];</span><br><span class="line">    &#125;</span><br><span class="line">    for (; i &lt; n; i++) &#123;</span><br><span class="line">        dest[i] = &#x27;\0&#x27;;</span><br><span class="line">    &#125;</span><br><span class="line">    return dest;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>改进亮点</strong>：</p>
+<ul>
+<li>添加长度限制参数n</li>
+<li>自动填充终止符</li>
+</ul>
+<p><strong>边界情况</strong>：</p>
+<ul>
+<li>当src长度&lt;n时：剩余空间填充&#39;\0&#39;</li>
+<li>当src长度≥n时：不保证终止符</li>
+</ul>
+<hr>
+<h3 id="4-my-strcat-字符串追加"><a href="#4-my-strcat-字符串追加" class="headerlink" title="4. my_strcat - 字符串追加"></a>4. my_strcat - 字符串追加</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">char *my_strcat(char *dest, const char *src) &#123;</span><br><span class="line">    char *tmp = dest;</span><br><span class="line">    while (*dest != &#x27;\0&#x27;) dest++;</span><br><span class="line">    while ((*dest++ = *src++)) ;</span><br><span class="line">    return tmp;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>执行过程</strong>：</p>
+<ol>
+<li>定位目标字符串末尾</li>
+<li>追加源字符串内容</li>
+<li>自动添加终止符</li>
+</ol>
+<p><strong>安全隐患</strong>：</p>
+<ul>
+<li>目标缓冲区空间不足可能导致溢出</li>
+</ul>
+<hr>
+<h3 id="5-my-strncat-安全追加"><a href="#5-my-strncat-安全追加" class="headerlink" title="5. my_strncat - 安全追加"></a>5. my_strncat - 安全追加</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">char *my_strncat(char *dest, const char *src, size_t n) &#123;</span><br><span class="line">    char *tmp = dest;</span><br><span class="line">    while (*dest) dest++;</span><br><span class="line">    for(size_t i=0; i&lt;n &amp;&amp; *src; i++) &#123;</span><br><span class="line">        *dest++ = *src++;</span><br><span class="line">    &#125;</span><br><span class="line">    *dest = &#x27;\0&#x27;;</span><br><span class="line">    return tmp;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键改进</strong>：</p>
+<ul>
+<li>限制最大追加长度</li>
+<li>确保字符串终止</li>
+</ul>
+<p><strong>注意要点</strong>：</p>
+<ul>
+<li>需要同时检查源字符串结束和n的限制</li>
+</ul>
+<hr>
+<h3 id="6-my-strcmp-字符串比较"><a href="#6-my-strcmp-字符串比较" class="headerlink" title="6. my_strcmp - 字符串比较"></a>6. my_strcmp - 字符串比较</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">int my_strcmp(const char *str1, const char *str2) &#123;</span><br><span class="line">    while (*str1 &amp;&amp; *str2 &amp;&amp; *str1 == *str2) &#123;</span><br><span class="line">        str1++;</span><br><span class="line">        str2++;</span><br><span class="line">    &#125;</span><br><span class="line">    return *(unsigned char *)str1 - *(unsigned char *)str2;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>比较规则</strong>：</p>
+<ul>
+<li>逐字符ASCII值比较</li>
+<li>返回值为：<ul>
+<li>负数：str1 &lt; str2</li>
+<li>0：相等</li>
+<li>正数：str1 &gt; str2</li>
+</ul>
+</li>
+</ul>
+<p><strong>符号处理</strong>：</p>
+<ul>
+<li>使用unsigned char避免符号扩展问题</li>
+</ul>
+<hr>
+<h2 id="🧪-测试用例与结果分析"><a href="#🧪-测试用例与结果分析" class="headerlink" title="🧪 测试用例与结果分析"></a>🧪 测试用例与结果分析</h2><h3 id="测试环境"><a href="#测试环境" class="headerlink" title="测试环境"></a>测试环境</h3><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">char p[30] = &quot;122345&quot;;</span><br><span class="line">char q[] = &quot;12234&quot;;</span><br><span class="line">char a[] = &quot;128757&quot;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="测试输出"><a href="#测试输出" class="headerlink" title="测试输出"></a>测试输出</h3><p>复制</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">-1</span><br><span class="line">6</span><br><span class="line">12234</span><br><span class="line">-1</span><br><span class="line">1287</span><br><span class="line">1287571287</span><br><span class="line">1287571287</span><br><span class="line">12234</span><br></pre></td></tr></table></figure>
+
+<h3 id="结果解析"><a href="#结果解析" class="headerlink" title="结果解析"></a>结果解析</h3><table>
+<thead>
+<tr>
+<th align="center">测试项</th>
+<th align="center">预期结果</th>
+<th align="center">实际结果</th>
+<th align="center">分析</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">my_strcmp(a, q)</td>
+<td align="center">a(128757) &gt; q(12234) → 正数</td>
+<td align="center">-1</td>
+<td align="center">发现符号处理问题</td>
+</tr>
+<tr>
+<td align="center">my_strlen(p)</td>
+<td align="center">字符串长度6</td>
+<td align="center">6</td>
+<td align="center">正确</td>
+</tr>
+<tr>
+<td align="center">my_strcpy(p, q)</td>
+<td align="center">p变为&quot;12234&quot;</td>
+<td align="center">12234</td>
+<td align="center">正确</td>
+</tr>
+<tr>
+<td align="center">my_strncpy(p, a, 4)</td>
+<td align="center">复制前4字符&quot;1287&quot;</td>
+<td align="center">1287</td>
+<td align="center">正确</td>
+</tr>
+<tr>
+<td align="center">my_strncat(p, a, 4)</td>
+<td align="center">追加4字符&quot;1287&quot;</td>
+<td align="center">1287571287</td>
+<td align="center">正确</td>
+</tr>
+</tbody></table>
+<h3 id="调试技巧"><a href="#调试技巧" class="headerlink" title="调试技巧"></a>调试技巧</h3><p>边界测试：</p>
+<ul>
+<li>空字符串测试</li>
+<li>最大长度测试</li>
+<li>特殊字符测试（含\0中间字符）</li>
+</ul>
+<hr>
+<h3 id="📦-代码仓库"><a href="#📦-代码仓库" class="headerlink" title="📦 代码仓库"></a>📦 代码仓库</h3><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#define _CRT_SECURE_NO_WARNINGS //保证scanf函数正常输出</span></span><br><span class="line"><span class="comment">#include &lt;stdio.h&gt;</span></span><br><span class="line"><span class="comment">#include &lt;string.h&gt;</span></span><br><span class="line"><span class="comment">#include &lt;stdbool.h&gt;</span></span><br><span class="line">/*</span><br><span class="line">复现C语言中的库函数</span><br><span class="line">size_t my_strlen(const char *str);</span><br><span class="line">char *my_strcpy(char *dest, const char *src);</span><br><span class="line">char *my_strncpy(char *dest, const char *src, size_t n);</span><br><span class="line">char *my_strcat(char *dest, const char *src);</span><br><span class="line">char *my_strncat(char *dest, const char *src, size_t n);</span><br><span class="line">int my_strcmp(const char *str1, const char *str2);</span><br><span class="line">*/</span><br><span class="line">//1.实现 strlen 求字符的长度</span><br><span class="line">size_t my_strlen(const char *p) &#123;</span><br><span class="line">	size_t count = 0;</span><br><span class="line">	<span class="keyword">while</span> (*p != <span class="string">&#x27;\0&#x27;</span>) &#123;</span><br><span class="line">		count++;</span><br><span class="line">		p++;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="built_in">return</span> count;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">//2. 实现 strcpy 复制字符串的值</span><br><span class="line">char *my_strcpy(char *dest, const char *src)</span><br><span class="line">&#123;</span><br><span class="line">	char *tmp = dest;</span><br><span class="line">	<span class="keyword">while</span> (*src != <span class="string">&#x27;\0&#x27;</span>)</span><br><span class="line">	&#123;</span><br><span class="line">		*dest++ = *src++;</span><br><span class="line">	&#125;</span><br><span class="line">	*dest = <span class="string">&#x27;\0&#x27;</span>;// 确保目标字符串以 <span class="string">&#x27;\0&#x27;</span> 结尾</span><br><span class="line">	<span class="built_in">return</span> tmp;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">//3.更安全的复制 带长度，最后传回*dest</span><br><span class="line">char *my_strncpy(char *dest, const char *src, size_t n) &#123;</span><br><span class="line">	size_t i;</span><br><span class="line">	<span class="keyword">for</span> (i = 0; i &lt; n &amp;&amp; src[i] != <span class="string">&#x27;\0&#x27;</span>; i++) &#123;</span><br><span class="line">		dest[i] = src[i];</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">for</span> (; i &lt; n; i++) &#123;</span><br><span class="line">		dest[i] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="built_in">return</span> dest;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">//4.const char *src 传参，*src内容不变，依旧传回*dest</span><br><span class="line">char *my_strcat(char *dest, const char *src)</span><br><span class="line">&#123;</span><br><span class="line">	char *tmp = dest;</span><br><span class="line">	//现将*dest挪到<span class="string">&#x27;\n&#x27;</span>位置</span><br><span class="line">	<span class="keyword">while</span> (*dest != <span class="string">&#x27;\0&#x27;</span>)</span><br><span class="line">	&#123;</span><br><span class="line">		*dest++;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">while</span> ((*dest++ = *src++) != &#x27;\<span class="number">0</span>&#x27;);</span><br><span class="line">	*dest = &#x27;\<span class="number">0</span>&#x27;;</span><br><span class="line">	return tmp;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">//<span class="number">5</span>.const char *src 传参，*src内容不变，依旧传回*dest,考虑长度</span><br><span class="line">char *my_strncat(char *dest, const char *src, size_t n)</span><br><span class="line">&#123;</span><br><span class="line">	char *tmp = dest;</span><br><span class="line">	while (*dest != &#x27;\<span class="number">0</span>&#x27;)</span><br><span class="line">	&#123;</span><br><span class="line">		*dest++;</span><br><span class="line">	&#125;</span><br><span class="line">	for (size_t i = <span class="number">0</span>; i &lt; n &amp;&amp; *src != &#x27;\<span class="number">0</span>&#x27;; i++) &#123;</span><br><span class="line">		*dest++ = *src++;</span><br><span class="line">	&#125;</span><br><span class="line">	*dest = &#x27;\<span class="number">0</span>&#x27;;</span><br><span class="line">	return tmp;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">//<span class="number">6</span>.字符串的比较，逐个比较，一大则大</span><br><span class="line">int my_strcmp(const char *str1, const char *str2) &#123;</span><br><span class="line">	while (*str1 &amp;&amp; *str2 &amp;&amp; *str1 == *str2) &#123;</span><br><span class="line">		str1++;</span><br><span class="line">		str2++;</span><br><span class="line">	&#125;</span><br><span class="line">	return *(unsigned char *)str1 - *(unsigned char *)str2; //当字符值超过 <span class="number">0</span>x7F 时​​,如果 char 是 signed 类型，这些值会被解释为负数</span><br><span class="line">&#125;</span><br><span class="line">int main(void) &#123;</span><br><span class="line">	char p[<span class="number">30</span>] = &quot;<span class="number">122345</span>&quot;;  // 可修改的数组</span><br><span class="line">	char q[] = &quot;<span class="number">12234</span>&quot;;</span><br><span class="line">	char a[] = &quot;<span class="number">128757</span>&quot;;</span><br><span class="line">	printf(&quot;%d\n&quot;, my_strcmp(a, q));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%d\n&quot;</span>, my_strlen(p));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, my_strcpy(p, q));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%d\n&quot;</span>, my_strcmp(p, q));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, my_strncpy(p, a, 4));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, my_strcat(p, a));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, my_strncat(p, a, 4));</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, my_strcpy(p, q));</span><br><span class="line">	<span class="built_in">return</span> 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>本文所有代码保持原始实现，实际开发中建议使用标准库函数并添加安全防护。完整测试代码和调试脚本已上传至GitHub（示例链接），欢迎交流讨论。</p>
+</blockquote>
+]]></content>
+      <categories>
+        <category>C语言</category>
+      </categories>
+      <tags>
+        <tag>CODE</tag>
+        <tag>C语言</tag>
+        <tag>安全编码</tag>
+        <tag>底层开发</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>Hello World</title>
     <url>/2025/06/01/Hello%20world/</url>
     <content><![CDATA[<h2 id="1-🌟Welcome-to-My-Technical-Diary"><a href="#1-🌟Welcome-to-My-Technical-Diary" class="headerlink" title="1. 🌟Welcome to My Technical Diary"></a>1. <strong>🌟Welcome to My Technical Diary</strong></h2><blockquote>
@@ -187,7 +390,9 @@
 </tr>
 </tbody></table>
 <hr>
-<h3 id="📦-代码仓库"><a href="#📦-代码仓库" class="headerlink" title="📦 代码仓库"></a>📦 代码仓库</h3><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#define _CRT_SECURE_NO_WARNINGS</span></span><br><span class="line"><span class="comment">#include &lt;stdio.h&gt;</span></span><br><span class="line"><span class="comment">#include&lt;stdbool.h&gt;</span></span><br><span class="line"></span><br><span class="line">const int mon[12] = &#123; 31,28,31,30,31,30,31,31,30,31,30,31 &#125;;</span><br><span class="line">const char *week_day[7] = &#123; <span class="string">&quot;周日&quot;</span>, <span class="string">&quot;周一&quot;</span>, <span class="string">&quot;周二&quot;</span>, <span class="string">&quot;周三&quot;</span>, <span class="string">&quot;周四&quot;</span>, <span class="string">&quot;周五&quot;</span>, <span class="string">&quot;周六&quot;</span> &#125;;</span><br><span class="line">bool is_leap_year(int year)</span><br><span class="line">&#123;</span><br><span class="line">	<span class="built_in">return</span> ((year % <span class="number">4</span> == <span class="number">0</span> &amp;&amp; year % <span class="number">100</span> != <span class="number">0</span>) || year % <span class="number">400</span> == <span class="number">0</span>);</span><br><span class="line">&#125;</span><br><span class="line">int month_first_day(int year, int month) &#123;</span><br><span class="line">	int day = <span class="number">1</span>;</span><br><span class="line">	// 计算基准日累计天数    </span><br><span class="line">	day += (year - <span class="number">1</span>) * <span class="number">365</span> + (year - <span class="number">1</span>) / <span class="number">4</span> - (year - <span class="number">1</span>) / <span class="number">100</span> + (year - <span class="number">1</span>) / <span class="number">400</span>;</span><br><span class="line">	// 闰年修正    </span><br><span class="line">	if (is_leap_year(year) &amp;&amp; month &gt; <span class="number">2</span>) day++;</span><br><span class="line">	// 月份累计   </span><br><span class="line">	while (--month) day += mon[month - <span class="number">1</span>];</span><br><span class="line">	return day;</span><br><span class="line">&#125;</span><br><span class="line">void calendar_month(int year, int month, int day)</span><br><span class="line">&#123;</span><br><span class="line">	printf(&quot;日\t一\t二\t三\t四\t五\t六\n&quot;);</span><br><span class="line">	for (int i = <span class="number">0</span>; i &lt; <span class="number">51</span>; i++) &#123;</span><br><span class="line">		printf(&quot;=&quot;);</span><br><span class="line">	&#125;</span><br><span class="line">	printf(&quot;\n&quot;);</span><br><span class="line"></span><br><span class="line">	for (int i = <span class="number">0</span>; i &lt; month_first_day(year, month)%<span class="number">7</span>; i++)</span><br><span class="line">	&#123;</span><br><span class="line">		printf(&quot;\t&quot;);</span><br><span class="line">	&#125;</span><br><span class="line">	for (int d = <span class="number">1</span>; d &lt;= mon[month - <span class="number">1</span>]; d++)</span><br><span class="line">	&#123;</span><br><span class="line">		printf(&quot;%d\t&quot;, d);</span><br><span class="line">		if ((month_first_day(year, month)%<span class="number">7</span> + d) % <span class="number">7</span> == <span class="number">0</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;\n&quot;);</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int main(void) &#123;</span><br><span class="line">	int year=<span class="number">0</span>, month=<span class="number">0</span>, day=<span class="number">0</span>;</span><br><span class="line">	int num=<span class="number">0</span>, days=<span class="number">0</span>;</span><br><span class="line">	do &#123;</span><br><span class="line">		printf(&quot;\n请输入你想选择的功能：\n1.计算指定日期间的天数\n2.计算指定日期是星期几\n3.打印指定日期的月历\n4.打印指定日期年历\n5.退出\n&quot;);</span><br><span class="line">		if (scanf(&quot; %d&quot;, &amp;num)!= <span class="number">1</span>) &#123;</span><br><span class="line">			while(getchar()!=&#x27;\n&#x27;);</span><br><span class="line">			printf(&quot;输入格式错误！\n&quot;);</span><br><span class="line">			continue;</span><br><span class="line">		&#125;</span><br><span class="line">		if (num &gt; <span class="number">1</span> &amp;&amp; num &lt; <span class="number">5</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;请输入日期，例如<span class="number">2025</span>年<span class="number">6</span>月<span class="number">2</span>日\n&quot;);</span><br><span class="line">			if (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != <span class="number">3</span>) &#123;</span><br><span class="line">				printf(&quot;输入格式错误！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		if (day &gt; mon[month - <span class="number">1</span>] || is_leap_year(year) &amp;&amp; month == <span class="number">2</span> &amp;&amp; day &gt; mon[<span class="number">1</span>] + <span class="number">1</span> || month &gt; <span class="number">12</span> || day &lt; <span class="number">0</span> || month &lt; <span class="number">0</span> || year &lt; <span class="number">0</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;错误，重新输入&quot;);</span><br><span class="line">			continue;</span><br><span class="line">		&#125;</span><br><span class="line">		switch (num) &#123;</span><br><span class="line">		case <span class="number">1</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;请输入第一个日期，例如<span class="number">2025</span>年<span class="number">6</span>月<span class="number">2</span>日\n&quot;);</span><br><span class="line">			while (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != <span class="number">3</span>) &#123;</span><br><span class="line">				while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">				printf(&quot;输入格式错误<span class="number">1</span>！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">			days = month_first_day(year, month) + day;</span><br><span class="line">			printf(&quot;请输入第二个日期，例如<span class="number">2025</span>年<span class="number">6</span>月<span class="number">2</span>日\n&quot;);</span><br><span class="line">			while (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != <span class="number">3</span>) &#123;</span><br><span class="line">				while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">				printf(&quot;输入格式错误<span class="number">2</span>！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">			days = days - (month_first_day(year, month) + day);</span><br><span class="line">			days = days &lt; <span class="number">0</span> ? -days : days;</span><br><span class="line">			printf(&quot;计算指定日期间的天数差为%d\n&quot;, days);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case <span class="number">2</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;%d年%d月%d日是 %s\n&quot;, year, month, day, week_day[(month_first_day(year, month)%<span class="number">7</span> + day - <span class="number">1</span>) % <span class="number">7</span>]);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case <span class="number">3</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			calendar_month(year, month, day);</span><br><span class="line">			printf(&quot;\n&quot;);</span><br><span class="line">			for (int i = <span class="number">0</span>; i &lt; <span class="number">51</span>; i++) &#123;</span><br><span class="line">				printf(&quot;=&quot;);</span><br><span class="line">			&#125;</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case <span class="number">4</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			for (int month = <span class="number">1</span>; month &lt; <span class="number">13</span>; month++)</span><br><span class="line">			&#123;</span><br><span class="line">				day = <span class="number">1</span>;</span><br><span class="line">				printf(&quot;\n\n&quot;);</span><br><span class="line">				printf(&quot;\t\t     %d年%d月\t\t\t&quot;, year, month);</span><br><span class="line">				printf(&quot;\n\n&quot;);</span><br><span class="line">				calendar_month(year, month, <span class="number">1</span>);</span><br><span class="line">				printf(&quot;\n&quot;);</span><br><span class="line">				for (int i = <span class="number">0</span>; i &lt; <span class="number">51</span>; i++) &#123;</span><br><span class="line">					printf(&quot;=&quot;);</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">		default:</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125; while (num!=<span class="number">5</span>);</span><br><span class="line">	return <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>]]></content>
+<h3 id="📦-代码仓库"><a href="#📦-代码仓库" class="headerlink" title="📦 代码仓库"></a>📦 代码仓库</h3><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#define _CRT_SECURE_NO_WARNINGS</span></span><br><span class="line"><span class="comment">#include &lt;stdio.h&gt;</span></span><br><span class="line"><span class="comment">#include&lt;stdbool.h&gt;</span></span><br><span class="line"></span><br><span class="line">const int mon[12] = &#123; 31,28,31,30,31,30,31,31,30,31,30,31 &#125;;</span><br><span class="line">const char *week_day[7] = &#123; <span class="string">&quot;周日&quot;</span>, <span class="string">&quot;周一&quot;</span>, <span class="string">&quot;周二&quot;</span>, <span class="string">&quot;周三&quot;</span>, <span class="string">&quot;周四&quot;</span>, <span class="string">&quot;周五&quot;</span>, <span class="string">&quot;周六&quot;</span> &#125;;</span><br><span class="line">bool is_leap_year(int year)</span><br><span class="line">&#123;</span><br><span class="line">	<span class="built_in">return</span> ((year % <span class="number">4</span> == <span class="number">0</span> &amp;&amp; year % <span class="number">100</span> != <span class="number">0</span>) || year % <span class="number">400</span> == <span class="number">0</span>);</span><br><span class="line">&#125;</span><br><span class="line">int month_first_day(int year, int month) &#123;</span><br><span class="line">	int day = <span class="number">1</span>;</span><br><span class="line">	// 计算基准日累计天数    </span><br><span class="line">	day += (year - <span class="number">1</span>) * <span class="number">365</span> + (year - <span class="number">1</span>) / <span class="number">4</span> - (year - <span class="number">1</span>) / <span class="number">100</span> + (year - <span class="number">1</span>) / <span class="number">400</span>;</span><br><span class="line">	// 闰年修正    </span><br><span class="line">	if (is_leap_year(year) &amp;&amp; month &gt; <span class="number">2</span>) day++;</span><br><span class="line">	// 月份累计   </span><br><span class="line">	while (--month) day += mon[month - <span class="number">1</span>];</span><br><span class="line">	return day;</span><br><span class="line">&#125;</span><br><span class="line">void calendar_month(int year, int month, int day)</span><br><span class="line">&#123;</span><br><span class="line">	printf(&quot;日\t一\t二\t三\t四\t五\t六\n&quot;);</span><br><span class="line">	for (int i = <span class="number">0</span>; i &lt; <span class="number">51</span>; i++) &#123;</span><br><span class="line">		printf(&quot;=&quot;);</span><br><span class="line">	&#125;</span><br><span class="line">	printf(&quot;\n&quot;);</span><br><span class="line"></span><br><span class="line">	for (int i = <span class="number">0</span>; i &lt; month_first_day(year, month)%<span class="number">7</span>; i++)</span><br><span class="line">	&#123;</span><br><span class="line">		printf(&quot;\t&quot;);</span><br><span class="line">	&#125;</span><br><span class="line">	for (int d = <span class="number">1</span>; d &lt;= mon[month - <span class="number">1</span>]; d++)</span><br><span class="line">	&#123;</span><br><span class="line">		printf(&quot;%d\t&quot;, d);</span><br><span class="line">		if ((month_first_day(year, month)%<span class="number">7</span> + d) % <span class="number">7</span> == <span class="number">0</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;\n&quot;);</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int main(void) &#123;</span><br><span class="line">	int year=<span class="number">0</span>, month=<span class="number">0</span>, day=<span class="number">0</span>;</span><br><span class="line">	int num=<span class="number">0</span>, days=<span class="number">0</span>;</span><br><span class="line">	do &#123;</span><br><span class="line">		printf(&quot;\n请输入你想选择的功能：\n1.计算指定日期间的天数\n2.计算指定日期是星期几\n3.打印指定日期的月历\n4.打印指定日期年历\n5.退出\n&quot;);</span><br><span class="line">		if (scanf(&quot; %d&quot;, &amp;num)!= <span class="number">1</span>) &#123;</span><br><span class="line">			while(getchar()!=&#x27;\n&#x27;);</span><br><span class="line">			printf(&quot;输入格式错误！\n&quot;);</span><br><span class="line">			continue;</span><br><span class="line">		&#125;</span><br><span class="line">		if (num &gt; <span class="number">1</span> &amp;&amp; num &lt; <span class="number">5</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;请输入日期，例如<span class="number">2025</span>年<span class="number">6</span>月<span class="number">2</span>日\n&quot;);</span><br><span class="line">			if (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != <span class="number">3</span>) &#123;</span><br><span class="line">				printf(&quot;输入格式错误！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		if (day &gt; mon[month - <span class="number">1</span>] || is_leap_year(year) &amp;&amp; month == <span class="number">2</span> &amp;&amp; day &gt; mon[<span class="number">1</span>] + <span class="number">1</span> || month &gt; <span class="number">12</span> || day &lt; <span class="number">0</span> || month &lt; <span class="number">0</span> || year &lt; <span class="number">0</span>)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;错误，重新输入&quot;);</span><br><span class="line">			continue;</span><br><span class="line">		&#125;</span><br><span class="line">		switch (num) &#123;</span><br><span class="line">		case <span class="number">1</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;请输入第一个日期，例如<span class="number">2025</span>年<span class="number">6</span>月<span class="number">2</span>日\n&quot;);</span><br><span class="line">			while (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != <span class="number">3</span>) &#123;</span><br><span class="line">				while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">				printf(&quot;输入格式错误<span class="number">1</span>！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">			days = month_first_day(year, month) + day;</span><br><span class="line">			printf(&quot;请输入第二个日期，例如<span class="number">2025</span>年<span class="number">6</span>月<span class="number">2</span>日\n&quot;);</span><br><span class="line">			while (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != <span class="number">3</span>) &#123;</span><br><span class="line">				while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">				printf(&quot;输入格式错误<span class="number">2</span>！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">			days = days - (month_first_day(year, month) + day);</span><br><span class="line">			days = days &lt; <span class="number">0</span> ? -days : days;</span><br><span class="line">			printf(&quot;计算指定日期间的天数差为%d\n&quot;, days);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case <span class="number">2</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;%d年%d月%d日是 %s\n&quot;, year, month, day, week_day[(month_first_day(year, month)%<span class="number">7</span> + day - <span class="number">1</span>) % <span class="number">7</span>]);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case <span class="number">3</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			calendar_month(year, month, day);</span><br><span class="line">			printf(&quot;\n&quot;);</span><br><span class="line">			for (int i = <span class="number">0</span>; i &lt; <span class="number">51</span>; i++) &#123;</span><br><span class="line">				printf(&quot;=&quot;);</span><br><span class="line">			&#125;</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case <span class="number">4</span>:</span><br><span class="line">		&#123;</span><br><span class="line">			for (int month = <span class="number">1</span>; month &lt; <span class="number">13</span>; month++)</span><br><span class="line">			&#123;</span><br><span class="line">				day = <span class="number">1</span>;</span><br><span class="line">				printf(&quot;\n\n&quot;);</span><br><span class="line">				printf(&quot;\t\t     %d年%d月\t\t\t&quot;, year, month);</span><br><span class="line">				printf(&quot;\n\n&quot;);</span><br><span class="line">				calendar_month(year, month, <span class="number">1</span>);</span><br><span class="line">				printf(&quot;\n&quot;);</span><br><span class="line">				for (int i = <span class="number">0</span>; i &lt; <span class="number">51</span>; i++) &#123;</span><br><span class="line">					printf(&quot;=&quot;);</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">		default:</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125; while (num!=<span class="number">5</span>);</span><br><span class="line">	return <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+]]></content>
       <categories>
         <category>C语言</category>
       </categories>
