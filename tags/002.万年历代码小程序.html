@@ -1,0 +1,560 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>C语言日期工具完整实现 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="ffffff"><meta name="description" content="详解C语言实现的万年历程序">
+<meta property="og:type" content="website">
+<meta property="og:title" content="C语言日期工具完整实现">
+<meta property="og:url" content="https://hespethorn.github.io/tags/002.%E4%B8%87%E5%B9%B4%E5%8E%86%E4%BB%A3%E7%A0%81%E5%B0%8F%E7%A8%8B%E5%BA%8F">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="详解C语言实现的万年历程序">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-06-01T15:51:31.000Z">
+<meta property="article:modified_time" content="2025-06-12T01:33:00.889Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CODE">
+<meta property="article:tag" content="C语言">
+<meta property="article:tag" content="数据结构">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/tags/002.%E4%B8%87%E5%B9%B4%E5%8E%86%E4%BB%A3%E7%A0%81%E5%B0%8F%E7%A8%8B%E5%BA%8F"><link rel="preconnect" href="https://jsd.012700.xyz"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><link rel="preconnect" href="//fonts.googleapis.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://jsd.012700.xyz/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', 'ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Titillium+Web&amp;display=swap" media="print" onload="this.media='all'"><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: true,
+    post: true
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://jsd.012700.xyz/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: true,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'C语言日期工具完整实现',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'page'
+}</script><link rel="preconnect" href="https://jsd.012700.xyz"><link href="/self/btf.css" rel="stylesheet"><link rel="stylesheet" href="/css/custom/custom.css"><!-- hexo injector head_end start --><link rel="stylesheet" href="https://cdn.cbd.int/hexo-butterfly-clock-anzhiyu/lib/clock.min.css" /><!-- hexo injector head_end end --><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src= "/img/friend_404.gif" data-lazy-src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">25</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">56</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">12</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-code"></i><span> 技术创作</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></li><li><a class="site-page child" href="/Gallery/"><i class="fa-fw fas fa-images"></i><span> 技术图库</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/5.link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="page" id="body-wrap"><header class="not-home-page fixed" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src= "/img/friend_404.gif" data-lazy-src="/img/friend_404.gif" alt="Logo"><span class="site-name">HespethornのBlog</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-code"></i><span> 技术创作</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></li><li><a class="site-page child" href="/Gallery/"><i class="fa-fw fas fa-images"></i><span> 技术图库</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/5.link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="page-site-info"><h1 id="site-title">C语言日期工具完整实现</h1></div></header><main class="layout" id="content-inner"><div id="page"><div class="container" id="article-container"><img src= "/img/friend_404.gif" data-lazy-src="/img/PageCode/2.png" alt="C语言日期工具完整实现" style="width: 90%;height: auto;margin: 0 auto;display: block;border: 3px solid #f0f0f0;border-radius: 12px;box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+
+<hr>
+<h1 id="引言：为什么需要自己写日期工具？"><a href="#引言：为什么需要自己写日期工具？" class="headerlink" title="引言：为什么需要自己写日期工具？"></a>引言：为什么需要自己写日期工具？</h1><p>在开发日程管理、财务统计或数据分析类应用时，日期处理是绕不开的需求。虽然C标准库提供了相关函数，但实际场景中往往需要更灵活的功能——比如精确计算两个日期的天数差、自定义格式打印月历，或验证用户输入的日期合法性。今天我们就用C语言手写一个<strong>全功能日期工具</strong>，覆盖从基础判断到复杂交互的全流程，并拆解核心算法原理。</p>
+<hr>
+<h1 id="核心功能清单"><a href="#核心功能清单" class="headerlink" title="核心功能清单"></a>核心功能清单</h1><p>这个日期工具实现了5大核心功能，覆盖日常开发中最常用的日期操作场景：</p>
+<ul>
+<li>✅ <strong>计算日期差</strong>：精确计算任意两个日期之间的天数间隔；</li>
+<li>✅ <strong>查询星期几</strong>：输入年月日，快速得到对应的星期名称；</li>
+<li>✅ <strong>打印月历</strong>：以表格形式展示当月日期与星期的对应关系；</li>
+<li>✅ <strong>打印年历</strong>：按月份分开展示全年日历；</li>
+<li>✅ <strong>输入验证</strong>：自动检查日期合法性（如闰年二月是否有29天）。</li>
+</ul>
+<hr>
+<h1 id="关键数据与算法：日期计算的底层逻辑"><a href="#关键数据与算法：日期计算的底层逻辑" class="headerlink" title="关键数据与算法：日期计算的底层逻辑"></a>关键数据与算法：日期计算的底层逻辑</h1><h2 id="基础数据：月份天数与星期映射"><a href="#基础数据：月份天数与星期映射" class="headerlink" title="基础数据：月份天数与星期映射"></a>基础数据：月份天数与星期映射</h2><p>代码中定义了两个全局常量数组，它们是整个工具的「数据基石」：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">const int mon[12] = &#123; 31,28,31,30,31,30,31,31,30,31,30,31 &#125;;  </span><br><span class="line">// 平年各月天数（索引0=1月）</span><br><span class="line">const char *week_day[7] = &#123; &quot;周日&quot;, &quot;周一&quot;, &quot;周二&quot;, &quot;周三&quot;, &quot;周四&quot;, &quot;周五&quot;, &quot;周六&quot; &#125;;  </span><br><span class="line">// 星期名称映射</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>mon</code>数组：存储平年各月的天数（如1月31天，2月28天）；</li>
+<li><code>week_day</code>数组：将0-6映射到「周日-周六」，用于后续星期几的输出。</li>
+</ul>
+<h2 id="闰年判断：时间的「校正器」"><a href="#闰年判断：时间的「校正器」" class="headerlink" title="闰年判断：时间的「校正器」"></a>闰年判断：时间的「校正器」</h2><p>闰年的规则是：能被4整除但不能被100整除，或能被400整除的年份。这个函数是日期计算的「时间校正器」：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">bool is_leap_year(int year) &#123;</span><br><span class="line">    return ((year % 4 == 0 &amp;&amp; year % 100 != 0) || year % 400 == 0);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>为什么需要闰年？</strong> 地球绕太阳公转周期约为365.2422天，平年365天会累积误差，闰年通过增加2月1天（29天）来修正。</p>
+<h2 id="计算每月第一天的星期：月历的「定位仪」"><a href="#计算每月第一天的星期：月历的「定位仪」" class="headerlink" title="计算每月第一天的星期：月历的「定位仪」"></a>计算每月第一天的星期：月历的「定位仪」</h2><p>这个函数是月历打印的「定位仪」，它的作用是：计算「从公元1年1月1日到目标年月1日」的总天数，再通过取模7得到星期几（0&#x3D;周日，1&#x3D;周一...6&#x3D;周六）。实现步骤如下：</p>
+<ol>
+<li><strong>累计基准天数</strong>：<code>(year - 1) * 365</code>计算所有完整年的天数，加上闰年修正项<code>(year - 1)/4 - (year - 1)/100 + (year - 1)/400</code>（每4年一闰，每100年去闰，每400年加闰）；</li>
+<li><strong>闰年修正</strong>：若当前年是闰年且月份&gt;2（2月已过），总天数加1；</li>
+<li><strong>月份累计</strong>：从当年1月开始累加前几个月的天数（如计算3月1日，需累加1月和2月的天数）。</li>
+</ol>
+<p><strong>示例验证</strong>（2024年3月1日）：</p>
+<ul>
+<li>基准年（2023年及之前）：2023×365 + 2023&#x2F;4 - 2023&#x2F;100 + 2023&#x2F;400 &#x3D; 738315 + 505 - 20 + 5 &#x3D; 738805天；</li>
+<li>闰年修正：2024是闰年且月份&gt;2，加1天 → 738806天；</li>
+<li>月份累计：1月（31）+2月（29，闰年）&#x3D;60天 → 总天数738806+60&#x3D;738866天；</li>
+<li>738866 % 7 &#x3D; 2 → 2024年3月1日是周二（<code>week_day[2]</code>）。</li>
+</ul>
+<hr>
+<h1 id="功能实现：从代码到交互的全链路"><a href="#功能实现：从代码到交互的全链路" class="headerlink" title="功能实现：从代码到交互的全链路"></a>功能实现：从代码到交互的全链路</h1><h2 id="月历打印：对齐的艺术"><a href="#月历打印：对齐的艺术" class="headerlink" title="月历打印：对齐的艺术"></a>月历打印：对齐的艺术</h2><p>月历的核心是「对齐」——根据每月第一天的星期，在月初填充空白，然后逐行打印日期。代码实现如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">void calendar_month(int year, int month) &#123;</span><br><span class="line">    printf(&quot;日\t一\t二\t三\t四\t五\t六\n&quot;);  // 表头</span><br><span class="line">    for (int i = 0; i &lt; 51; i++) printf(&quot;=&quot;);  // 分隔线</span><br><span class="line">    printf(&quot;\n&quot;);</span><br><span class="line"></span><br><span class="line">    int first_day = month_first_day(year, month) % 7;  // 当月1日的星期（0=周日）</span><br><span class="line">    for (int i = 0; i &lt; first_day; i++) printf(&quot;\t&quot;);  // 填充月初空白</span><br><span class="line"></span><br><span class="line">    // 打印日期（1日到月末）</span><br><span class="line">    for (int d = 1; d &lt;= mon[month - 1]; d++) &#123;</span><br><span class="line">        printf(&quot;%d\t&quot;, d);</span><br><span class="line">        if ((first_day + d) % 7 == 0) printf(&quot;\n&quot;);  // 每7天换行</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>输出示例</strong>（2024年3月）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">日	一	二	三	四	五	六</span><br><span class="line">===============================</span><br><span class="line">                1	2	3	4	5</span><br><span class="line">6	7	8	9	10	11	12</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<h2 id="计算日期差：总天数相减的巧思"><a href="#计算日期差：总天数相减的巧思" class="headerlink" title="计算日期差：总天数相减的巧思"></a>计算日期差：总天数相减的巧思</h2><p>计算两个日期的天数差，本质是「总天数相减」。代码通过<code>month_first_day</code>获取两个日期到年初的总天数，再求差值的绝对值：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">case 1: &#123;</span><br><span class="line">    int days = month_first_day(year, month) + day;  // 当前日期到年初的总天数</span><br><span class="line">    printf(&quot;请输入第二个日期，例如2025年6月2日\n&quot;);</span><br><span class="line">    scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day);</span><br><span class="line">    days = days - (month_first_day(year, month) + day);  // 减去第二个日期的总天数</span><br><span class="line">    printf(&quot;天数差为：%d\n&quot;, abs(days));  // 取绝对值</span><br><span class="line">    break;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="查询星期几：星期的「解码器」"><a href="#查询星期几：星期的「解码器」" class="headerlink" title="查询星期几：星期的「解码器」"></a>查询星期几：星期的「解码器」</h2><p>通过<code>month_first_day</code>获取当月1日的星期，再加上日期数减1（因为1日是第0天），最后取模7得到星期索引：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">case 2: &#123;</span><br><span class="line">    int week_index = (month_first_day(year, month) % 7 + day - 1) % 7;</span><br><span class="line">    printf(&quot;%d年%d月%d日是 %s\n&quot;, year, month, day, week_day[week_index]);</span><br><span class="line">    break;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="输入验证：防错设计"><a href="#输入验证：防错设计" class="headerlink" title="输入验证：防错设计"></a>输入验证：防错设计</h2><p>代码通过多重校验确保用户输入的日期合法：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">// 日期合法性校验（case 1-4共用）</span><br><span class="line">int max_day = mon[month - 1];  // 当月最大天数（平年）</span><br><span class="line">if (month == 2 &amp;&amp; is_leap_year(year)) max_day++;  // 闰年二月修正</span><br><span class="line">if (day &lt; 1 || day &gt; max_day || month &lt; 1 || month &gt; 12 || year &lt; 0) &#123;</span><br><span class="line">    printf(&quot;错误，重新输入\n&quot;);</span><br><span class="line">    continue;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h1 id="交互设计：从命令行到用户体验"><a href="#交互设计：从命令行到用户体验" class="headerlink" title="交互设计：从命令行到用户体验"></a>交互设计：从命令行到用户体验</h1><p>主函数通过<code>do-while</code>循环实现菜单驱动的交互界面，核心流程如下：</p>
+<ol>
+<li><strong>清空输入缓冲区</strong>：避免因输入错误（如输入字母）导致的死循环；</li>
+<li><strong>菜单引导</strong>：清晰的选项提示（1-5）；</li>
+<li><strong>错误处理</strong>：对非法输入（如月份13、日期32）进行友好提示；</li>
+<li><strong>功能分发</strong>：根据用户选择调用对应函数。</li>
+</ol>
+<p><strong>示例交互流程</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">请输入你想选择的功能：</span><br><span class="line">1.计算指定日期间的天数</span><br><span class="line">2.计算指定日期是星期几</span><br><span class="line">3.打印指定日期的月历</span><br><span class="line">4.打印指定日期年历</span><br><span class="line">5.退出</span><br><span class="line">1</span><br><span class="line">请输入日期，例如2025年6月2日</span><br><span class="line">2024年3月1日</span><br><span class="line">请输入第二个日期，例如2025年6月2日</span><br><span class="line">2024年3月2日</span><br><span class="line">计算指定日期间的天数差为：1</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h1 id="完整源代码"><a href="#完整源代码" class="headerlink" title="完整源代码"></a>完整源代码</h1><p>以下是项目的完整C语言源代码，可直接复制编译运行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br></pre></td><td class="code"><pre><span class="line">#define _CRT_SECURE_NO_WARNINGS</span><br><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include&lt;stdbool.h&gt;</span><br><span class="line">#include&quot;function.h&quot;</span><br><span class="line"></span><br><span class="line">int main(void) &#123;</span><br><span class="line">	</span><br><span class="line">	do &#123;</span><br><span class="line">		printf(&quot;请输入你想选择的功能：\n1.计算指定日期间的天数\n2.计算指定日期是星期几\n3.打印指定日期的月历\n4.打印指定日期年历\n5.退出\n&quot;);</span><br><span class="line">		scanf(&quot; %d&quot;, &amp;num);</span><br><span class="line">		while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">		if (num &gt; 0 &amp;&amp; num &lt; 5)</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;请输入日期，例如2025年6月2日\n&quot;);</span><br><span class="line">			if (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != 3) &#123;</span><br><span class="line">				while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">				printf(&quot;输入格式错误！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">			if (day &gt; mon[month - 1] || is_leap_year(year) &amp;&amp; month == 2 &amp;&amp; day &gt; mon[1] + 1 || month &gt; 12 || day &lt; 0 || month &lt; 0 || year &lt; 0)</span><br><span class="line">			&#123;</span><br><span class="line">				printf(&quot;错误，重新输入\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		switch (num) &#123;</span><br><span class="line">		case 1:</span><br><span class="line">		&#123;</span><br><span class="line">			days = month_first_day(year, month) + day;</span><br><span class="line">			printf(&quot;请输入第二个日期，例如2025年6月2日\n&quot;);</span><br><span class="line">			while (scanf(&quot;%d年%d月%d日&quot;, &amp;year, &amp;month, &amp;day) != 3) &#123;</span><br><span class="line">				while (getchar() != &#x27;\n&#x27;);</span><br><span class="line">				printf(&quot;输入格式错误2！\n&quot;);</span><br><span class="line">				continue;</span><br><span class="line">			&#125;</span><br><span class="line">			days = days - (month_first_day(year, month) + day);</span><br><span class="line">			days = days &lt; 0 ? -days : days;</span><br><span class="line">			printf(&quot;计算指定日期间的天数差为%d\n&quot;, days);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case 2:</span><br><span class="line">		&#123;</span><br><span class="line">			printf(&quot;%d年%d月%d日是 %s\n&quot;, year, month, day, week_day[(month_first_day(year, month) % 7 + day - 1) % 7]);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case 3:</span><br><span class="line">		&#123;</span><br><span class="line">			calendar_month(year, month, day);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		case 4:</span><br><span class="line">		&#123;</span><br><span class="line">			for (int month = 1; month &lt; 13; month++)</span><br><span class="line">			&#123;</span><br><span class="line">				day = 1;</span><br><span class="line">				printf(&quot;\n\n&quot;);</span><br><span class="line">				printf(&quot;\t\t     %d年%d月\t\t\t&quot;, year, month);</span><br><span class="line">				printf(&quot;\n\n&quot;);</span><br><span class="line">				calendar_month(year, month, 1);</span><br><span class="line">				printf(&quot;\n&quot;);</span><br><span class="line">			&#125;</span><br><span class="line">			printf(&quot;\n&quot;);</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">		default:</span><br><span class="line">			break;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125; while (num != 5);</span><br><span class="line">	return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h1 id="代码亮点总结"><a href="#代码亮点总结" class="headerlink" title="代码亮点总结"></a>代码亮点总结</h1><ul>
+<li><strong>模块化设计</strong>：通过函数拆分（如<code>is_leap_year</code>、<code>month_first_day</code>）实现逻辑解耦，便于维护；</li>
+<li><strong>输入验证</strong>：使用<code>while (getchar() != &#39; &#39;)</code>清空缓冲区，避免因输入错误导致的死循环；</li>
+<li><strong>高效算法</strong>：基于总天数差计算日期间隔，避免逐月累加的低效操作；</li>
+<li><strong>友好的交互</strong>：清晰的菜单引导和错误提示，提升用户体验。</li>
+</ul>
+<p>通过本文的完整代码，读者可直接运行并体验日期工具的所有功能，同时深入理解日期处理的底层逻辑！</p>
+</div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src= "/img/friend_404.gif" data-lazy-src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">25</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">56</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">12</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src= "/img/friend_404.gif" data-lazy-src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src= "/img/friend_404.gif" data-lazy-src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/></div><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/posts/6f84ed1e/" title="C语言实现二叉搜索树（BST）：从增删改查到三种遍历的完整解析"><img src= "/img/friend_404.gif" data-lazy-src="/img/PageCode/19.png" onerror="this.onerror=null;this.src='/img/002.gif,/img/006%20(1).jpeg,/img/006%20(2).jpeg,/img/006%20(3).jpeg,/img/004.jpg'" alt="C语言实现二叉搜索树（BST）：从增删改查到三种遍历的完整解析"/></a><div class="content"><a class="title" href="/posts/6f84ed1e/" title="C语言实现二叉搜索树（BST）：从增删改查到三种遍历的完整解析">C语言实现二叉搜索树（BST）：从增删改查到三种遍历的完整解析</a><time datetime="2025-06-14T01:14:25.000Z" title="Created 2025-06-14 09:14:25">2025-06-14</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/posts/8527d974/" title="再学习《C程序设计语言》"><img src= "/img/friend_404.gif" data-lazy-src="/img/PageCode/20.png" onerror="this.onerror=null;this.src='/img/002.gif,/img/006%20(1).jpeg,/img/006%20(2).jpeg,/img/006%20(3).jpeg,/img/004.jpg'" alt="再学习《C程序设计语言》"/></a><div class="content"><a class="title" href="/posts/8527d974/" title="再学习《C程序设计语言》">再学习《C程序设计语言》</a><time datetime="2025-06-13T14:19:31.000Z" title="Created 2025-06-13 22:19:31">2025-06-13</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/posts/a57786d7/" title="动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案"><img src= "/img/friend_404.gif" data-lazy-src="/img/PageCode/17.png" onerror="this.onerror=null;this.src='/img/002.gif,/img/006%20(1).jpeg,/img/006%20(2).jpeg,/img/006%20(3).jpeg,/img/004.jpg'" alt="动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案"/></a><div class="content"><a class="title" href="/posts/a57786d7/" title="动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案">动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案</a><time datetime="2025-06-13T13:01:09.000Z" title="Created 2025-06-13 21:01:09">2025-06-13</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/posts/e308a55d/" title="从进程调度到分布式系统的并发控制（Operating-Systems）"><img src= "/img/friend_404.gif" data-lazy-src="/img/PageCode/2.png" onerror="this.onerror=null;this.src='/img/002.gif,/img/006%20(1).jpeg,/img/006%20(2).jpeg,/img/006%20(3).jpeg,/img/004.jpg'" alt="从进程调度到分布式系统的并发控制（Operating-Systems）"/></a><div class="content"><a class="title" href="/posts/e308a55d/" title="从进程调度到分布式系统的并发控制（Operating-Systems）">从进程调度到分布式系统的并发控制（Operating-Systems）</a><time datetime="2025-06-12T15:41:05.000Z" title="Created 2025-06-12 23:41:05">2025-06-12</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）"><img src= "/img/friend_404.gif" data-lazy-src="/img/PageCode/23.png" onerror="this.onerror=null;this.src='/img/002.gif,/img/006%20(1).jpeg,/img/006%20(2).jpeg,/img/006%20(3).jpeg,/img/004.jpg'" alt="从Socket编程到QUIC协议（Computer-Networking）"/></a><div class="content"><a class="title" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）">从Socket编程到QUIC协议（Computer-Networking）</a><time datetime="2025-06-12T15:40:56.000Z" title="Created 2025-06-12 23:40:56">2025-06-12</time></div></div></div></div><div class="card-widget card-categories"><div class="item-headline">
+            <i class="fas fa-folder-open"></i>
+            <span>Categories</span>
+            <a class="card-more-btn" href="/categories/" title="View More">
+      <i class="fas fa-angle-right"></i></a>
+          </div>
+          <ul class="card-category-list expandBtn" id="aside-cat-list">
+            <li class="card-category-list-item parent"><a class="card-category-list-link" href="/categories/C-Code/"><span class="card-category-list-name">C-Code</span><span class="card-category-list-count">13</span><i class="fas fa-caret-left "></i></a><ul class="card-category-list child"><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/C-Code/Data-Structures-and-Algorithms/"><span class="card-category-list-name">Data Structures and Algorithms</span><span class="card-category-list-count">3</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/C-Code/Foundational-Syntax-and-Core-Concepts/"><span class="card-category-list-name">Foundational Syntax and Core Concepts</span><span class="card-category-list-count">6</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/C-Code/Practical-System-Development/"><span class="card-category-list-name">Practical System Development</span><span class="card-category-list-count">3</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/C-Code/Practical-System-Development/"><span class="card-category-list-name">Practical-System-Development</span><span class="card-category-list-count">1</span></a></li></ul></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/Computer-Networking/"><span class="card-category-list-name">Computer-Networking</span><span class="card-category-list-count">1</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/Computer-Organization/"><span class="card-category-list-name">Computer-Organization</span><span class="card-category-list-count">1</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/Data-Structures/"><span class="card-category-list-name">Data-Structures</span><span class="card-category-list-count">4</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/Essays/"><span class="card-category-list-name">Essays</span><span class="card-category-list-count">2</span></a></li><li class="card-category-list-item "><a class="card-category-list-link" href="/categories/Linux/"><span class="card-category-list-name">Linux</span><span class="card-category-list-count">1</span></a></li>
+          </ul></div><div class="card-widget card-tags"><div class="item-headline"><i class="fas fa-tags"></i><span>Tags</span></div><div class="card-tag-cloud"><a href="/tags/C%E8%AF%AD%E8%A8%80/" style="font-size: 1.45em; color: rgb(93, 133, 102);">C语言</a><a href="/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/" style="font-size: 1.4em; color: rgb(115, 52, 166);">数据结构</a><a href="/tags/%E7%A8%8B%E5%BA%8F/" style="font-size: 1.3em; color: rgb(50, 172, 50);">程序</a><a href="/tags/%E5%87%BD%E6%95%B0/" style="font-size: 1.35em; color: rgb(159, 50, 114);">函数</a><a href="/tags/CODE/" style="font-size: 1.25em; color: rgb(197, 106, 116);">CODE</a><a href="/tags/%E5%AE%89%E5%85%A8%E7%BC%96%E7%A0%81/" style="font-size: 1.15em; color: rgb(122, 103, 73);">安全编码</a><a href="/tags/LearningJournal/" style="font-size: 1.15em; color: rgb(50, 67, 137);">LearningJournal</a><a href="/tags/ProgrammingEducation/" style="font-size: 1.15em; color: rgb(184, 50, 50);">ProgrammingEducation</a><a href="/tags/%E7%BB%93%E6%9E%84%E4%BD%93/" style="font-size: 1.15em; color: rgb(119, 50, 170);">结构体</a><a href="/tags/%E6%9E%9A%E4%B8%BE/" style="font-size: 1.15em; color: rgb(50, 63, 172);">枚举</a><a href="/tags/%E4%B8%BB%E9%A2%98%E7%BE%8E%E5%8C%96/" style="font-size: 1.15em; color: rgb(109, 183, 63);">主题美化</a><a href="/tags/Vector/" style="font-size: 1.15em; color: rgb(161, 50, 185);">Vector</a><a href="/tags/%E5%8A%A8%E6%80%81%E6%95%B0%E7%BB%84/" style="font-size: 1.2em; color: rgb(114, 81, 52);">动态数组</a><a href="/tags/%E7%AE%97%E6%B3%95%E4%BC%98%E5%8C%96/" style="font-size: 1.2em; color: rgb(163, 159, 157);">算法优化</a><a href="/tags/%E4%BD%8D%E8%BF%90%E7%AE%97/" style="font-size: 1.15em; color: rgb(64, 55, 50);">位运算</a><a href="/tags/%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%8F%82%E6%95%B0/" style="font-size: 1.15em; color: rgb(77, 116, 137);">命令行参数</a><a href="/tags/%E8%BE%93%E5%85%A5%E5%A4%84%E7%90%86/" style="font-size: 1.15em; color: rgb(50, 149, 89);">输入处理</a><a href="/tags/%E6%95%B0%E5%80%BC%E8%AE%A1%E7%AE%97/" style="font-size: 1.15em; color: rgb(50, 137, 114);">数值计算</a><a href="/tags/%E6%B1%89%E8%AF%BA%E5%A1%94/" style="font-size: 1.15em; color: rgb(50, 112, 142);">汉诺塔</a><a href="/tags/%E9%80%92%E5%BD%92%E7%AE%97%E6%B3%95/" style="font-size: 1.15em; color: rgb(81, 111, 168);">递归算法</a><a href="/tags/%E7%BB%8F%E5%85%B8%E9%97%AE%E9%A2%98/" style="font-size: 1.15em; color: rgb(189, 75, 92);">经典问题</a><a href="/tags/%E6%95%B0%E7%BB%84/" style="font-size: 1.15em; color: rgb(174, 113, 50);">数组</a><a href="/tags/%E6%8C%87%E9%92%88/" style="font-size: 1.15em; color: rgb(149, 50, 171);">指针</a><a href="/tags/%E5%86%85%E5%AD%98%E5%B8%83%E5%B1%80/" style="font-size: 1.15em; color: rgb(100, 93, 77);">内存布局</a><a href="/tags/leecode/" style="font-size: 1.15em; color: rgb(117, 180, 50);">leecode</a><a href="/tags/%E5%B8%8C%E5%B0%94%E6%8E%92%E5%BA%8F/" style="font-size: 1.15em; color: rgb(50, 161, 97);">希尔排序</a><a href="/tags/%E6%8F%92%E5%85%A5%E6%8E%92%E5%BA%8F/" style="font-size: 1.15em; color: rgb(192, 109, 130);">插入排序</a><a href="/tags/%E5%BD%92%E5%B9%B6%E6%8E%92%E5%BA%8F/" style="font-size: 1.15em; color: rgb(177, 50, 50);">归并排序</a><a href="/tags/%E5%BF%AB%E9%80%9F%E6%8E%92%E5%BA%8F/" style="font-size: 1.15em; color: rgb(183, 107, 135);">快速排序</a><a href="/tags/%E5%A0%86%E6%8E%92%E5%BA%8F/" style="font-size: 1.15em; color: rgb(50, 135, 50);">堆排序</a><a href="/tags/%E5%93%88%E5%B8%8C%E8%A1%A8/" style="font-size: 1.2em; color: rgb(189, 56, 71);">哈希表</a><a href="/tags/Linux/" style="font-size: 1.15em; color: rgb(137, 156, 118);">Linux</a><a href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" style="font-size: 1.2em; color: rgb(75, 129, 61);">操作系统</a><a href="/tags/%E5%8E%86%E5%8F%B2/" style="font-size: 1.15em; color: rgb(141, 75, 147);">历史</a><a href="/tags/%E5%BC%80%E6%BA%90/" style="font-size: 1.15em; color: rgb(181, 50, 61);">开源</a><a href="/tags/%E4%BA%8C%E5%8F%89%E6%90%9C%E7%B4%A2%E6%A0%91/" style="font-size: 1.15em; color: rgb(66, 123, 50);">二叉搜索树</a><a href="/tags/%E9%81%8D%E5%8E%86%E7%AE%97%E6%B3%95/" style="font-size: 1.15em; color: rgb(59, 159, 167);">遍历算法</a><a href="/tags/%E9%80%92%E5%BD%92%E5%AE%9E%E7%8E%B0/" style="font-size: 1.15em; color: rgb(133, 168, 56);">递归实现</a><a href="/tags/%E5%8A%A8%E6%80%81%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/" style="font-size: 1.15em; color: rgb(165, 79, 142);">动态数据结构</a><a href="/tags/%E6%96%87%E4%BB%B6%E6%B5%81/" style="font-size: 1.15em; color: rgb(59, 50, 179);">文件流</a></div></div><div class="card-widget card-archives">
+    <div class="item-headline">
+      <i class="fas fa-archive"></i>
+      <span>Archives</span>
+      
+    </div>
+  
+    <ul class="card-archive-list">
+      
+        <li class="card-archive-list-item">
+          <a class="card-archive-list-link" href="/archives/2025/06/">
+            <span class="card-archive-list-date">
+              2025年06月
+            </span>
+            <span class="card-archive-list-count">25</span>
+          </a>
+        </li>
+      
+    </ul>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>Website Info</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">Article Count :</div><div class="item-count">25</div></div><div class="webinfo-item"><div class="item-name">Runtime :</div><div class="item-count" id="runtimeshow" data-publishDate="2025-05-31T16:00:00.000Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">Total Word Count :</div><div class="item-count">67.3k</div></div><div class="webinfo-item"><div class="item-name">Last Update :</div><div class="item-count" id="last-push-date" data-lastPushDate="2025-06-12T16:14:44.737Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C-Code/">C语言</a><a href="/categories/Go-Code">Go语言</a></li><li><a href="/categories/Linux">Linux</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src= "/img/friend_404.gif" data-lazy-src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src= "/img/friend_404.gif" data-lazy-src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src= "/img/friend_404.gif" data-lazy-src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src= "/img/friend_404.gif" data-lazy-src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src= "/img/friend_404.gif" data-lazy-src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src= "/img/friend_404.gif" data-lazy-src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src= "/img/friend_404.gif" data-lazy-src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src= "/img/friend_404.gif" data-lazy-src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://jsd.012700.xyz/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://jsd.012700.xyz/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://jsd.012700.xyz/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://jsd.012700.xyz/npm/instant.page/instantpage.min.js" type="module"></script><script src="https://jsd.012700.xyz/npm/vanilla-lazyload/dist/lazyload.iife.min.js"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://jsd.012700.xyz/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://jsd.012700.xyz/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/btf.js"></script><script defer src="https://npm.elemecdn.com/jquery@latest/dist/jquery.min.js"></script><script data-pjax defer src="https://npm.elemecdn.com/tzy-blog/lib/js/theme/chocolate.js"></script><script id="canvas_nest" defer="defer" color="10,25,47" opacity="0.6" zIndex="-2" count="99" mobile="false" src="https://jsd.012700.xyz/npm/butterfly-extsrc/dist/canvas-nest.min.js"></script><script src="https://jsd.012700.xyz/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script id="click-show-text" src="https://jsd.012700.xyz/npm/butterfly-extsrc/dist/click-show-text.min.js" data-mobile="false" data-text="为,世,界,上,所,有,美,好,而,战" data-fontsize="10px" data-random="false" async="async"></script><script src="https://jsd.012700.xyz/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://jsd.012700.xyz/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div><!-- hexo injector body_end start --><script data-pjax>
+  function butterfly_clock_anzhiyu_injector_config(){
+    var parent_div_git = document.getElementsByClassName('sticky_layout')[0];
+    var item_html = '<div class="card-widget card-clock"><div class="card-glass"><div class="card-background"><div class="card-content"><div id="hexo_electric_clock"><img class="entered loading" id="card-clock-loading" src= "/img/friend_404.gif" data-lazy-src="https://cdn.cbd.int/hexo-butterfly-clock-anzhiyu/lib/loading.gif" style="height: 120px; width: 100%;" data-ll-status="loading"/></div></div></div></div></div>';
+    console.log('已挂载butterfly_clock_anzhiyu')
+    if(parent_div_git) {
+      parent_div_git.insertAdjacentHTML("afterbegin",item_html)
+    }
+  }
+  var elist = 'undefined'.split(',');
+  var cpage = location.pathname;
+  var epage = 'all';
+  var qweather_key = 'b16a1fa0e63c46a4b8f28abfb06ae3fe';
+  var gaud_map_key = '85f3079a56f0d649a44133c3a4820cb0';
+  var baidu_ak_key = 'undefined';
+  var flag = 0;
+  var clock_rectangle = '-0.1276,51.5074';
+  var clock_default_rectangle_enable = 'false';
+
+  for (var i=0;i<elist.length;i++){
+    if (cpage.includes(elist[i])){
+      flag++;
+    }
+  }
+
+  if ((epage ==='all')&&(flag == 0)){
+    butterfly_clock_anzhiyu_injector_config();
+  }
+  else if (epage === cpage){
+    butterfly_clock_anzhiyu_injector_config();
+  }
+  </script><script src="https://widget.qweather.net/simple/static/js/he-simple-common.js?v=2.0"></script><script data-pjax src="https://cdn.cbd.int/hexo-butterfly-clock-anzhiyu/lib/clock.min.js"></script><!-- hexo injector body_end end --></body></html>
