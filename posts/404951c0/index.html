@@ -1,0 +1,566 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Git 冲突规避 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言Git 冲突的本质是并行开发中代码变更的重叠与未及时同步，而非单纯的技术问题。 一、先搞懂：Git 冲突的 3 大核心根源在解决问题前，必须明确冲突的来源，才能针对性预防： 同步滞后：长期在本地分支开发，不与主分支同步，导致累积大量差异（最常见，占冲突总量的 60%+） 范围重叠：多开发者同时修改同一文件的同一代码块（如两个开发者改同一个接口的参数） 管控缺失：无分支规范（如直接在主分支开发）">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Git 冲突规避">
+<meta property="og:url" content="https://hespethorn.github.io/posts/404951c0/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言Git 冲突的本质是并行开发中代码变更的重叠与未及时同步，而非单纯的技术问题。 一、先搞懂：Git 冲突的 3 大核心根源在解决问题前，必须明确冲突的来源，才能针对性预防： 同步滞后：长期在本地分支开发，不与主分支同步，导致累积大量差异（最常见，占冲突总量的 60%+） 范围重叠：多开发者同时修改同一文件的同一代码块（如两个开发者改同一个接口的参数） 管控缺失：无分支规范（如直接在主分支开发）">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-04-11T15:50:34.000Z">
+<meta property="article:modified_time" content="2025-09-05T03:51:14.666Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Git">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Git 冲突规避",
+  "url": "https://hespethorn.github.io/posts/404951c0/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-04-11T15:50:34.000Z",
+  "dateModified": "2025-09-05T03:51:14.666Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/404951c0/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Git 冲突规避',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Git 冲突规避</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Git 冲突规避</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-04-11T15:50:34.000Z" title="Created 2025-04-11 23:50:34">2025-04-11</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Git/">Git</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>6mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h2><p>Git 冲突的本质是<strong>并行开发中代码变更的重叠与未及时同步</strong>，而非单纯的技术问题。</p>
+<h2 id="一、先搞懂：Git-冲突的-3-大核心根源"><a href="#一、先搞懂：Git-冲突的-3-大核心根源" class="headerlink" title="一、先搞懂：Git 冲突的 3 大核心根源"></a>一、先搞懂：Git 冲突的 3 大核心根源</h2><p>在解决问题前，必须明确冲突的来源，才能针对性预防：</p>
+<p><strong>同步滞后</strong>：长期在本地分支开发，不与主分支同步，导致累积大量差异（最常见，占冲突总量的 60%+）</p>
+<p><strong>范围重叠</strong>：多开发者同时修改同一文件的同一代码块（如两个开发者改同一个接口的参数）</p>
+<p><strong>管控缺失</strong>：无分支规范（如直接在主分支开发）、无提交标准（大提交包含多个功能）、无依赖锁定（package.json 频繁冲突）</p>
+<h2 id="二、核心策略-：搭建「零冲突友好型」分支体系"><a href="#二、核心策略-：搭建「零冲突友好型」分支体系" class="headerlink" title="二、核心策略 ：搭建「零冲突友好型」分支体系"></a>二、核心策略 ：搭建「零冲突友好型」分支体系</h2><p>分支管理是冲突规避的<strong>基石</strong>，90% 的高频冲突源于混乱的分支结构。推荐两种经过验证的分支模型，团队需二选一并严格执行。</p>
+<h3 id="2-1-选择适配的分支模型"><a href="#2-1-选择适配的分支模型" class="headerlink" title="2.1 选择适配的分支模型"></a>2.1 选择适配的分支模型</h3><p>根据团队规模和项目类型选择，避免混合使用导致混乱：</p>
+<table>
+<thead>
+<tr>
+<th>分支模型</th>
+<th>适用场景</th>
+<th>核心分支结构</th>
+<th>冲突风险</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Git Flow</strong></td>
+<td>中大型项目、有固定发版周期</td>
+<td>main (生产)+develop (开发)+feature&#x2F;bugfix&#x2F;hotfix</td>
+<td>低</td>
+</tr>
+<tr>
+<td><strong>GitHub Flow</strong></td>
+<td>小型项目、敏捷迭代（如 ToB 产品）</td>
+<td>main (主分支)+feature&#x2F;bugfix (临时分支)</td>
+<td>极低</td>
+</tr>
+</tbody></table>
+<h4 id="关键规则（必须落地）："><a href="#关键规则（必须落地）：" class="headerlink" title="关键规则（必须落地）："></a>关键规则（必须落地）：</h4><ul>
+<li><p>禁止直接在main&#x2F;develop分支提交代码，所有开发必须基于「临时分支」</p>
+</li>
+<li><p>临时分支必须从「最新主分支」创建（如 feature 分支从 develop&#x2F;main 最新版创建）</p>
+</li>
+<li><p>分支命名强制规范，一眼识别用途：</p>
+<ul>
+<li>feature&#x2F;[需求ID]-功能描述（如feature&#x2F;TAPD1234-用户登录加密）</li>
+<li>bugfix&#x2F;[缺陷ID]-问题描述（如bugfix&#x2F;JIRA567-登录超时异常）</li>
+<li>hotfix&#x2F;[紧急ID]-修复描述（如hotfix&#x2F;EMG789-生产支付接口报错）</li>
+</ul>
+</li>
+</ul>
+<h3 id="2-2-分支生命周期管理（避免「僵尸分支」）"><a href="#2-2-分支生命周期管理（避免「僵尸分支」）" class="headerlink" title="2.2 分支生命周期管理（避免「僵尸分支」）"></a>2.2 分支生命周期管理（避免「僵尸分支」）</h3><ul>
+<li><p><strong>创建</strong>：需求启动时，由负责人从主分支创建，同步到远程仓库（git push -u origin 分支名）</p>
+</li>
+<li><p><strong>开发</strong>：仅负责对应需求，不包含无关修改（如改登录功能时不碰商品模块代码）</p>
+</li>
+<li><p><strong>合并</strong>：需求上线 &#x2F; 修复验证后，48 小时内完成合并并删除分支（避免分支堆积）</p>
+</li>
+<li><p><strong>归档</strong>：重要分支（如发版分支release&#x2F;v1.2.0）需归档，其他临时分支合并后立即删除</p>
+</li>
+</ul>
+<h2 id="三、核心策略-2：原子提交-实时同步，消灭「累积冲突」"><a href="#三、核心策略-2：原子提交-实时同步，消灭「累积冲突」" class="headerlink" title="三、核心策略 2：原子提交 + 实时同步，消灭「累积冲突」"></a>三、核心策略 2：原子提交 + 实时同步，消灭「累积冲突」</h2><p>同步滞后是冲突的第一杀手，通过「小步提交 + 高频同步」可解决 80% 的此类问题。</p>
+<h3 id="3-1-原子提交规范（每个提交只做一件事）"><a href="#3-1-原子提交规范（每个提交只做一件事）" class="headerlink" title="3.1 原子提交规范（每个提交只做一件事）"></a>3.1 原子提交规范（每个提交只做一件事）</h3><ul>
+<li><p><strong>提交粒度</strong>：每完成一个独立逻辑（如「添加登录参数校验」「修复密码错误提示」）就提交，原则上<strong>每 2 小时至少 1 次提交</strong>（符合 Rules 基本原则）</p>
+</li>
+<li><p><strong>提交操作</strong>：用git add -p精确选择变更代码，避免「一次性提交所有修改」（防止无关代码混入）</p>
+</li>
+<li><p><strong>Commit Message 规范</strong>（禁止无头提交）：采用「Conventional Commits」格式，示例：</p>
+<ul>
+<li>feat(login): 添加用户密码MD5加密存储（功能新增）</li>
+<li>fix(pay): 修复支付宝回调参数解析异常（bug 修复）</li>
+<li>docs: 更新API文档中登录接口说明（文档修改）</li>
+</ul>
+</li>
+</ul>
+<h3 id="3-2-实时同步主分支（关键操作，每天必做）"><a href="#3-2-实时同步主分支（关键操作，每天必做）" class="headerlink" title="3.2 实时同步主分支（关键操作，每天必做）"></a>3.2 实时同步主分支（关键操作，每天必做）</h3><ul>
+<li><p>核心逻辑：<strong>让你的 feature 分支始终跟主分支保持一致</strong>，避免差异累积。</p>
+</li>
+<li><p>具体步骤（每天早开工 &#x2F; 午开工各 1 次）：</p>
+</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"># 保存本地未提交的工作（避免同步时丢失）</span><br><span class="line">git stash save &quot;未完成的[功能名]开发&quot;  # 示例：git stash save &quot;未完成的登录加密开发&quot;</span><br><span class="line"></span><br><span class="line"># 2. 拉取主分支最新代码（假设主分支是main）</span><br><span class="line">git checkout main</span><br><span class="line">git pull origin main</span><br><span class="line"></span><br><span class="line"># 3. 切回自己的feature分支，用rebase同步主分支（避免产生无用的合并记录）</span><br><span class="line">git checkout feature/TAPD1234-用户登录加密</span><br><span class="line">git rebase main</span><br><span class="line"></span><br><span class="line"># 4. 恢复本地未提交的工作</span><br><span class="line">git stash apply  # 若有冲突，此时会提示，解决后再继续开发</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>⚠️ 关键提醒：如果 rebase 过程中出现冲突，<strong>必须在当前步骤解决</strong>，不能跳过（符合 Rules「拒绝忽略冲突」原则）。解决后执行git rebase --continue，直到 rebase 完成。</p>
+</blockquote>
+<h2 id="四、核心策略-3：协作沟通-PR-审查，提前阻断冲突"><a href="#四、核心策略-3：协作沟通-PR-审查，提前阻断冲突" class="headerlink" title="四、核心策略 3：协作沟通 + PR 审查，提前阻断冲突"></a>四、核心策略 3：协作沟通 + PR 审查，提前阻断冲突</h2><p>很多冲突是「沟通缺失」导致的，比如两个开发者同时改同一文件 —— 通过「前置沟通 + 代码审查」可完全规避。</p>
+<h3 id="4-1-变更前沟通机制（5-分钟沟通-1-小时解决冲突）"><a href="#4-1-变更前沟通机制（5-分钟沟通-1-小时解决冲突）" class="headerlink" title="4.1 变更前沟通机制（5 分钟沟通 &#x3D; 1 小时解决冲突）"></a>4.1 变更前沟通机制（5 分钟沟通 &#x3D; 1 小时解决冲突）</h3><ul>
+<li><p><strong>任务认领</strong>：在需求管理工具（Jira&#x2F;TAPD）上明确「代码修改范围」，比如标注「需修改文件：src&#x2F;login&#x2F;index.js」，避免多人重复修改</p>
+</li>
+<li><p><strong>跨模块协作</strong>：若修改涉及公共代码（如工具函数、公共组件），必须提前在团队群同步，确认无其他人在修改</p>
+</li>
+<li><p><strong>临时变更</strong>：紧急修改（如临时加日志）需告知相关开发者，避免对方同步代码时冲突</p>
+</li>
+</ul>
+<h3 id="4-2-PR（Pull-Request）审查闭环（禁止无审查合并）"><a href="#4-2-PR（Pull-Request）审查闭环（禁止无审查合并）" class="headerlink" title="4.2 PR（Pull Request）审查闭环（禁止无审查合并）"></a>4.2 PR（Pull Request）审查闭环（禁止无审查合并）</h3><p>PR 是冲突的「最后一道防线」，必须满足以下条件才能合并：</p>
+<p><strong>基础检查</strong>：</p>
+<ul>
+<li><p>分支来源正确（必须从最新主分支创建）</p>
+</li>
+<li><p>无冲突（PR 页面显示「Can be merged」）</p>
+</li>
+<li><p>提交记录清晰（无冗余提交，Commit Message 规范）</p>
+</li>
+</ul>
+<p><strong>代码审查要点</strong>：</p>
+<ul>
+<li><p>审查者需确认「修改范围是否与需求一致」（避免无关修改）</p>
+</li>
+<li><p>检查「是否修改了公共代码」（若有，需确认是否影响其他模块）</p>
+</li>
+<li><p>验证「单元测试是否通过」（避免引入新 bug）</p>
+</li>
+</ul>
+<p><strong>合并策略</strong>：</p>
+<ul>
+<li><p>优先用「Squash and Merge」（将多个提交压缩为 1 个，保持主分支整洁）</p>
+</li>
+<li><p>禁止用「Merge Commit」（会产生大量合并记录，不利于版本追溯）</p>
+</li>
+</ul>
+<h2 id="五、应急处理：冲突发生后的-SOP（10-分钟内解决）"><a href="#五、应急处理：冲突发生后的-SOP（10-分钟内解决）" class="headerlink" title="五、应急处理：冲突发生后的 SOP（10 分钟内解决）"></a>五、应急处理：冲突发生后的 SOP（10 分钟内解决）</h2><p>即使做好预防，仍可能出现冲突，需按以下步骤处理，避免混乱：</p>
+<h3 id="步骤-1：隔离冲突，不影响他人"><a href="#步骤-1：隔离冲突，不影响他人" class="headerlink" title="步骤 1：隔离冲突，不影响他人"></a>步骤 1：隔离冲突，不影响他人</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"># 若正在开发中，先保存本地工作</span><br><span class="line">git stash save &quot;冲突前的工作状态&quot;</span><br><span class="line"></span><br><span class="line"># 2. 查看冲突文件（红色标记的文件即为冲突文件）</span><br><span class="line">git status</span><br></pre></td></tr></table></figure>
+
+<h3 id="步骤-2：分步解决冲突"><a href="#步骤-2：分步解决冲突" class="headerlink" title="步骤 2：分步解决冲突"></a>步骤 2：分步解决冲突</h3><p><strong>打开冲突文件</strong>：找到&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD（你的代码）、&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;（主分支代码）、&gt;&gt;&gt;&gt;&gt;&gt;&gt; 分支名（冲突分支代码）标记</p>
+<p><strong>协商解决</strong>：若不确定如何修改，立即找到修改该文件的开发者，共同确认保留哪部分代码（禁止独自删除他人代码）</p>
+<p><strong>删除冲突标记</strong>：解决后必须删除&lt;&lt;&lt;&lt;&lt;&lt;&lt;&#x2F;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x2F;&gt;&gt;&gt;&gt;&gt;&gt;&gt; ，避免代码报错</p>
+<p><strong>验证</strong>：执行git add 冲突文件，然后运行测试（如npm run test），确保解决后功能正常</p>
+<h3 id="步骤-3：无法解决时的回滚方案"><a href="#步骤-3：无法解决时的回滚方案" class="headerlink" title="步骤 3：无法解决时的回滚方案"></a>步骤 3：无法解决时的回滚方案</h3><p>若冲突复杂（如大量代码重叠），可放弃当前同步，回到之前的状态：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"># 终止rebase过程，回到rebase前的状态</span><br><span class="line">git rebase --abort</span><br><span class="line"></span><br><span class="line"># 或直接回滚到上一个稳定版本（需确保已stash本地工作）</span><br><span class="line">git reset --hard HEAD~1  # 回滚到上一个提交</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>⚠️ 风险提示：git reset --hard会丢弃未提交的修改，执行前必须确认已用git stash保存工作。</p>
+</blockquote>
+<h2 id="六、落地保障：让方案真正执行"><a href="#六、落地保障：让方案真正执行" class="headerlink" title="六、落地保障：让方案真正执行"></a>六、落地保障：让方案真正执行</h2><p><strong>团队培训</strong>：新成员入职必须培训 Git 规范，老成员每季度进行 1 次 Git 复盘</p>
+<p><strong>指标监控</strong>：每周统计「冲突次数」「PR 合并时长」，作为团队协作效率的 KPI</p>
+<p><strong>奖惩机制</strong>：对严格遵守规范的成员公开表扬，对多次违反规范（如直接在主分支提交）的成员进行辅导</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/404951c0/">https://hespethorn.github.io/posts/404951c0/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Git/">Git</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/404951c0/" title="Git 冲突规避">Git 冲突规避</a><time datetime="2025-04-11T15:50:34.000Z" title="Created 2025-04-11 23:50:34">2025-04-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1f0b0ac5/" title="规范化 Git 提交 -- commitlint + husky">规范化 Git 提交 -- commitlint + husky</a><time datetime="2024-12-17T13:20:39.000Z" title="Created 2024-12-17 21:20:39">2024-12-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a4954b69/" title="团队 Git 协作规范整理">团队 Git 协作规范整理</a><time datetime="2024-12-11T11:38:21.000Z" title="Created 2024-12-11 19:38:21">2024-12-11</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

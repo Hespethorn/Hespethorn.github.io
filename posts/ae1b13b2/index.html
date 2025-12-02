@@ -1,0 +1,567 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、pthread 库概述POSIX 线程 (POSIX Threads)，简称 pthread，是 C 语言中实现多线程编程的标准库。它提供了一套丰富的 API，用于创建、同步和管理线程。pthread 库在 Unix、Linux 和 macOS 等系统上广泛支持，是开发高性能并发程序的重要工具。 核心组件 线程管理：创建、终止和等待线程 同步机制：互斥锁 (Mutex)、读写锁、条件变量 线程">
+<meta property="og:type" content="article">
+<meta property="og:title" content="linux:POSIX 线程库 (&#96;pthread&#96;) 详解与多线程编程实践">
+<meta property="og:url" content="https://hespethorn.github.io/posts/ae1b13b2/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、pthread 库概述POSIX 线程 (POSIX Threads)，简称 pthread，是 C 语言中实现多线程编程的标准库。它提供了一套丰富的 API，用于创建、同步和管理线程。pthread 库在 Unix、Linux 和 macOS 等系统上广泛支持，是开发高性能并发程序的重要工具。 核心组件 线程管理：创建、终止和等待线程 同步机制：互斥锁 (Mutex)、读写锁、条件变量 线程">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2023-02-09T12:37:13.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:49:08.815Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="信号">
+<meta property="article:tag" content="pthread">
+<meta property="article:tag" content="互斥锁">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践",
+  "url": "https://hespethorn.github.io/posts/ae1b13b2/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2023-02-09T12:37:13.000Z",
+  "dateModified": "2025-07-12T15:49:08.815Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/ae1b13b2/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2023-02-09T12:37:13.000Z" title="Created 2023-02-09 20:37:13">2023-02-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Linux/">Linux</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>7mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h3 id="一、pthread-库概述"><a href="#一、pthread-库概述" class="headerlink" title="一、pthread 库概述"></a>一、<code>pthread</code> 库概述</h3><p>POSIX 线程 (POSIX Threads)，简称 <code>pthread</code>，是 C 语言中实现多线程编程的标准库。它提供了一套丰富的 API，用于创建、同步和管理线程。<code>pthread</code> 库在 Unix、Linux 和 macOS 等系统上广泛支持，是开发高性能并发程序的重要工具。</p>
+<h3 id="核心组件"><a href="#核心组件" class="headerlink" title="核心组件"></a>核心组件</h3><ul>
+<li><strong>线程管理</strong>：创建、终止和等待线程</li>
+<li><strong>同步机制</strong>：互斥锁 (Mutex)、读写锁、条件变量</li>
+<li><strong>线程同步</strong>：信号量、屏障</li>
+<li><strong>线程特定数据</strong>：每个线程独立的数据存储</li>
+</ul>
+<h3 id="二、线程的基本操作"><a href="#二、线程的基本操作" class="headerlink" title="二、线程的基本操作"></a>二、线程的基本操作</h3><h4 id="1-线程创建与终止"><a href="#1-线程创建与终止" class="headerlink" title="1. 线程创建与终止"></a>1. 线程创建与终止</h4><h5 id="pthread-create-函数"><a href="#pthread-create-函数" class="headerlink" title="pthread_create 函数"></a><code>pthread_create</code> 函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">pthread_create</span><span class="params">(<span class="type">pthread_t</span> *thread, <span class="type">const</span> <span class="type">pthread_attr_t</span> *attr,</span></span><br><span class="line"><span class="params">                   <span class="type">void</span> *(*start_routine) (<span class="type">void</span> *), <span class="type">void</span> *arg)</span>;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>参数说明</strong>：<ul>
+<li><code>thread</code>：指向<code> pthread_t</code> 类型的指针，用于存储新创建线程的 ID</li>
+<li><code>attr</code>：线程属性设置，NULL 表示使用默认属性</li>
+<li><code>start_routine</code>：线程入口函数，返回值和参数类型均为 void*</li>
+<li><code>arg</code>：传递给线程函数的参数</li>
+</ul>
+</li>
+</ul>
+<h5 id="pthread-exit-函数"><a href="#pthread-exit-函数" class="headerlink" title="pthread_exit 函数"></a><code>pthread_exit</code> 函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">pthread_exit</span><span class="params">(<span class="type">void</span> *retval)</span>;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>用于线程主动退出</li>
+<li><code>retval</code>：线程返回值，可通过<code>pthread_join</code>获取</li>
+</ul>
+<h5 id="pthread-join-函数"><a href="#pthread-join-函数" class="headerlink" title="pthread_join 函数"></a><code>pthread_join</code> 函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">pthread_join</span><span class="params">(<span class="type">pthread_t</span> thread, <span class="type">void</span> **retval)</span>;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>等待指定线程结束并回收资源</li>
+<li><code>retval</code>：指向线程返回值的指针</li>
+</ul>
+<h4 id="2-线程属性设置"><a href="#2-线程属性设置" class="headerlink" title="2. 线程属性设置"></a>2. 线程属性设置</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">pthread_attr_t</span> attr;</span><br><span class="line">pthread_attr_init(&amp;attr);</span><br><span class="line">pthread_attr_setdetachstate(&amp;attr, PTHREAD_CREATE_DETACHED);</span><br><span class="line">pthread_create(&amp;tid, &amp;attr, thread_func, <span class="literal">NULL</span>);</span><br><span class="line">pthread_attr_destroy(&amp;attr);</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>可设置线程分离状态、调度策略等属性</li>
+<li>分离状态的线程结束后自动释放资源，无法被 join</li>
+</ul>
+<h3 id="三、线程同步机制"><a href="#三、线程同步机制" class="headerlink" title="三、线程同步机制"></a>三、线程同步机制</h3><h4 id="1-互斥锁-Mutex"><a href="#1-互斥锁-Mutex" class="headerlink" title="1. 互斥锁 (Mutex)"></a>1. 互斥锁 (Mutex)</h4><p>互斥锁是最基本的同步原语，用于保护临界区，防止多个线程同时访问共享资源。</p>
+<h5 id="主要函数"><a href="#主要函数" class="headerlink" title="主要函数"></a>主要函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">pthread_mutex_t</span> mutex;</span><br><span class="line">pthread_mutex_init(&amp;mutex, <span class="literal">NULL</span>);      <span class="comment">// 初始化互斥锁</span></span><br><span class="line">pthread_mutex_lock(&amp;mutex);           <span class="comment">// 加锁</span></span><br><span class="line">pthread_mutex_unlock(&amp;mutex);         <span class="comment">// 解锁</span></span><br><span class="line">pthread_mutex_destroy(&amp;mutex);        <span class="comment">// 销毁互斥锁</span></span><br></pre></td></tr></table></figure>
+
+<h5 id="示例代码"><a href="#示例代码" class="headerlink" title="示例代码"></a>示例代码</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">pthread_mutex_t</span> count_mutex;</span><br><span class="line"><span class="type">int</span> count = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> *<span class="title function_">increment</span><span class="params">(<span class="type">void</span> *arg)</span> &#123;</span><br><span class="line">    pthread_mutex_lock(&amp;count_mutex);</span><br><span class="line">    count++;</span><br><span class="line">    pthread_mutex_unlock(&amp;count_mutex);</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-条件变量-Condition-Variable"><a href="#2-条件变量-Condition-Variable" class="headerlink" title="2. 条件变量 (Condition Variable)"></a>2. 条件变量 (Condition Variable)</h4><p>条件变量用于线程间的等待 - 通知机制，通常与互斥锁配合使用。</p>
+<h5 id="主要函数-1"><a href="#主要函数-1" class="headerlink" title="主要函数"></a>主要函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">pthread_cond_t</span> cond;</span><br><span class="line">pthread_cond_init(&amp;cond, <span class="literal">NULL</span>);       <span class="comment">// 初始化条件变量</span></span><br><span class="line">pthread_cond_wait(&amp;cond, &amp;mutex);     <span class="comment">// 等待条件</span></span><br><span class="line">pthread_cond_signal(&amp;cond);           <span class="comment">// 通知一个等待线程</span></span><br><span class="line">pthread_cond_broadcast(&amp;cond);        <span class="comment">// 通知所有等待线程</span></span><br><span class="line">pthread_cond_destroy(&amp;cond);          <span class="comment">// 销毁条件变量</span></span><br></pre></td></tr></table></figure>
+
+<h5 id="生产者-消费者示例"><a href="#生产者-消费者示例" class="headerlink" title="生产者 - 消费者示例"></a>生产者 - 消费者示例</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">pthread_mutex_t</span> mutex;</span><br><span class="line"><span class="type">pthread_cond_t</span> cond_producer, cond_consumer;</span><br><span class="line"><span class="type">int</span> buffer = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 消费者线程</span></span><br><span class="line"><span class="type">void</span> *<span class="title function_">consumer</span><span class="params">(<span class="type">void</span> *arg)</span> &#123;</span><br><span class="line">    pthread_mutex_lock(&amp;mutex);</span><br><span class="line">    <span class="keyword">while</span> (buffer == <span class="number">0</span>) &#123;</span><br><span class="line">        pthread_cond_wait(&amp;cond_consumer, &amp;mutex);</span><br><span class="line">    &#125;</span><br><span class="line">    buffer--;  <span class="comment">// 消费一个产品</span></span><br><span class="line">    pthread_cond_signal(&amp;cond_producer);</span><br><span class="line">    pthread_mutex_unlock(&amp;mutex);</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="3-读写锁-Read-Write-Lock"><a href="#3-读写锁-Read-Write-Lock" class="headerlink" title="3. 读写锁 (Read-Write Lock)"></a>3. 读写锁 (Read-Write Lock)</h4><p>读写锁允许多个线程同时读共享资源，但写操作时需要独占访问。</p>
+<h5 id="主要函数-2"><a href="#主要函数-2" class="headerlink" title="主要函数"></a>主要函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">pthread_rwlock_t</span> rwlock;</span><br><span class="line">pthread_rwlock_init(&amp;rwlock, <span class="literal">NULL</span>);   <span class="comment">// 初始化读写锁</span></span><br><span class="line">pthread_rwlock_rdlock(&amp;rwlock);       <span class="comment">// 获取读锁</span></span><br><span class="line">pthread_rwlock_wrlock(&amp;rwlock);       <span class="comment">// 获取写锁</span></span><br><span class="line">pthread_rwlock_unlock(&amp;rwlock);       <span class="comment">// 释放锁</span></span><br><span class="line">pthread_rwlock_destroy(&amp;rwlock);      <span class="comment">// 销毁读写锁</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="4-信号量-Semaphore"><a href="#4-信号量-Semaphore" class="headerlink" title="4. 信号量 (Semaphore)"></a>4. 信号量 (Semaphore)</h4><p>信号量是更通用的同步原语，可以实现互斥锁和条件变量的功能。</p>
+<h5 id="POSIX-信号量函数"><a href="#POSIX-信号量函数" class="headerlink" title="POSIX 信号量函数"></a>POSIX 信号量函数</h5><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;semaphore.h&gt;</span></span></span><br><span class="line"><span class="type">sem_t</span> sem;</span><br><span class="line">sem_init(&amp;sem, <span class="number">0</span>, <span class="number">1</span>);                 <span class="comment">// 初始化信号量(值为1表示互斥锁)</span></span><br><span class="line">sem_wait(&amp;sem);                       <span class="comment">// P操作，信号量减1</span></span><br><span class="line">sem_post(&amp;sem);                       <span class="comment">// V操作，信号量加1</span></span><br><span class="line">sem_destroy(&amp;sem);                    <span class="comment">// 销毁信号量</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="四、线程安全与可重入性"><a href="#四、线程安全与可重入性" class="headerlink" title="四、线程安全与可重入性"></a>四、线程安全与可重入性</h3><h4 id="1-线程安全函数"><a href="#1-线程安全函数" class="headerlink" title="1. 线程安全函数"></a>1. 线程安全函数</h4><p>线程安全函数可以被多个线程同时调用而不会产生竞态条件。例如：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 线程安全的随机数生成</span></span><br><span class="line"><span class="type">int</span> <span class="title function_">rand_r</span><span class="params">(<span class="type">unsigned</span> <span class="type">int</span> *seedp)</span>;</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-可重入函数"><a href="#2-可重入函数" class="headerlink" title="2. 可重入函数"></a>2. 可重入函数</h4><p>可重入函数在被中断时可以安全地被再次调用。例如：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 可重入的strtok函数</span></span><br><span class="line"><span class="type">char</span> *<span class="title function_">strtok_r</span><span class="params">(<span class="type">char</span> *str, <span class="type">const</span> <span class="type">char</span> *delim, <span class="type">char</span> **saveptr)</span>;</span><br></pre></td></tr></table></figure>
+
+<h3 id="五、多线程编程最佳实践"><a href="#五、多线程编程最佳实践" class="headerlink" title="五、多线程编程最佳实践"></a>五、多线程编程最佳实践</h3><h4 id="1-减少共享数据"><a href="#1-减少共享数据" class="headerlink" title="1. 减少共享数据"></a>1. 减少共享数据</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 线程局部存储</span></span><br><span class="line">__thread <span class="type">int</span> thread_local_data;</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-避免死锁"><a href="#2-避免死锁" class="headerlink" title="2. 避免死锁"></a>2. 避免死锁</h4><ul>
+<li>按相同顺序获取锁</li>
+<li>设置锁获取超时</li>
+</ul>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pthread_mutex_trylock(&amp;mutex);  <span class="comment">// 尝试加锁，立即返回</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="3-使用线程池"><a href="#3-使用线程池" class="headerlink" title="3. 使用线程池"></a>3. 使用线程池</h4><p>线程池可以避免频繁创建和销毁线程的开销：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 线程池基本结构</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="type">pthread_t</span> *threads;</span><br><span class="line">    <span class="type">int</span> thread_count;</span><br><span class="line">    <span class="comment">// 任务队列和同步机制</span></span><br><span class="line">&#125; ThreadPool;</span><br></pre></td></tr></table></figure>
+
+<h3 id="六、多线程调试与性能分析"><a href="#六、多线程调试与性能分析" class="headerlink" title="六、多线程调试与性能分析"></a>六、多线程调试与性能分析</h3><h4 id="1-调试工具"><a href="#1-调试工具" class="headerlink" title="1. 调试工具"></a>1. 调试工具</h4><ul>
+<li><strong><code>gdb</code></strong>：支持多线程调试</li>
+<li><strong><code>valgrind</code></strong>：检测内存泄漏和竞态条件</li>
+<li><strong><code>helgrind</code></strong>：专门检测线程竞态条件</li>
+</ul>
+<h4 id="2-性能分析工具"><a href="#2-性能分析工具" class="headerlink" title="2. 性能分析工具"></a>2. 性能分析工具</h4><ul>
+<li><strong><code>oprofile</code></strong>：系统级性能分析</li>
+<li><strong><code>gprof</code></strong>：分析程序热点</li>
+<li><strong><code>perf</code></strong>：Linux 性能分析工具</li>
+</ul>
+<h2 id="七、线程同步机制分析"><a href="#七、线程同步机制分析" class="headerlink" title="七、线程同步机制分析"></a>七、线程同步机制分析</h2><p>程序使用了两种线程同步机制：</p>
+<h3 id="1-互斥锁（Mutex）"><a href="#1-互斥锁（Mutex）" class="headerlink" title="1. 互斥锁（Mutex）"></a>1. 互斥锁（Mutex）</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">pthread_mutex_lock(&amp;mutex);</span><br><span class="line"><span class="comment">// 临界区代码</span></span><br><span class="line">pthread_mutex_unlock(&amp;mutex);</span><br></pre></td></tr></table></figure>
+
+<p>互斥锁用于保护对共享链表的操作，确保子线程插入节点和主线程删除节点这两个操作不会同时进行，避免数据竞争。</p>
+<h3 id="2-标志变量（Flag）"><a href="#2-标志变量（Flag）" class="headerlink" title="2. 标志变量（Flag）"></a>2. 标志变量（Flag）</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">while</span>(flag==<span class="number">0</span>)&#123;&#125;; <span class="comment">// 主线程等待</span></span><br><span class="line">flag=<span class="number">1</span>; <span class="comment">// 子线程设置</span></span><br></pre></td></tr></table></figure>
+
+<p>标志变量 <code>flag</code> 用于线程间的简单通信，子线程完成插入操作后将其置为 1，主线程通过循环检测该标志来判断何时可以开始删除操作。</p>
+<h2 id="八、多线程环境下的链表操作实现与解析"><a href="#八、多线程环境下的链表操作实现与解析" class="headerlink" title="八、多线程环境下的链表操作实现与解析"></a>八、多线程环境下的链表操作实现与解析</h2><p>在多线程编程中，对共享资源的操作需要特别谨慎，本文将详细解析一个基于 POSIX 线程的链表操作程序，分析其实现原理、线程同步机制以及潜在的问题。</p>
+<h3 id="1-程序功能概述"><a href="#1-程序功能概述" class="headerlink" title="1.程序功能概述"></a>1.程序功能概述</h3><p>这个程序展示了主线程与子线程协作完成链表操作的过程：</p>
+<ol>
+<li>主线程创建一个带头结点的空链表，并将其传递给子线程</li>
+<li>子线程通过尾插法向链表中插入 10 个数据节点，打印链表内容后退出</li>
+<li>主线程等待子线程完成插入操作，然后逐个删除链表节点直至链表为空</li>
+</ol>
+<h3 id="2-代码结构与实现分析"><a href="#2-代码结构与实现分析" class="headerlink" title="2.代码结构与实现分析"></a>2.代码结构与实现分析</h3><h4 id="数据结构定义"><a href="#数据结构定义" class="headerlink" title="数据结构定义"></a>数据结构定义</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">NODE</span>&#123;</span></span><br><span class="line">    <span class="type">int</span> val;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">NODE</span> *<span class="title">next</span>;</span></span><br><span class="line">&#125;node;</span><br><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">Linklist</span>&#123;</span></span><br><span class="line">    node *head;</span><br><span class="line">    <span class="type">int</span> size;</span><br><span class="line">&#125;Linklist;</span><br></pre></td></tr></table></figure>
+
+<p>程序定义了两个核心数据结构：</p>
+<ul>
+<li><code>node</code> 结构体表示链表节点，包含整数值 <code>val</code> 和指向下一个节点的指针 <code>next</code></li>
+<li><code>Linklist</code> 结构体管理链表，包含头指针 <code>head</code> 和记录节点数量的 <code>size</code></li>
+</ul>
+<h4 id="全局变量"><a href="#全局变量" class="headerlink" title="全局变量"></a>全局变量</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> flag=<span class="number">0</span>;</span><br><span class="line"><span class="type">pthread_mutex_t</span> mutex;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>flag</code> 作为标志变量，用于主线程判断子线程是否完成链表插入操作</li>
+<li><code>mutex</code> 是 POSIX 线程互斥锁，用于保护对共享链表的并发访问</li>
+</ul>
+<h4 id="子线程处理函数"><a href="#子线程处理函数" class="headerlink" title="子线程处理函数"></a>子线程处理函数</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> *<span class="title function_">handle</span><span class="params">(<span class="type">void</span> *arg)</span>&#123;</span><br><span class="line">    Linklist *<span class="built_in">list</span>=(Linklist*)arg;</span><br><span class="line">    node *tail=<span class="built_in">list</span>-&gt;head;</span><br><span class="line">    pthread_mutex_lock(&amp;mutex);</span><br><span class="line">    <span class="keyword">for</span>(<span class="type">int</span> i=<span class="number">0</span>;i&lt;<span class="number">10</span>;i++)&#123;</span><br><span class="line">        node *new_node=(node*)<span class="built_in">calloc</span>(<span class="number">1</span>,<span class="keyword">sizeof</span>(node));</span><br><span class="line">        new_node-&gt;val=(i+<span class="number">2</span>)*<span class="number">5</span>;</span><br><span class="line">        tail-&gt;next=new_node;</span><br><span class="line">        tail=new_node;</span><br><span class="line">        <span class="built_in">list</span>-&gt;size++;</span><br><span class="line">    &#125;</span><br><span class="line">    flag=<span class="number">1</span>;</span><br><span class="line">    node *p=<span class="built_in">list</span>-&gt;head;</span><br><span class="line">    <span class="keyword">for</span>(<span class="type">int</span> i=<span class="number">0</span>;i&lt;<span class="built_in">list</span>-&gt;size;i++)&#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;  %d  &quot;</span>,p-&gt;val);</span><br><span class="line">        p=p-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;\n&quot;</span>);</span><br><span class="line">    pthread_mutex_unlock(&amp;mutex);</span><br><span class="line">    pthread_exit(<span class="literal">NULL</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个函数是子线程的入口点，主要完成以下工作：</p>
+<ol>
+<li>获取主线程传递的链表指针</li>
+<li>加锁后开始向链表尾部插入 10 个节点（值为 10, 15, 20, ..., 55）</li>
+<li>设置标志变量 <code>flag</code> 为 1，表示插入操作已完成</li>
+<li>遍历链表并打印所有节点的值</li>
+<li>解锁并退出线程</li>
+</ol>
+<h4 id="主函数实现"><a href="#主函数实现" class="headerlink" title="主函数实现"></a>主函数实现</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">int</span> argc, <span class="type">char</span> *argv[])</span>&#123;                                  </span><br><span class="line">    Linklist *<span class="built_in">list</span>=(Linklist*)<span class="built_in">malloc</span>(<span class="keyword">sizeof</span>(Linklist));</span><br><span class="line">    node *head=(node*)<span class="built_in">calloc</span>(<span class="number">1</span>,<span class="keyword">sizeof</span>(node));</span><br><span class="line">    <span class="built_in">list</span>-&gt;head=head;</span><br><span class="line">    <span class="built_in">list</span>-&gt;size=<span class="number">1</span>;</span><br><span class="line">    ERROR_CHECK(head,<span class="literal">NULL</span>,<span class="string">&quot;node&quot;</span>);</span><br><span class="line">    ERROR_CHECK(<span class="built_in">list</span>,<span class="literal">NULL</span>,<span class="string">&quot;Linklist&quot;</span>);</span><br><span class="line">    </span><br><span class="line">    <span class="type">pthread_t</span> thread;</span><br><span class="line">    pthread_create(&amp;thread,<span class="literal">NULL</span>,handle,<span class="built_in">list</span>);</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">while</span>(flag==<span class="number">0</span>)&#123;&#125;;</span><br><span class="line">    </span><br><span class="line">    pthread_mutex_lock(&amp;mutex);</span><br><span class="line">    node *p=<span class="built_in">list</span>-&gt;head;</span><br><span class="line">    <span class="type">int</span> num=<span class="built_in">list</span>-&gt;size;</span><br><span class="line">    <span class="keyword">for</span>(<span class="type">int</span> i=<span class="number">0</span>;i&lt;num;i++)&#123;</span><br><span class="line">        <span class="built_in">list</span>-&gt;head=<span class="built_in">list</span>-&gt;head-&gt;next;</span><br><span class="line">        <span class="built_in">free</span>(p);</span><br><span class="line">        <span class="built_in">list</span>-&gt;size--;</span><br><span class="line">        p=<span class="built_in">list</span>-&gt;head;</span><br><span class="line">        <span class="keyword">if</span>(p==<span class="literal">NULL</span>)&#123;</span><br><span class="line">            <span class="built_in">printf</span>(<span class="string">&quot;链表删除完毕\n&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    pthread_mutex_unlock(&amp;mutex);</span><br><span class="line">    <span class="built_in">free</span>(<span class="built_in">list</span>);</span><br><span class="line">    pthread_join(thread,<span class="literal">NULL</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>主函数的执行流程</strong>：</p>
+<ol>
+<li>创建链表结构并初始化头结点</li>
+<li>创建子线程处理链表插入操作</li>
+<li>通过忙等待（spin-wait）方式等待子线程完成</li>
+<li>加锁后遍历链表，逐个删除节点</li>
+<li>释放链表结构内存并等待子线程结束</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/ae1b13b2/">https://hespethorn.github.io/posts/ae1b13b2/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Linux/">Linux</a><a class="post-meta__tags" href="/tags/%E4%BF%A1%E5%8F%B7/">信号</a><a class="post-meta__tags" href="/tags/pthread/">pthread</a><a class="post-meta__tags" href="/tags/%E4%BA%92%E6%96%A5%E9%94%81/">互斥锁</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5dbae0d/" title="CMake 案例实战：构建多文件计算项目">CMake 案例实战：构建多文件计算项目</a><time datetime="2024-10-02T15:33:18.000Z" title="Created 2024-10-02 23:33:18">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cda3cd81/" title="CMake 初步使用">CMake 初步使用</a><time datetime="2024-10-02T14:40:38.000Z" title="Created 2024-10-02 22:40:38">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b980104e/" title="linux：多线程编程中互斥访问与线程同步机制的理论与实践">linux：多线程编程中互斥访问与线程同步机制的理论与实践</a><time datetime="2023-02-14T12:12:06.000Z" title="Created 2023-02-14 20:12:06">2023-02-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ae1b13b2/" title="linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践">linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践</a><time datetime="2023-02-09T12:37:13.000Z" title="Created 2023-02-09 20:37:13">2023-02-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dc16c223/" title="信号与线程机制详解：从屏蔽位图到共享独立区域">信号与线程机制详解：从屏蔽位图到共享独立区域</a><time datetime="2023-01-18T12:41:11.000Z" title="Created 2023-01-18 20:41:11">2023-01-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/baa1fd95/" title="进程与线程中全局变量、变量、函数及主进程的差异剖析">进程与线程中全局变量、变量、函数及主进程的差异剖析</a><time datetime="2023-01-12T14:56:54.000Z" title="Created 2023-01-12 22:56:54">2023-01-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/998c94d/" title="Linux：进程间通信技术">Linux：进程间通信技术</a><time datetime="2022-12-24T14:52:38.000Z" title="Created 2022-12-24 22:52:38">2022-12-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7cf36d2/" title="Linux 系统监控利器：ps、free、top 指令深度解析">Linux 系统监控利器：ps、free、top 指令深度解析</a><time datetime="2022-12-11T12:50:02.000Z" title="Created 2022-12-11 20:50:02">2022-12-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e3f594d1/" title="Linux：为什么用 dup 而不是直接赋值">Linux：为什么用 dup 而不是直接赋值</a><time datetime="2022-12-05T15:56:03.000Z" title="Created 2022-12-05 23:56:03">2022-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f3bb7775/" title="Linux：输入输出与文件操作函数学习笔记整理">Linux：输入输出与文件操作函数学习笔记整理</a><time datetime="2022-11-29T11:29:03.000Z" title="Created 2022-11-29 19:29:03">2022-11-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/977e2aa9/" title="Linux：stat 与 fstat 函数学习笔记">Linux：stat 与 fstat 函数学习笔记</a><time datetime="2022-11-24T12:59:03.000Z" title="Created 2022-11-24 20:59:03">2022-11-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/701ef8f6/" title="Linux：基于 select 的即时聊天程序设计与实现">Linux：基于 select 的即时聊天程序设计与实现</a><time datetime="2022-11-05T15:59:41.000Z" title="Created 2022-11-05 23:59:41">2022-11-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/701ef8f6/" title="Linux：内存映射实现文件复制详解">Linux：内存映射实现文件复制详解</a><time datetime="2022-10-07T05:59:41.000Z" title="Created 2022-10-07 13:59:41">2022-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/417a14db/" title="Linux：实现目录树结构打印">Linux：实现目录树结构打印</a><time datetime="2022-10-02T05:59:29.000Z" title="Created 2022-10-02 13:59:29">2022-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2402767f/" title="Linux：文件系统编程函数统计">Linux：文件系统编程函数统计</a><time datetime="2022-10-01T14:55:12.000Z" title="Created 2022-10-01 22:55:12">2022-10-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2402767f/" title="文件系统编程深度解析：从目录流到 IO 多路复用">文件系统编程深度解析：从目录流到 IO 多路复用</a><time datetime="2022-09-26T14:11:42.000Z" title="Created 2022-09-26 22:11:42">2022-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/26dd11b4/" title="探秘 Linux 目录流：从概念到实践的深度解析">探秘 Linux 目录流：从概念到实践的深度解析</a><time datetime="2022-09-20T15:01:42.000Z" title="Created 2022-09-20 23:01:42">2022-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/15bdd4f8/" title="Linux：类似ls -al的目录列表程序">Linux：类似ls -al的目录列表程序</a><time datetime="2022-08-25T14:12:29.000Z" title="Created 2022-08-25 22:12:29">2022-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/624b716d/" title="Linux：测试不同缓冲区大小对文件复制性能的影响">Linux：测试不同缓冲区大小对文件复制性能的影响</a><time datetime="2022-08-17T16:12:18.000Z" title="Created 2022-08-18 00:12:18">2022-08-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/458961e4/" title="Linux新手入门：GNU工具链实战笔记（从“啥都不懂”到“能打能修”）">Linux新手入门：GNU工具链实战笔记（从“啥都不懂”到“能打能修”）</a><time datetime="2022-06-28T14:32:11.000Z" title="Created 2022-06-28 22:32:11">2022-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e476ab70/" title="Linux 基础操作与核心概念详解">Linux 基础操作与核心概念详解</a><time datetime="2022-06-18T14:12:36.000Z" title="Created 2022-06-18 22:12:36">2022-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/195fb17c/" title="Linux：从极客玩具到全球技术基石的传奇之路">Linux：从极客玩具到全球技术基石的传奇之路</a><time datetime="2022-06-14T15:46:13.000Z" title="Created 2022-06-14 23:46:13">2022-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/de790f21/" title="我的 Linux 学习计划书">我的 Linux 学习计划书</a><time datetime="2022-06-14T13:35:22.000Z" title="Created 2022-06-14 21:35:22">2022-06-14</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

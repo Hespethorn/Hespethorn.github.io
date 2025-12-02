@@ -1,0 +1,531 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Linux：进程间通信技术 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、什么是共享内存？共享内存就像是一块大家都能直接访问的公共黑板，不同的进程可以直接在这块黑板上读写数据。和传统的进程间通信方式相比，共享内存不需要在内核和进程之间反复拷贝数据，大大减少了数据传输的开销。想象一下，传统方式是把资料从一个部门复印一份再送到另一个部门，而共享内存则是让两个部门直接看同一份资料，效率自然高得多。所以，在实时数据处理、数据库缓存、图像处理这些对数据传输速度要求极高的场景中">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux：进程间通信技术">
+<meta property="og:url" content="https://hespethorn.github.io/posts/998c94d/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、什么是共享内存？共享内存就像是一块大家都能直接访问的公共黑板，不同的进程可以直接在这块黑板上读写数据。和传统的进程间通信方式相比，共享内存不需要在内核和进程之间反复拷贝数据，大大减少了数据传输的开销。想象一下，传统方式是把资料从一个部门复印一份再送到另一个部门，而共享内存则是让两个部门直接看同一份资料，效率自然高得多。所以，在实时数据处理、数据库缓存、图像处理这些对数据传输速度要求极高的场景中">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2022-12-24T14:52:38.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:46:31.579Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="共享内存">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Linux：进程间通信技术",
+  "url": "https://hespethorn.github.io/posts/998c94d/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2022-12-24T14:52:38.000Z",
+  "dateModified": "2025-07-12T15:46:31.579Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/998c94d/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Linux：进程间通信技术',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Linux：进程间通信技术</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Linux：进程间通信技术</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2022-12-24T14:52:38.000Z" title="Created 2022-12-24 22:52:38">2022-12-24</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Linux/">Linux</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>7mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、什么是共享内存？"><a href="#一、什么是共享内存？" class="headerlink" title="一、什么是共享内存？"></a>一、什么是共享内存？</h2><p>共享内存就像是一块大家都能直接访问的公共黑板，不同的进程可以直接在这块黑板上读写数据。和传统的进程间通信方式相比，共享内存不需要在内核和进程之间反复拷贝数据，大大减少了数据传输的开销。想象一下，传统方式是把资料从一个部门复印一份再送到另一个部门，而共享内存则是让两个部门直接看同一份资料，效率自然高得多。所以，在实时数据处理、数据库缓存、图像处理这些对数据传输速度要求极高的场景中，共享内存就成了开发者们的首选。</p>
+<h2 id="二、共享内存是如何工作的？"><a href="#二、共享内存是如何工作的？" class="headerlink" title="二、共享内存是如何工作的？"></a>二、共享内存是如何工作的？</h2><p>以<code> Linux</code> 系统为例，常见的共享内存实现方式有<code>System V</code>共享内存和<code>POSIX</code>共享内存，它们各有特点，下面我们分别来看其实现步骤。</p>
+<h3 id="1-System-V-共享内存"><a href="#1-System-V-共享内存" class="headerlink" title="1. System V 共享内存"></a>1. System V 共享内存</h3><p><strong>创建或获取共享内存段</strong>：首先，我们需要用<code>ftok</code>函数生成一个唯一的 “钥匙”（键值），它根据一个已存在的文件路径和一个项目 ID 来生成，这个键值就像进入共享内存房间的钥匙。例如：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;sys/types.h&gt;</span><br><span class="line">#include &lt;sys/ipc.h&gt;</span><br><span class="line">key_t key = ftok(&quot;.&quot;, &#x27;a&#x27;);</span><br></pre></td></tr></table></figure>
+
+<p>有了 “钥匙” 后，就可以用<code>shmget</code>函数创建或获取共享内存段。如果是创建新的，需要指定共享内存的大小和权限：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;sys/ipc.h&gt;</span><br><span class="line">#include &lt;sys/shm.h&gt;</span><br><span class="line">int shmid = shmget(key, 1024, IPC_CREAT | 0666);</span><br></pre></td></tr></table></figure>
+
+<p>这里1024表示共享内存大小为 1024 字节，<code>IPC_CREAT</code> | <code>0666</code>表示如果不存在就创建，并且设置读写权限为 0666。</p>
+<p><strong>附加共享内存段</strong>：创建好共享内存后，还需要用<code>shmat</code>函数把它 “连接” 到当前进程的地址空间，这样进程就能访问这块内存了：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;sys/types.h&gt;</span><br><span class="line">#include &lt;sys/shm.h&gt;</span><br><span class="line">char *shmaddr = (char *)shmat(shmid, NULL, 0);</span><br></pre></td></tr></table></figure>
+
+<p><code>shmid</code>是<code>shmget</code>返回的共享内存标识符，NULL表示让系统自动分配映射地址，0表示读写权限。</p>
+<p><strong>访问共享内存</strong>：连接成功后，就可以像操作普通内存一样，直接通过指针在共享内存里读写数据。</p>
+<p> <strong>分离共享内存段</strong>：当进程不再需要使用共享内存时，要用<code>shmdt</code>函数把它从进程地址空间中分离出来。如果想要彻底删除共享内存段，可以使用<code>shmctl</code>函数，<code>IPC_RMID</code>命令会标记共享内存段为删除状态，等所有进程都分离后，系统就会真正删除它。</p>
+<h3 id="2-POSIX-共享内存"><a href="#2-POSIX-共享内存" class="headerlink" title="2. POSIX 共享内存"></a>2. POSIX 共享内存</h3><p><strong>创建或打开共享内存对象</strong>：使用<code>shm_open</code>函数，通过一个名称来创建或打开共享内存对象，同时需要指定权限和文件模式：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;fcntl.h&gt;</span><br><span class="line">#include &lt;sys/mman.h&gt;</span><br><span class="line">#include &lt;sys/stat.h&gt;</span><br><span class="line">int shm_fd = shm_open(&quot;/my_shared_memory&quot;, O_CREAT | O_RDWR, 0666);</span><br></pre></td></tr></table></figure>
+
+<p>这里&quot;&#x2F;my_shared_memory&quot;是共享内存对象的名称，O_CREAT | O_RDWR表示如果不存在则创建且以读写模式打开，0666是文件权限。</p>
+<p><strong>设置共享内存大小</strong>：使用<code>ftruncate</code>函数设置共享内存的大小：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ftruncate(shm_fd, 1024);</span><br></pre></td></tr></table></figure>
+
+<p>这里将共享内存大小设置为 1024 字节。</p>
+<p><strong>映射共享内存到进程地址空间</strong>：使用<code>mmap</code>函数将共享内存对象映射到进程的地址空间：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">void *shmaddr = mmap(0, 1024, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);</span><br></pre></td></tr></table></figure>
+
+<p>0表示让系统自动选择映射地址，1024是共享内存大小，<code>PROT_READ</code> | <code>PROT_WRITE</code>表示可读可写，<code>MAP_SHARED</code>表示共享映射，<code>shm_fd</code>是<code>shm_open</code>返回的文件描述符，最后的0是偏移量。</p>
+<p><strong>访问共享内存</strong>：映射成功后，即可对共享内存进行读写操作。</p>
+<p><strong>解除映射与关闭共享内存对象</strong>：使用<code>munmap</code>函数解除共享内存的映射，使用<code>shm_unlink</code>函数删除共享内存对象名称，当所有进程都解除映射后，系统会自动释放共享内存资源：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">munmap(shmaddr, 1024);</span><br><span class="line">shm_unlink(&quot;/my_shared_memory&quot;);</span><br></pre></td></tr></table></figure>
+
+<h2 id="三、System-V-与-POSIX-共享内存对比"><a href="#三、System-V-与-POSIX-共享内存对比" class="headerlink" title="三、System V 与 POSIX 共享内存对比"></a>三、System V 与 POSIX 共享内存对比</h2><table>
+<thead>
+<tr>
+<th>对比项</th>
+<th>System V 共享内存</th>
+<th>POSIX 共享内存</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>创建方式</strong></td>
+<td>通过<code>ftok</code>生成键值，再用<code>shmget</code>创建，依赖文件系统路径和项目 ID</td>
+<td>直接用<code>shm_open</code>通过名称创建，类似文件操作，更直观</td>
+</tr>
+<tr>
+<td><strong>函数接口</strong></td>
+<td>函数命名风格较传统，操作步骤多，如<code>shmget</code>、<code>shmat</code>等多个函数配合</td>
+<td>函数接口更接近文件操作函数，如<code>shm_open</code>、<code>mmap</code>，概念更清晰</td>
+</tr>
+<tr>
+<td><strong>生命周期管理</strong></td>
+<td>删除需显式调用<code>shmctl</code>设置<code>IPC_RMID</code>，且要等待所有进程分离</td>
+<td>使用<code>shm_unlink</code>删除名称，所有进程解除映射后自动释放，管理更简单</td>
+</tr>
+<tr>
+<td><strong>同步机制</strong></td>
+<td>本身不提供同步机制，需额外借助信号量等</td>
+<td>可结合 POSIX 信号量、互斥锁等，与共享内存接口兼容性更好</td>
+</tr>
+<tr>
+<td><strong>跨平台性</strong></td>
+<td>主要在 UNIX 和 Linux 系统，跨平台性差</td>
+<td>在 Linux、Mac 等多种系统广泛支持，跨平台性好</td>
+</tr>
+</tbody></table>
+<h2 id="四、共享内存的优势与应用场景"><a href="#四、共享内存的优势与应用场景" class="headerlink" title="四、共享内存的优势与应用场景"></a>四、共享内存的优势与应用场景</h2><h3 id="优势"><a href="#优势" class="headerlink" title="优势"></a>优势</h3><ol>
+<li><p><strong>高效性</strong>：少了数据在内核和进程之间拷贝的步骤，读写速度极快，能大幅提升数据传输效率。</p>
+</li>
+<li><p><strong>大数据量友好</strong>：对于需要传输大量数据的场景，共享内存完全能轻松应对，不会出现性能瓶颈。</p>
+</li>
+<li><p><strong>灵活自由</strong>：作为公共缓冲区，进程可以根据自己的需求随意读写，方便进程间协作。</p>
+</li>
+</ol>
+<h3 id="应用场景"><a href="#应用场景" class="headerlink" title="应用场景"></a>应用场景</h3><ol>
+<li><p><strong>实时数据处理</strong>：在股票交易、期货行情分析、传感器数据采集等实时性要求高的场景中，共享内存能快速传递数据，保证系统及时响应。</p>
+</li>
+<li><p><strong>图像处理与视频处理</strong>：多个进程需要共享图像或视频数据时，共享内存能让数据共享变得高效，加快处理速度。</p>
+</li>
+<li><p><strong>高性能计算</strong>：在大型模型训练、AI 计算等大规模数据共享场景下，共享内存能显著提升计算效率。</p>
+</li>
+<li><p><strong>数据库系统</strong>：数据库通过共享内存可以快速交换数据，减少对硬盘的频繁访问，提升整体性能。</p>
+</li>
+</ol>
+<h2 id="五、使用共享内存的注意事项"><a href="#五、使用共享内存的注意事项" class="headerlink" title="五、使用共享内存的注意事项"></a>五、使用共享内存的注意事项</h2><p>虽然共享内存很强大，但使用时也有不少 “坑” 需要注意：</p>
+<ol>
+<li><p><strong>数据同步与互斥</strong>：因为多个进程都能访问共享内存，就像多个人同时用一块黑板写字，如果不加以控制，就会出现数据混乱。所以需要使用信号量、互斥锁等同步机制，保证数据的一致性，避免竞态条件。</p>
+</li>
+<li><p><strong>内存管理</strong>：共享内存的创建、连接、分离和删除都要妥善处理，不然容易出现内存泄漏，浪费系统资源，甚至引发程序崩溃。</p>
+</li>
+</ol>
+<h2 id="六、示例代码"><a href="#六、示例代码" class="headerlink" title="六、示例代码"></a>六、示例代码</h2><h3 id="1-System-V-共享内存示例代码"><a href="#1-System-V-共享内存示例代码" class="headerlink" title="1. System V 共享内存示例代码"></a>1. System V 共享内存示例代码</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;iostream&gt;</span><br><span class="line">#include &lt;sys/types.h&gt;</span><br><span class="line">#include &lt;sys/ipc.h&gt;</span><br><span class="line">#include &lt;sys/shm.h&gt;</span><br><span class="line">#include &lt;string&gt;</span><br><span class="line"></span><br><span class="line">const int SHM_SIZE = 1024; // 共享内存大小</span><br><span class="line"></span><br><span class="line">int main() &#123;</span><br><span class="line">    // 创建或获取共享内存</span><br><span class="line">    key_t key = ftok(&quot;.&quot;, &#x27;a&#x27;);</span><br><span class="line">    int shmid = shmget(key, SHM_SIZE, IPC_CREAT | 0666);</span><br><span class="line">    if (shmid == -1) &#123;</span><br><span class="line">        perror(&quot;shmget&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 附加共享内存</span><br><span class="line">    char *shmaddr = (char *)shmat(shmid, NULL, 0);</span><br><span class="line">    if (shmaddr == (char *)-1) &#123;</span><br><span class="line">        perror(&quot;shmat&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 写入数据到共享内存</span><br><span class="line">    std::string message = &quot;Hello, shared memory!&quot;;</span><br><span class="line">    std::strcpy(shmaddr, message.c_str());</span><br><span class="line"></span><br><span class="line">    // 分离共享内存</span><br><span class="line">    if (shmdt(shmaddr) == -1) &#123;</span><br><span class="line">        perror(&quot;shmdt&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 标记共享内存段为删除状态（所有进程分离后真正删除）</span><br><span class="line">    if (shmctl(shmid, IPC_RMID, NULL) == -1) &#123;</span><br><span class="line">        perror(&quot;shmctl&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-POSIX-共享内存示例代码"><a href="#2-POSIX-共享内存示例代码" class="headerlink" title="2. POSIX 共享内存示例代码"></a>2. POSIX 共享内存示例代码</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;iostream&gt;</span><br><span class="line">#include &lt;fcntl.h&gt;</span><br><span class="line">#include &lt;sys/mman.h&gt;</span><br><span class="line">#include &lt;sys/stat.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;string&gt;</span><br><span class="line"></span><br><span class="line">const int SHM_SIZE = 1024; // 共享内存大小</span><br><span class="line"></span><br><span class="line">int main() &#123;</span><br><span class="line">    // 创建或打开共享内存对象</span><br><span class="line">    int shm_fd = shm_open(&quot;/my_shared_memory&quot;, O_CREAT | O_RDWR, 0666);</span><br><span class="line">    if (shm_fd == -1) &#123;</span><br><span class="line">        perror(&quot;shm_open&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 设置共享内存大小</span><br><span class="line">    if (ftruncate(shm_fd, SHM_SIZE) == -1) &#123;</span><br><span class="line">        perror(&quot;ftruncate&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 映射共享内存到进程地址空间</span><br><span class="line">    void *shmaddr = mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);</span><br><span class="line">    if (shmaddr == MAP_FAILED) &#123;</span><br><span class="line">        perror(&quot;mmap&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 写入数据到共享内存</span><br><span class="line">    std::string message = &quot;Hello, POSIX shared memory!&quot;;</span><br><span class="line">    std::strcpy((char *)shmaddr, message.c_str());</span><br><span class="line"></span><br><span class="line">    // 解除映射</span><br><span class="line">    if (munmap(shmaddr, SHM_SIZE) == -1) &#123;</span><br><span class="line">        perror(&quot;munmap&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 关闭共享内存对象</span><br><span class="line">    if (close(shm_fd) == -1) &#123;</span><br><span class="line">        perror(&quot;close&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 删除共享内存对象名称</span><br><span class="line">    if (shm_unlink(&quot;/my_shared_memory&quot;) == -1) &#123;</span><br><span class="line">        perror(&quot;shm_unlink&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/998c94d/">https://hespethorn.github.io/posts/998c94d/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Linux/">Linux</a><a class="post-meta__tags" href="/tags/%E5%85%B1%E4%BA%AB%E5%86%85%E5%AD%98/">共享内存</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5dbae0d/" title="CMake 案例实战：构建多文件计算项目">CMake 案例实战：构建多文件计算项目</a><time datetime="2024-10-02T15:33:18.000Z" title="Created 2024-10-02 23:33:18">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cda3cd81/" title="CMake 初步使用">CMake 初步使用</a><time datetime="2024-10-02T14:40:38.000Z" title="Created 2024-10-02 22:40:38">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b980104e/" title="linux：多线程编程中互斥访问与线程同步机制的理论与实践">linux：多线程编程中互斥访问与线程同步机制的理论与实践</a><time datetime="2023-02-14T12:12:06.000Z" title="Created 2023-02-14 20:12:06">2023-02-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ae1b13b2/" title="linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践">linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践</a><time datetime="2023-02-09T12:37:13.000Z" title="Created 2023-02-09 20:37:13">2023-02-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dc16c223/" title="信号与线程机制详解：从屏蔽位图到共享独立区域">信号与线程机制详解：从屏蔽位图到共享独立区域</a><time datetime="2023-01-18T12:41:11.000Z" title="Created 2023-01-18 20:41:11">2023-01-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/baa1fd95/" title="进程与线程中全局变量、变量、函数及主进程的差异剖析">进程与线程中全局变量、变量、函数及主进程的差异剖析</a><time datetime="2023-01-12T14:56:54.000Z" title="Created 2023-01-12 22:56:54">2023-01-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/998c94d/" title="Linux：进程间通信技术">Linux：进程间通信技术</a><time datetime="2022-12-24T14:52:38.000Z" title="Created 2022-12-24 22:52:38">2022-12-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7cf36d2/" title="Linux 系统监控利器：ps、free、top 指令深度解析">Linux 系统监控利器：ps、free、top 指令深度解析</a><time datetime="2022-12-11T12:50:02.000Z" title="Created 2022-12-11 20:50:02">2022-12-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e3f594d1/" title="Linux：为什么用 dup 而不是直接赋值">Linux：为什么用 dup 而不是直接赋值</a><time datetime="2022-12-05T15:56:03.000Z" title="Created 2022-12-05 23:56:03">2022-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f3bb7775/" title="Linux：输入输出与文件操作函数学习笔记整理">Linux：输入输出与文件操作函数学习笔记整理</a><time datetime="2022-11-29T11:29:03.000Z" title="Created 2022-11-29 19:29:03">2022-11-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/977e2aa9/" title="Linux：stat 与 fstat 函数学习笔记">Linux：stat 与 fstat 函数学习笔记</a><time datetime="2022-11-24T12:59:03.000Z" title="Created 2022-11-24 20:59:03">2022-11-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/701ef8f6/" title="Linux：基于 select 的即时聊天程序设计与实现">Linux：基于 select 的即时聊天程序设计与实现</a><time datetime="2022-11-05T15:59:41.000Z" title="Created 2022-11-05 23:59:41">2022-11-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/701ef8f6/" title="Linux：内存映射实现文件复制详解">Linux：内存映射实现文件复制详解</a><time datetime="2022-10-07T05:59:41.000Z" title="Created 2022-10-07 13:59:41">2022-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/417a14db/" title="Linux：实现目录树结构打印">Linux：实现目录树结构打印</a><time datetime="2022-10-02T05:59:29.000Z" title="Created 2022-10-02 13:59:29">2022-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2402767f/" title="Linux：文件系统编程函数统计">Linux：文件系统编程函数统计</a><time datetime="2022-10-01T14:55:12.000Z" title="Created 2022-10-01 22:55:12">2022-10-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2402767f/" title="文件系统编程深度解析：从目录流到 IO 多路复用">文件系统编程深度解析：从目录流到 IO 多路复用</a><time datetime="2022-09-26T14:11:42.000Z" title="Created 2022-09-26 22:11:42">2022-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/26dd11b4/" title="探秘 Linux 目录流：从概念到实践的深度解析">探秘 Linux 目录流：从概念到实践的深度解析</a><time datetime="2022-09-20T15:01:42.000Z" title="Created 2022-09-20 23:01:42">2022-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/15bdd4f8/" title="Linux：类似ls -al的目录列表程序">Linux：类似ls -al的目录列表程序</a><time datetime="2022-08-25T14:12:29.000Z" title="Created 2022-08-25 22:12:29">2022-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/624b716d/" title="Linux：测试不同缓冲区大小对文件复制性能的影响">Linux：测试不同缓冲区大小对文件复制性能的影响</a><time datetime="2022-08-17T16:12:18.000Z" title="Created 2022-08-18 00:12:18">2022-08-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/458961e4/" title="Linux新手入门：GNU工具链实战笔记（从“啥都不懂”到“能打能修”）">Linux新手入门：GNU工具链实战笔记（从“啥都不懂”到“能打能修”）</a><time datetime="2022-06-28T14:32:11.000Z" title="Created 2022-06-28 22:32:11">2022-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e476ab70/" title="Linux 基础操作与核心概念详解">Linux 基础操作与核心概念详解</a><time datetime="2022-06-18T14:12:36.000Z" title="Created 2022-06-18 22:12:36">2022-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/195fb17c/" title="Linux：从极客玩具到全球技术基石的传奇之路">Linux：从极客玩具到全球技术基石的传奇之路</a><time datetime="2022-06-14T15:46:13.000Z" title="Created 2022-06-14 23:46:13">2022-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/de790f21/" title="我的 Linux 学习计划书">我的 Linux 学习计划书</a><time datetime="2022-06-14T13:35:22.000Z" title="Created 2022-06-14 21:35:22">2022-06-14</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

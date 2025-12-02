@@ -1,0 +1,516 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>基于多人聊天室系统的实现，详细学习 epoll 函数基础 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言：在 Linux 高并发网络编程中，epoll 作为事件驱动的 I&#x2F;O 多路复用方案，是构建高性能服务器的核心技术。本文从原理、使用到实践，全面解析 epoll 的技术要点。 一、epoll 的核心优势 事件驱动：相较于select&#x2F;poll的遍历式轮询，epoll 采用事件驱动架构，由内核主动推送就绪 I&#x2F;O 事件。高并发场景下，仅少量连接就绪时，epoll 可精准定位活">
+<meta property="og:type" content="article">
+<meta property="og:title" content="基于多人聊天室系统的实现，详细学习 epoll 函数基础">
+<meta property="og:url" content="https://hespethorn.github.io/posts/a898a0c/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言：在 Linux 高并发网络编程中，epoll 作为事件驱动的 I&#x2F;O 多路复用方案，是构建高性能服务器的核心技术。本文从原理、使用到实践，全面解析 epoll 的技术要点。 一、epoll 的核心优势 事件驱动：相较于select&#x2F;poll的遍历式轮询，epoll 采用事件驱动架构，由内核主动推送就绪 I&#x2F;O 事件。高并发场景下，仅少量连接就绪时，epoll 可精准定位活">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2023-05-11T12:28:55.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:35:28.058Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="计算机网络">
+<meta property="article:tag" content="多人聊天">
+<meta property="article:tag" content="select">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "基于多人聊天室系统的实现，详细学习 epoll 函数基础",
+  "url": "https://hespethorn.github.io/posts/a898a0c/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2023-05-11T12:28:55.000Z",
+  "dateModified": "2025-07-12T15:35:28.058Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/a898a0c/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '基于多人聊天室系统的实现，详细学习 epoll 函数基础',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">基于多人聊天室系统的实现，详细学习 epoll 函数基础</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">基于多人聊天室系统的实现，详细学习 epoll 函数基础</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2023-05-11T12:28:55.000Z" title="Created 2023-05-11 20:28:55">2023-05-11</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Computer-Networking/">Computer-Networking</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>5mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="导言："><a href="#导言：" class="headerlink" title="导言："></a>导言：</h2><p>在 Linux 高并发网络编程中，<code>epoll</code> 作为事件驱动的 I&#x2F;O 多路复用方案，是构建高性能服务器的核心技术。本文从原理、使用到实践，全面解析 <code>epoll</code> 的技术要点。</p>
+<h2 id="一、epoll-的核心优势"><a href="#一、epoll-的核心优势" class="headerlink" title="一、epoll 的核心优势"></a>一、epoll 的核心优势</h2><ul>
+<li><p><strong>事件驱动</strong>：相较于<code>select/poll</code>的遍历式轮询，<code>epoll</code> 采用事件驱动架构，由内核主动推送就绪 I&#x2F;O 事件。高并发场景下，仅少量连接就绪时，<code>epoll </code>可精准定位活跃连接，避免全量扫描带来的 CPU 损耗，大幅提升资源利用率。</p>
+</li>
+<li><p><strong>海量连接</strong>：<code>select</code>受限于固定长度数组（默认上限 1024），难以应对高并发。<code>epoll</code> 采用动态数据结构，连接上限仅受系统文件描述符表限制（可通过<code>ulimit -n</code>调整），可支撑数万至数十万级并发连接。</p>
+</li>
+<li><p><strong>高效结构</strong>：<code>epoll</code> 以红黑树管理监控列表，文件描述符操作时间复杂度为<code>O(log n)</code>；就绪事件链表支持<code>O(1)</code>级快速检索。这种设计确保海量连接下的高效响应与处理。</p>
+</li>
+</ul>
+<h2 id="二、核心函数解析"><a href="#二、核心函数解析" class="headerlink" title="二、核心函数解析"></a>二、核心函数解析</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/epoll.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">epoll_create</span><span class="params">(<span class="type">int</span> size)</span>;</span><br><span class="line"><span class="comment">// 创建 epoll 实例，size 参数已废弃（内核2.6.8后仅保留形式参数）</span></span><br><span class="line"><span class="comment">// 返回值：成功时返回非负的文件描述符（epfd），失败返回 -1 并设置 errno</span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">epoll_ctl</span><span class="params">(<span class="type">int</span> epfd, <span class="type">int</span> op, <span class="type">int</span> fd, <span class="keyword">struct</span> epoll_event *event)</span>;</span><br><span class="line"><span class="comment">// 对 epoll 实例进行事件管理，支持添加（ADD）、修改（MOD）、删除（DEL）操作</span></span><br><span class="line"><span class="comment">// epfd：epoll_create 返回的文件描述符</span></span><br><span class="line"><span class="comment">// op：操作类型，取值为 EPOLL_CTL_ADD、EPOLL_CTL_MOD、EPOLL_CTL_DEL</span></span><br><span class="line"><span class="comment">// fd：需要监控的目标文件描述符</span></span><br><span class="line"><span class="comment">// event：指向 struct epoll_event 的指针，定义事件类型和用户数据</span></span><br><span class="line"><span class="comment">// 返回值：成功返回 0，失败返回 -1 并设置 errno</span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">epoll_wait</span><span class="params">(<span class="type">int</span> epfd, <span class="keyword">struct</span> epoll_event *events, <span class="type">int</span> maxevents, <span class="type">int</span> timeout)</span>;</span><br><span class="line"><span class="comment">// 阻塞等待已注册文件描述符上的就绪事件</span></span><br><span class="line"><span class="comment">// epfd：epoll_create 返回的文件描述符</span></span><br><span class="line"><span class="comment">// events：用于存放就绪事件的数组</span></span><br><span class="line"><span class="comment">// maxevents：events 数组的最大长度</span></span><br><span class="line"><span class="comment">// timeout：超时时间（毫秒），-1 表示永久阻塞，0 表示非阻塞立即返回</span></span><br><span class="line"><span class="comment">// 返回值：就绪事件的数量，超时返回 0，失败返回 -1 并设置 errno</span></span><br></pre></td></tr></table></figure>
+
+<p>每个函数在实际应用中承担关键职责：<code>epoll_create</code> 初始化事件监控上下文；<code>epoll_ctl</code> 动态维护监控的文件描述符集合及对应事件；<code>epoll_wait</code> 高效获取就绪事件，配合用户定义的回调逻辑实现异步 I&#x2F;O 处理。</p>
+<h2 id="三、与-select-poll-的对比"><a href="#三、与-select-poll-的对比" class="headerlink" title="三、与 select&#x2F;poll 的对比"></a>三、与 select&#x2F;poll 的对比</h2><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>select</th>
+<th>poll</th>
+<th>epoll</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>数据结构</td>
+<td>固定大小位图</td>
+<td>动态数组</td>
+<td>红黑树 + 就绪链表</td>
+</tr>
+<tr>
+<td>最大连接数</td>
+<td>1024</td>
+<td>系统限制</td>
+<td>系统限制</td>
+</tr>
+<tr>
+<td>查询效率</td>
+<td>O (n) 轮询</td>
+<td>O (n) 轮询</td>
+<td>O (1) 事件获取</td>
+</tr>
+<tr>
+<td>触发模式</td>
+<td>LT</td>
+<td>LT</td>
+<td>LT&#x2F;ET</td>
+</tr>
+<tr>
+<td>内存拷贝</td>
+<td>每次全量</td>
+<td>每次全量</td>
+<td>仅初始化时一次</td>
+</tr>
+</tbody></table>
+<h2 id="四、触发模式与应用"><a href="#四、触发模式与应用" class="headerlink" title="四、触发模式与应用"></a>四、触发模式与应用</h2><p><code>epoll </code>提供水平触发（LT）和边缘触发（ET）两种模式，在事件处理与应用场景上差异明显：</p>
+<ul>
+<li><strong>水平触发（LT）</strong>：默认模式，持续触发就绪事件。文件描述符 I&#x2F;O 就绪时，<code>epoll_wait</code> 会反复返回，直到数据处理完毕。例如套接字接收数据，缓冲区有未读数据就持续触发可读事件。编程简单，无需复杂非阻塞处理，适合常规网络应用。</li>
+<li><strong>边缘触发（ET）</strong>：仅在 I&#x2F;O 状态变化时触发一次。如套接字新数据到达或连接状态改变，<code>epoll_wait</code> 才响应。需将文件描述符设为非阻塞，否则未处理完数据就不再触发，易丢数据。该模式减少冗余，提升资源利用率，适用于高并发场景。</li>
+</ul>
+<h2 id="五、典型使用流程"><a href="#五、典型使用流程" class="headerlink" title="五、典型使用流程"></a>五、典型使用流程</h2><p><strong>创建实例</strong></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. </span></span><br><span class="line"><span class="comment">// epoll_create 函数用于创建一个 epoll 实例，返回文件描述符 epfd</span></span><br><span class="line"><span class="comment">// 参数 size 在 Linux 2.6.8 之后已被废弃，但仍需传入大于 0 的值，一般传入 1</span></span><br><span class="line"><span class="type">int</span> epfd = epoll_create(<span class="number">1</span>);</span><br><span class="line"><span class="keyword">if</span> (epfd == <span class="number">-1</span>) &#123;</span><br><span class="line">    perror(<span class="string">&quot;epoll_create&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>注册监听socket</strong></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 定义 epoll_event 结构体，用于描述事件类型和关联的文件描述符</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">epoll_event</span> <span class="title">ev</span>;</span></span><br><span class="line"><span class="comment">// 设置感兴趣的事件为读事件（EPOLLIN）</span></span><br><span class="line">ev.events = EPOLLIN; </span><br><span class="line"><span class="comment">// 关联需要监听的文件描述符（如监听客户端连接的 listen_fd）</span></span><br><span class="line">ev.data.fd = listen_fd; </span><br><span class="line"></span><br><span class="line"><span class="comment">// epoll_ctl 函数用于控制 epoll 实例，执行添加、修改或删除操作</span></span><br><span class="line"><span class="comment">// EPOLL_CTL_ADD 表示将 listen_fd 添加到 epoll 监听列表</span></span><br><span class="line"><span class="keyword">if</span> (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_fd, &amp;ev) == <span class="number">-1</span>) &#123;</span><br><span class="line">    perror(<span class="string">&quot;epoll_ctl: listen_fd&quot;</span>);</span><br><span class="line">    close(epfd);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>事件循环</strong></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">// 定义用于存储就绪事件的数组 events，MAX_EVENTS 表示一次最多处理的事件数</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">epoll_event</span> <span class="title">events</span>[<span class="title">MAX_EVENTS</span>];</span></span><br><span class="line"><span class="keyword">while</span> (<span class="number">1</span>) &#123;</span><br><span class="line">    <span class="comment">// epoll_wait 函数阻塞等待事件发生，返回就绪事件的数量</span></span><br><span class="line">    <span class="comment">// -1 表示永久阻塞，直到有事件发生</span></span><br><span class="line">    <span class="type">int</span> nfds = epoll_wait(epfd, &amp;events, MAX_EVENTS, <span class="number">-1</span>);</span><br><span class="line">    <span class="keyword">if</span> (nfds == <span class="number">-1</span>) &#123;</span><br><span class="line">        <span class="keyword">if</span> (errno != EINTR) &#123;</span><br><span class="line">            perror(<span class="string">&quot;epoll_wait&quot;</span>);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (nfds == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">// 超时，可根据需求处理或忽略</span></span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; nfds; i++) &#123;</span><br><span class="line">            <span class="comment">// 处理新连接</span></span><br><span class="line">            <span class="keyword">if</span> (events[i].data.fd == listen_fd) &#123;</span><br><span class="line">                <span class="comment">// 接受新连接并注册到 epoll</span></span><br><span class="line">            &#125; </span><br><span class="line">            <span class="comment">// 处理数据读写</span></span><br><span class="line">            <span class="keyword">else</span> <span class="keyword">if</span> (events[i].events &amp; EPOLLIN) &#123;</span><br><span class="line">                <span class="comment">// 读取数据并处理业务逻辑</span></span><br><span class="line">            &#125; </span><br><span class="line">            <span class="comment">// 处理连接关闭</span></span><br><span class="line">            <span class="keyword">else</span> <span class="keyword">if</span> (events[i].events &amp; (EPOLLHUP | EPOLLRDHUP | EPOLLERR)) &#123;</span><br><span class="line">                <span class="comment">// 关闭文件描述符并从 epoll 中移除</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line">close(epfd);</span><br></pre></td></tr></table></figure>
+
+<h2 id="六、实践要点"><a href="#六、实践要点" class="headerlink" title="六、实践要点"></a>六、实践要点</h2><ul>
+<li><p><strong>关闭 FD 前需先移除</strong>：关闭文件描述符前，需通过epoll_ctl()的EPOLL_CTL_DEL操作将其从 epoll 实例中删除，否则后续操作会触发错误，高并发场景下还可能污染内核事件表。</p>
+</li>
+<li><p><strong>ET 模式需非阻塞</strong>：边缘触发（ET）模式下，FD 必须设置为非阻塞。ET 仅在事件状态变化时触发，若 FD 阻塞，I&#x2F;O 操作会导致线程停滞。</p>
+</li>
+<li><p><strong>多线程用</strong> <strong>EPOLLONESHOT</strong>：多线程环境中，为避免多个线程响应同一 FD 事件引发的 “惊群效应”，可使用EPOLLONESHOT将 FD 事件分配给单个线程，处理完后需重置标志。</p>
+</li>
+<li><p><strong>定期清理无效 FD</strong>：不再使用的 FD 需及时清理，否则会造成内存泄漏。</p>
+</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/a898a0c/">https://hespethorn.github.io/posts/a898a0c/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C/">计算机网络</a><a class="post-meta__tags" href="/tags/%E5%A4%9A%E4%BA%BA%E8%81%8A%E5%A4%A9/">多人聊天</a><a class="post-meta__tags" href="/tags/select/">select</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/64148787/" title="TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践">TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践</a><time datetime="2023-06-28T13:06:21.000Z" title="Created 2023-06-28 21:06:21">2023-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d568c8d6/" title="进程间通信：pipe 与 socketpair 对比">进程间通信：pipe 与 socketpair 对比</a><time datetime="2023-06-21T10:50:11.000Z" title="Created 2023-06-21 18:50:11">2023-06-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3d48b2b/" title="多进程文件传输服务器与客户端实现">多进程文件传输服务器与客户端实现</a><time datetime="2023-06-16T12:55:11.000Z" title="Created 2023-06-16 20:55:11">2023-06-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/449dee1e/" title="网络编程中的系统调用与信号处理机制">网络编程中的系统调用与信号处理机制</a><time datetime="2023-06-10T11:55:51.000Z" title="Created 2023-06-10 19:55:51">2023-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9df713de/" title="多进程并发服务器的选择与放弃">多进程并发服务器的选择与放弃</a><time datetime="2023-05-28T14:00:55.000Z" title="Created 2023-05-28 22:00:55">2023-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c6e7059/" title="Linux 进程间文件描述符传输技术详解">Linux 进程间文件描述符传输技术详解</a><time datetime="2023-05-22T14:00:55.000Z" title="Created 2023-05-22 22:00:55">2023-05-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3a91ba7/" title="多进程编程：早期服务器实现逻辑">多进程编程：早期服务器实现逻辑</a><time datetime="2023-05-16T11:50:22.000Z" title="Created 2023-05-16 19:50:22">2023-05-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b71210bb/" title="聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现">聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现</a><time datetime="2023-05-12T12:10:55.000Z" title="Created 2023-05-12 20:10:55">2023-05-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4667e6/" title="select 与 epoll 的核心区别整理">select 与 epoll 的核心区别整理</a><time datetime="2023-05-11T13:20:00.000Z" title="Created 2023-05-11 21:20:00">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a898a0c/" title="基于多人聊天室系统的实现，详细学习 epoll 函数基础">基于多人聊天室系统的实现，详细学习 epoll 函数基础</a><time datetime="2023-05-11T12:28:55.000Z" title="Created 2023-05-11 20:28:55">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f26b2da3/" title="Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</a><time datetime="2023-05-06T14:55:14.000Z" title="Created 2023-05-06 22:55:14">2023-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9c7e901d/" title="基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践">基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践</a><time datetime="2023-04-30T12:22:10.000Z" title="Created 2023-04-30 20:22:10">2023-04-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/800c7140/" title="基于多人聊天室系统的实现，详细学习select 函数基础">基于多人聊天室系统的实现，详细学习select 函数基础</a><time datetime="2023-04-26T15:42:10.000Z" title="Created 2023-04-26 23:42:10">2023-04-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bb924032/" title="Linux：基于 select 多路复用的 C 语言多人聊天室实现">Linux：基于 select 多路复用的 C 语言多人聊天室实现</a><time datetime="2023-04-21T14:12:40.000Z" title="Created 2023-04-21 22:12:40">2023-04-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6841069c/" title="基于 TCP 协议的双向通信程序实现与解析">基于 TCP 协议的双向通信程序实现与解析</a><time datetime="2023-04-15T13:10:43.000Z" title="Created 2023-04-15 21:10:43">2023-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cb884869/" title="基于 UDP 协议的双向通信程序实现与解析">基于 UDP 协议的双向通信程序实现与解析</a><time datetime="2023-04-08T12:50:13.000Z" title="Created 2023-04-08 20:50:13">2023-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/266e4756/" title="TCP 泛洪攻击">TCP 泛洪攻击</a><time datetime="2023-03-30T14:16:08.000Z" title="Created 2023-03-30 22:16:08">2023-03-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/29e62ba/" title="《Linux C 语言 TCP Socket 编程详解》学习笔记">《Linux C 语言 TCP Socket 编程详解》学习笔记</a><time datetime="2023-03-24T14:11:13.000Z" title="Created 2023-03-24 22:11:13">2023-03-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a30c1e5/" title="基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究">基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究</a><time datetime="2023-03-19T09:36:28.000Z" title="Created 2023-03-19 17:36:28">2023-03-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/634cd8cb/" title="URL：网络资源的精准定位机制">URL：网络资源的精准定位机制</a><time datetime="2023-03-12T09:36:28.000Z" title="Created 2023-03-12 17:36:28">2023-03-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/84e78701/" title="网络理论核心知识整理">网络理论核心知识整理</a><time datetime="2023-03-06T14:14:09.000Z" title="Created 2023-03-06 22:14:09">2023-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</a><time datetime="2023-02-28T13:25:25.000Z" title="Created 2023-02-28 21:25:25">2023-02-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="HTTP 无状态性相关概念详解">HTTP 无状态性相关概念详解</a><time datetime="2023-02-20T11:44:27.000Z" title="Created 2023-02-20 19:44:27">2023-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）">从Socket编程到QUIC协议（Computer-Networking）</a><time datetime="2022-05-26T15:40:56.000Z" title="Created 2022-05-26 23:40:56">2022-05-26</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

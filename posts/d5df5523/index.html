@@ -1,0 +1,568 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>MQTT QoS | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="MQTT（Message Queuing Telemetry Transport，消息队列遥测传输）作为物联网（IoT）领域广泛应用的通信协议，其核心优势之一在于通过可配置的服务质量（Quality of Service，QoS）等级，实现消息传输可靠性与资源开销的动态平衡。对于物联网开发者而言，深入理解QoS的设计逻辑、交互机制（握手流程）及应用场景适配原则，是保障设备间通信稳定性、优化系统资源">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MQTT QoS">
+<meta property="og:url" content="https://hespethorn.github.io/posts/d5df5523/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="MQTT（Message Queuing Telemetry Transport，消息队列遥测传输）作为物联网（IoT）领域广泛应用的通信协议，其核心优势之一在于通过可配置的服务质量（Quality of Service，QoS）等级，实现消息传输可靠性与资源开销的动态平衡。对于物联网开发者而言，深入理解QoS的设计逻辑、交互机制（握手流程）及应用场景适配原则，是保障设备间通信稳定性、优化系统资源">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-12-12T10:44:21.000Z">
+<meta property="article:modified_time" content="2025-12-02T03:33:17.184Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="MQTT">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "MQTT QoS",
+  "url": "https://hespethorn.github.io/posts/d5df5523/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-12-12T10:44:21.000Z",
+  "dateModified": "2025-12-02T03:33:17.184Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/d5df5523/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'MQTT QoS',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">MQTT QoS</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">MQTT QoS</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/MQTT/">MQTT</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>MQTT（Message Queuing Telemetry Transport，消息队列遥测传输）作为物联网（IoT）领域广泛应用的通信协议，其核心优势之一在于通过可配置的服务质量（Quality of Service，QoS）等级，实现消息传输可靠性与资源开销的动态平衡。对于物联网开发者而言，深入理解QoS的设计逻辑、交互机制（握手流程）及应用场景适配原则，是保障设备间通信稳定性、优化系统资源配置效率的关键前提。</p>
+<h2 id="一、MQTT-QoS-核心定位：为何需要多等级服务质量？"><a href="#一、MQTT-QoS-核心定位：为何需要多等级服务质量？" class="headerlink" title="一、MQTT QoS 核心定位：为何需要多等级服务质量？"></a>一、MQTT QoS 核心定位：为何需要多等级服务质量？</h2><p>物联网场景中的终端设备呈现显著的异构性特征，既包含联网稳定性高、计算能力充足的工业网关设备，也涵盖电池供电、带宽资源受限的低功耗传感器（如LoRa传感器、NB-IoT设备等）；同时，传输环境的差异性突出，既涉及丢包率低的稳定局域网，也包括丢包率较高的无线广域网（如蜂窝网络边缘区域）。若采用单一的消息传输策略，极易出现两类问题：其一，为追求传输可靠性而引入复杂的确认机制，导致资源受限设备的不必要开销；其二，忽视传输可靠性保障，造成核心业务指令（如工业控制指令）丢失，影响系统正常运行。</p>
+<p>MQTT协议设计QoS机制的核心目标，是为“设备能力-传输环境-业务需求”的多元组合提供差异化的消息传输解决方案。其核心衡量维度包括：消息传输的可达性、消息重复传输的可能性、传输延迟特性以及资源（带宽、计算资源、能耗）占用水平。基于上述维度，MQTT定义了三个递增的QoS等级，依次为QoS0（最多一次传输）、QoS1（至少一次传输）、QoS2（恰好一次传输）。一般而言，QoS等级越高，消息传输的可靠性越强，但对应的资源开销也随之增加。</p>
+<h2 id="二、逐个拆解：QoS0、QoS1、QoS2-原理详解"><a href="#二、逐个拆解：QoS0、QoS1、QoS2-原理详解" class="headerlink" title="二、逐个拆解：QoS0、QoS1、QoS2 原理详解"></a>二、逐个拆解：QoS0、QoS1、QoS2 原理详解</h2><p>MQTT消息传输过程涉及发布者（Publisher）、代理服务器（Broker）与订阅者（Subscriber）三方主体。不同QoS等级的核心差异，主要体现在“发布者与Broker之间”“Broker与订阅者之间”的消息确认机制（即交互握手流程），以及对应MQTT报文的结构设计差异上。</p>
+<h3 id="1-QoS0：最多一次（At-Most-Once）——-轻量无确认"><a href="#1-QoS0：最多一次（At-Most-Once）——-轻量无确认" class="headerlink" title="1. QoS0：最多一次（At Most Once）—— 轻量无确认"></a>1. QoS0：最多一次（At Most Once）—— 轻量无确认</h3><h4 id="1-1-核心定义"><a href="#1-1-核心定义" class="headerlink" title="1.1 核心定义"></a>1.1 核心定义</h4><p>QoS0为最低服务质量等级，采用“发送后无需确认”（fire-and-forget）的传输机制。发布者发送消息后不等待Broker的确认响应，Broker转发消息至订阅者后亦不等待订阅者的确认。在此机制下，消息可能成功到达接收方一次，也可能因网络丢包、设备异常等因素完全丢失，但不存在消息重复传输的情况。</p>
+<h4 id="1-2-握手流程"><a href="#1-2-握手流程" class="headerlink" title="1.2 握手流程"></a>1.2 握手流程</h4><p>QoS0不涉及任何交互握手流程，仅包含单次消息传输操作，具体流程如下：</p>
+<ol>
+<li>发布者向Broker发送PUBLISH报文，报文头部QoS字段配置为0；</li>
+<li>Broker成功接收消息后，直接将该消息转发至所有订阅对应主题的订阅者，转发时采用QoS0等级的PUBLISH报文；</li>
+<li>整个传输过程中，不涉及PUBACK（发布确认）、PUBREC（发布接收）等确认类报文，发送方无法通过协议层感知消息是否被成功接收。</li>
+</ol>
+<h4 id="1-3-报文结构核心字段"><a href="#1-3-报文结构核心字段" class="headerlink" title="1.3 报文结构核心字段"></a>1.3 报文结构核心字段</h4><p>QoS0等级的PUBLISH报文结构具有简化性特征，其核心字段配置如下：</p>
+<ul>
+<li>固定头：QoS位设置为“00”（标识QoS0等级），DUP（重复发送）位设置为“0”。由于QoS0无重传机制，DUP位在此场景下不具备实际语义；</li>
+<li>可变头：仅包含主题名称（Topic Name），不携带报文标识符（Packet Identifier，简称Packet ID）。这是因为QoS0无需协议层的确认与重传机制，无需通过Packet ID对消息进行唯一标识；</li>
+<li>有效载荷（Payload）：承载实际需要传输的业务数据（如传感器采集的温度、湿度等感知数据）。</li>
+</ul>
+<h3 id="2-QoS1：至少一次（At-Least-Once）——-确认重传机制"><a href="#2-QoS1：至少一次（At-Least-Once）——-确认重传机制" class="headerlink" title="2. QoS1：至少一次（At Least Once）—— 确认重传机制"></a>2. QoS1：至少一次（At Least Once）—— 确认重传机制</h3><h4 id="2-1-核心定义"><a href="#2-1-核心定义" class="headerlink" title="2.1 核心定义"></a>2.1 核心定义</h4><p>QoS1等级的核心目标是确保消息“至少到达接收方一次”，该目标通过“发送-确认”（PUBLISH-PUBACK）的双向交互机制实现。若发送方在预设的超时时间内未收到接收方的确认报文，则会启动消息重传流程。受重传机制影响，接收方可能出现重复接收同一消息的情况，需在业务层通过额外逻辑实现消息去重。</p>
+<h4 id="2-2-握手流程（分两段：发布者-Broker、Broker-订阅者）"><a href="#2-2-握手流程（分两段：发布者-Broker、Broker-订阅者）" class="headerlink" title="2.2 握手流程（分两段：发布者-Broker、Broker-订阅者）"></a>2.2 握手流程（分两段：发布者-Broker、Broker-订阅者）</h4><p>QoS1的交互握手流程分为“发布者→Broker”与“Broker→订阅者”两个独立的“PUBLISH-PUBACK”循环，具体流程如下：</p>
+<ol>
+<li>发布者→Broker交互阶段：发布者向Broker发送QoS1等级的PUBLISH报文，报文QoS位设置为“01”，DUP位初始值为“0”，并携带唯一的Packet ID；</li>
+<li>Broker成功接收消息后，立即对消息进行持久化存储，并向发布者返回PUBACK确认报文，该报文携带与对应PUBLISH报文一致的Packet ID；</li>
+<li>发布者接收并解析PUBACK报文后，确认消息已被Broker成功接收；若发布者在超时时间内未收到PUBACK报文，则将DUP位置为“1”，重新发送该PUBLISH报文，直至收到确认或达到预设重传次数上限；</li>
+<li>Broker→订阅者交互阶段：Broker向订阅者发送QoS1等级的PUBLISH报文，报文QoS位设置为“01”，DUP位初始值为“0”，并携带新的Packet ID（Broker与订阅者之间的Packet ID空间独立于发布者与Broker之间）；</li>
+<li>订阅者成功接收消息后，向Broker返回PUBACK确认报文，该报文携带与对应PUBLISH报文一致的Packet ID；</li>
+<li>Broker接收并解析PUBACK报文后，确认消息已被订阅者成功接收；若Broker在超时时间内未收到PUBACK报文，则将DUP位置为“1”，重新发送该PUBLISH报文。</li>
+</ol>
+<h4 id="2-3-报文结构核心字段"><a href="#2-3-报文结构核心字段" class="headerlink" title="2.3 报文结构核心字段"></a>2.3 报文结构核心字段</h4><p>相较于QoS0，QoS1等级的PUBLISH报文新增了确认相关字段，其核心结构配置如下：</p>
+<ul>
+<li>固定头：QoS位设置为“01”，DUP位初始值为“0”，消息重传时DUP位设置为“1”；</li>
+<li>可变头：包含主题名称（Topic Name）与Packet ID（16位整数，取值范围为1~65535），Packet ID用于唯一标识消息，实现PUBLISH报文与对应PUBACK报文的匹配；</li>
+<li>有效载荷（Payload）：承载实际的业务消息内容；</li>
+<li>确认报文（PUBACK）：报文结构由固定头与可变头组成，无有效载荷。可变头中携带对应PUBLISH报文的Packet ID，用于告知发送方消息已被成功接收。</li>
+</ul>
+<h3 id="3-QoS2：恰好一次（Exactly-Once）——-四次握手防重传"><a href="#3-QoS2：恰好一次（Exactly-Once）——-四次握手防重传" class="headerlink" title="3. QoS2：恰好一次（Exactly Once）—— 四次握手防重传"></a>3. QoS2：恰好一次（Exactly Once）—— 四次握手防重传</h3><h4 id="3-1-核心定义"><a href="#3-1-核心定义" class="headerlink" title="3.1 核心定义"></a>3.1 核心定义</h4><p>QoS2为最高服务质量等级，其核心目标是确保消息“恰好到达接收方一次”，既避免消息丢失，也杜绝消息重复。该目标通过“PUBLISH-PUBREC-PUBREL-PUBCOMP”的四次交互握手机制实现，是唯一能够通过协议层保障消息“无重复、无丢失”的QoS等级。</p>
+<h4 id="3-2-握手流程（分两段：发布者-Broker、Broker-订阅者）"><a href="#3-2-握手流程（分两段：发布者-Broker、Broker-订阅者）" class="headerlink" title="3.2 握手流程（分两段：发布者-Broker、Broker-订阅者）"></a>3.2 握手流程（分两段：发布者-Broker、Broker-订阅者）</h4><p>QoS2的交互握手流程同样分为“发布者→Broker”与“Broker→订阅者”两个独立的四次握手循环，流程设计具有严谨性，具体步骤如下：</p>
+<ol>
+<li>发布者→Broker交互阶段：Step1：发布者向Broker发送QoS2等级的PUBLISH报文，报文QoS位设置为“10”，DUP位为“0”，并携带唯一的Packet ID；</li>
+<li>Step2：Broker成功接收消息后，对消息进行持久化存储，并向发布者返回PUBREC报文（携带相同的Packet ID），表示已完成消息接收并准备后续处理；</li>
+<li>Step3：发布者接收并解析PUBREC报文后，停止PUBLISH报文的重传（若存在），向Broker发送PUBREL报文（携带相同的Packet ID），表示确认收到PUBREC报文，并授权Broker进行消息转发；</li>
+<li>Step4：Broker接收并解析PUBREL报文后，向订阅者转发消息，同时向发布者返回PUBCOMP报文（携带相同的Packet ID），表示消息已完成转发，整个交互流程结束；</li>
+<li>异常处理：若发布者在超时时间内未收到PUBREC报文，则将DUP位置为“1”，重传PUBLISH报文；若发布者在超时时间内未收到PUBCOMP报文，则重传PUBREL报文；</li>
+<li>Broker→订阅者交互阶段：Step1：Broker向订阅者发送QoS2等级的PUBLISH报文，报文QoS位设置为“10”，DUP位为“0”，并携带新的Packet ID；</li>
+<li>Step2：订阅者成功接收消息后，对消息进行存储（用于后续去重），并向Broker返回PUBREC报文；</li>
+<li>Step3：Broker接收并解析PUBREC报文后，向订阅者发送PUBREL报文；</li>
+<li>Step4：订阅者接收并解析PUBREL报文后，确认消息已完成处理（可删除之前存储的消息），向Broker返回PUBCOMP报文；</li>
+<li>流程收尾：Broker接收并解析PUBCOMP报文后，整个交互流程结束。订阅者通过存储已接收消息的Packet ID，可识别重复的PUBLISH报文，若再次收到相同Packet ID的PUBLISH报文，直接丢弃以实现去重。</li>
+</ol>
+<h4 id="3-3-报文结构核心字段"><a href="#3-3-报文结构核心字段" class="headerlink" title="3.3 报文结构核心字段"></a>3.3 报文结构核心字段</h4><p>QoS2等级的消息传输涉及PUBLISH、PUBREC、PUBREL、PUBCOMP四种报文，其核心字段配置如下：</p>
+<ul>
+<li>PUBLISH报文：QoS位设置为“10”，DUP位初始值为“0”（重传时设为“1”），可变头包含主题名称（Topic Name）与Packet ID；</li>
+<li>PUBREC、PUBREL、PUBCOMP报文：均携带对应PUBLISH报文的Packet ID，其中PUBREL报文固定头的QoS位设置为“01”，该配置仅用于标识报文类型，不代表实际服务质量等级；</li>
+<li>订阅者需额外维护已接收消息的Packet ID列表，通过该列表实现重复消息的识别与过滤，保障消息传输的“恰好一次”特性。</li>
+</ul>
+<h2 id="三、QoS0、QoS1、QoS2-优缺点及核心差异对比"><a href="#三、QoS0、QoS1、QoS2-优缺点及核心差异对比" class="headerlink" title="三、QoS0、QoS1、QoS2 优缺点及核心差异对比"></a>三、QoS0、QoS1、QoS2 优缺点及核心差异对比</h2><p>为系统呈现三个QoS等级的技术差异，以下从传输可靠性、消息重复风险、传输延迟、资源占用、实现复杂度五个核心维度进行对比分析，并总结各等级的优势与不足。</p>
+<h3 id="1-核心维度对比表"><a href="#1-核心维度对比表" class="headerlink" title="1. 核心维度对比表"></a>1. 核心维度对比表</h3><table>
+<thead>
+<tr>
+<th align="left">对比维度</th>
+<th align="left">QoS0（最多一次）</th>
+<th align="left">QoS1（至少一次）</th>
+<th align="left">QoS2（恰好一次）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">可靠性</td>
+<td align="left">可靠性最低，消息存在丢失风险中等，确保消息可达但存在重复可能最高，确保消息可达且无重复</td>
+<td align="left">中等，消息必达但可能重复</td>
+<td align="left">最高，消息必达且不重复</td>
+</tr>
+<tr>
+<td align="left">重复风险</td>
+<td align="left">无，仅发送一次</td>
+<td align="left">有，重传可能导致重复</td>
+<td align="left">无，四次握手+Packet ID 去重</td>
+</tr>
+<tr>
+<td align="left">传输延迟</td>
+<td align="left">最低，无握手开销</td>
+<td align="left">中等，一次往返确认（PUBLISH-PUBACK）</td>
+<td align="left">最高，两次往返确认（PUBLISH-PUBREC、PUBREL-PUBCOMP）</td>
+</tr>
+<tr>
+<td align="left">资源占用（带宽&#x2F;算力&#x2F;电量）</td>
+<td align="left">最低，仅发送 1 个报文</td>
+<td align="left">中等，至少 2 个报文（PUBLISH+PUBACK），可能重传</td>
+<td align="left">最高，固定 4 个报文，需存储 Packet ID</td>
+</tr>
+<tr>
+<td align="left">实现复杂度</td>
+<td align="left">最低，无需确认和重传逻辑</td>
+<td align="left">中等，需实现重传和 PUBACK 处理</td>
+<td align="left">最高，需实现四次握手、Packet ID 存储与去重</td>
+</tr>
+</tbody></table>
+<h3 id="2-各自优缺点总结"><a href="#2-各自优缺点总结" class="headerlink" title="2. 各自优缺点总结"></a>2. 各自优缺点总结</h3><h4 id="（1）QoS0-优缺点"><a href="#（1）QoS0-优缺点" class="headerlink" title="（1）QoS0 优缺点"></a>（1）QoS0 优缺点</h4><p>优点：轻量高效，资源占用极低，适合算力、电量、带宽受限的设备；实现简单，开发成本低。</p>
+<p>缺点：可靠性差，消息可能丢失，无法满足核心业务需求；无任何容错机制，对网络环境要求高（需低丢包率）。</p>
+<h4 id="（2）QoS1-优缺点"><a href="#（2）QoS1-优缺点" class="headerlink" title="（2）QoS1 优缺点"></a>（2）QoS1 优缺点</h4><p>优点：可靠性中等，确保消息必达，能满足多数核心业务的“不丢失”需求；相比 QoS2，延迟更低、资源占用更少、实现更简单。</p>
+<p>缺点：存在消息重复风险，需业务层自行实现去重逻辑（如通过消息唯一 ID）；重传机制会增加额外的带宽和电量消耗。</p>
+<h4 id="（3）QoS2-优缺点"><a href="#（3）QoS2-优缺点" class="headerlink" title="（3）QoS2 优缺点"></a>（3）QoS2 优缺点</h4><p>优点：可靠性最高，确保消息“恰好一次”，无需业务层去重；适合对数据一致性要求极高的场景。</p>
+<p>缺点：资源占用最高，延迟最大，对设备算力和带宽要求较高；实现复杂，开发和维护成本高；重传时的四次握手会进一步增加延迟。</p>
+<h2 id="四、IoT-实际场景选型建议"><a href="#四、IoT-实际场景选型建议" class="headerlink" title="四、IoT 实际场景选型建议"></a>四、IoT 实际场景选型建议</h2><p>IoT 场景的选型核心是“匹配业务需求与设备&#x2F;环境能力”，避免“过度设计”（如给传感器用 QoS2 浪费资源）或“设计不足”（如给控制指令用 QoS0 导致丢失）。以下结合典型 IoT 场景，给出针对性建议：</p>
+<h3 id="1-优先选-QoS0-的场景"><a href="#1-优先选-QoS0-的场景" class="headerlink" title="1. 优先选 QoS0 的场景"></a>1. 优先选 QoS0 的场景</h3><p>适合“消息丢失不影响业务”“设备资源极度受限”“网络环境稳定”的场景，典型案例：</p>
+<ul>
+<li>高频采集的非核心数据：如环境传感器（温度、湿度）的实时数据采集，即使某一次数据丢失，后续采集的数据可补充，不影响整体统计分析；</li>
+<li>资源受限的低功耗设备：如电池供电的 LoRa 传感器、NB-IoT 设备，算力弱、电量有限，QoS0 可最大程度降低功耗，延长续航；</li>
+<li>局域网内的非关键消息：如设备状态心跳包（仅用于判断设备在线），丢失一两个心跳包不影响设备状态判断。</li>
+</ul>
+<h3 id="2-优先选-QoS1-的场景"><a href="#2-优先选-QoS1-的场景" class="headerlink" title="2. 优先选 QoS1 的场景"></a>2. 优先选 QoS1 的场景</h3><p>适合“消息必须到达，允许重复（可业务去重）”“设备资源中等”的核心业务场景，典型案例：</p>
+<ul>
+<li>设备控制指令：如智能家电的开关指令、工业设备的启停指令，消息必须到达（否则设备无法执行），即使重复执行（如因重传导致两次“开”指令），可通过业务层判断设备当前状态（已开则忽略重复指令）；</li>
+<li>关键数据采集：如电表、水表的计量数据，数据丢失会影响计费，重复数据可通过时间戳或数据序号去重；</li>
+<li>多数 IoT 核心场景：QoS1 是“可靠性与资源开销的平衡点”，也是实际开发中最常用的 QoS 等级。</li>
+</ul>
+<h3 id="3-优先选-QoS2-的场景"><a href="#3-优先选-QoS2-的场景" class="headerlink" title="3. 优先选 QoS2 的场景"></a>3. 优先选 QoS2 的场景</h3><p>适合“消息必须到达且绝对不能重复”“数据一致性要求极高”“设备&#x2F;网络资源充足”的场景，典型案例：</p>
+<ul>
+<li>金融支付相关：如 IoT 设备的支付指令（如共享充电宝扣费、智能售货机支付），重复扣费或扣费失败均会导致业务纠纷；</li>
+<li>工业控制核心指令：如化工设备的阀门调节、机器人的精准动作指令，重复执行可能导致设备故障或安全事故；</li>
+<li>数据同步场景：如设备本地数据与云端数据的同步，要求数据一致，不能丢失或重复。</li>
+</ul>
+<h3 id="4-选型核心原则"><a href="#4-选型核心原则" class="headerlink" title="4. 选型核心原则"></a>4. 选型核心原则</h3><ul>
+<li><p>先明确业务核心需求：“是否允许丢失”“是否允许重复”；     </p>
+</li>
+<li><p>再评估设备与环境能力：设备算力&#x2F;电量、网络丢包率&#x2F;带宽；      </p>
+</li>
+<li><p>最后平衡成本与可靠性：避免为追求高可靠性而过度消耗资源，也避免为节省资源而牺牲核心业务稳定性。</p>
+</li>
+</ul>
+<h2 id="五、总结"><a href="#五、总结" class="headerlink" title="五、总结"></a>五、总结</h2><p>MQTT QoS 等级的设计，是 IoT 通信“灵活性”与“实用性”的集中体现。QoS0 以轻量为核心，适合非关键、资源受限场景；QoS1 以“必达”为核心，兼顾可靠性与开销，是多数场景的首选；QoS2 以“恰好一次”为核心，适合高可靠性、无重复需求的关键场景。</p>
+<p>作为 IoT 开发者，无需盲目追求高 QoS 等级，而应结合业务实际、设备能力和网络环境，选择最匹配的等级。在实际开发中，还可通过业务层优化（如 QoS1 配合消息去重、QoS0 配合周期性重传），进一步平衡可靠性与资源开销，打造稳定、高效的 IoT 通信系统。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/d5df5523/">https://hespethorn.github.io/posts/d5df5523/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/MQTT/">MQTT</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c29e4ef/" title="MQTT协议轻量性与高效性的实现机制">MQTT协议轻量性与高效性的实现机制</a><time datetime="2025-12-05T13:10:55.000Z" title="Created 2025-12-05 21:10:55">2025-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d06de4fa/" title="MQTT协议与传统HTTP协议">MQTT协议与传统HTTP协议</a><time datetime="2025-12-03T10:30:02.000Z" title="Created 2025-12-03 18:30:02">2025-12-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/277e27bf/" title="MQTT：物联网轻量级通信协议">MQTT：物联网轻量级通信协议</a><time datetime="2025-12-01T11:10:21.000Z" title="Created 2025-12-01 19:10:21">2025-12-01</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

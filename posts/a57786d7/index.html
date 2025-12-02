@@ -1,0 +1,526 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="引言哈希表（Hash Map）是一种高效的数据结构，通过哈希函数将键映射到数组索引，实现O(1)时间复杂度的插入、查询和删除操作。但传统静态哈希表（固定容量数组）存在空间浪费（数据少时数组空置）和冲突频发（数据多时哈希碰撞概率激增）的痛点。本文将基于C语言，手把手实现一个动态哈希表，通过「动态数组+链表」的组合方案解决这些问题，并深入解析核心设计与实现细节。  一、设计背景：为什么选择「动态数组">
+<meta property="og:type" content="article">
+<meta property="og:title" content="动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案">
+<meta property="og:url" content="https://hespethorn.github.io/posts/a57786d7/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="引言哈希表（Hash Map）是一种高效的数据结构，通过哈希函数将键映射到数组索引，实现O(1)时间复杂度的插入、查询和删除操作。但传统静态哈希表（固定容量数组）存在空间浪费（数据少时数组空置）和冲突频发（数据多时哈希碰撞概率激增）的痛点。本文将基于C语言，手把手实现一个动态哈希表，通过「动态数组+链表」的组合方案解决这些问题，并深入解析核心设计与实现细节。  一、设计背景：为什么选择「动态数组">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2022-04-12T13:01:09.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:41:12.072Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C语言">
+<meta property="article:tag" content="数据结构">
+<meta property="article:tag" content="动态数组">
+<meta property="article:tag" content="哈希表">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案",
+  "url": "https://hespethorn.github.io/posts/a57786d7/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2022-04-12T13:01:09.000Z",
+  "dateModified": "2025-07-12T15:41:12.072Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/a57786d7/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2022-04-12T13:01:09.000Z" title="Created 2022-04-12 21:01:09">2022-04-12</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Data-Structures/">Data-Structures</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>17mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><hr>
+<h2 id="引言"><a href="#引言" class="headerlink" title="引言"></a>引言</h2><p>哈希表（Hash Map）是一种高效的数据结构，通过哈希函数将键映射到数组索引，实现O(1)时间复杂度的插入、查询和删除操作。但传统静态哈希表（固定容量数组）存在<strong>空间浪费</strong>（数据少时数组空置）和<strong>冲突频发</strong>（数据多时哈希碰撞概率激增）的痛点。本文将基于C语言，手把手实现一个<strong>动态哈希表</strong>，通过「动态数组+链表」的组合方案解决这些问题，并深入解析核心设计与实现细节。</p>
+<hr>
+<h2 id="一、设计背景：为什么选择「动态数组-链表」？"><a href="#一、设计背景：为什么选择「动态数组-链表」？" class="headerlink" title="一、设计背景：为什么选择「动态数组+链表」？"></a>一、设计背景：为什么选择「动态数组+链表」？</h2><h3 id="1-1-传统静态哈希表的痛点"><a href="#1-1-传统静态哈希表的痛点" class="headerlink" title="1.1 传统静态哈希表的痛点"></a>1.1 传统静态哈希表的痛点</h3><p>传统哈希表通常使用<strong>固定大小的数组</strong>存储键值对，通过哈希函数计算索引。但这种设计存在两大缺陷：</p>
+<ul>
+<li><strong>空间浪费</strong>：若初始容量过大，数据稀疏时大量数组空间闲置；若初始容量过小，数据增多时频繁扩容（需重新哈希所有数据），效率低下。</li>
+<li><strong>冲突频发</strong>：当数据量超过数组容量时，哈希碰撞概率激增，链表法（拉链法）虽能解决冲突，但链表过长会导致查询时间退化为O(n)。</li>
+</ul>
+<h3 id="1-2-动态数组-链表的组合优势"><a href="#1-2-动态数组-链表的组合优势" class="headerlink" title="1.2 动态数组+链表的组合优势"></a>1.2 动态数组+链表的组合优势</h3><p>动态哈希表通过「动态数组」和「链表」的组合，完美解决了上述问题：</p>
+<ul>
+<li><strong>动态扩容</strong>：当负载因子（键值对数量&#x2F;桶数量）超过阈值（如0.75）时，自动扩容（通常翻倍），保持哈希分布均匀，减少冲突。</li>
+<li><strong>链表处理冲突</strong>：每个桶对应一个链表，冲突的键值对存储在同一链表中，插入、查询时遍历链表即可，无需移动其他数据。</li>
+<li><strong>空间高效</strong>：桶的数量随数据量动态调整，避免固定数组的空间浪费。</li>
+</ul>
+<hr>
+<h2 id="二、核心结构体解析：DynamicHashMap与KeyValueNode"><a href="#二、核心结构体解析：DynamicHashMap与KeyValueNode" class="headerlink" title="二、核心结构体解析：DynamicHashMap与KeyValueNode"></a>二、核心结构体解析：DynamicHashMap与KeyValueNode</h2><h3 id="2-1-KeyValueNode：链表节点"><a href="#2-1-KeyValueNode：链表节点" class="headerlink" title="2.1 KeyValueNode：链表节点"></a>2.1 KeyValueNode：链表节点</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">typedef struct node_s &#123;</span><br><span class="line">    KeyType key;          // 键（字符串指针）</span><br><span class="line">    ValueType val;        // 值（字符串指针）</span><br><span class="line">    struct node_s *next;  // 指向下一个节点的指针（解决冲突）</span><br><span class="line">&#125; KeyValueNode;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>key</strong>：存储键的字符串指针（如&quot;age&quot;）。</li>
+<li><strong>val</strong>：存储值的字符串指针（如&quot;25&quot;）。</li>
+<li><strong>next</strong>：链表指针，用于连接同一桶中冲突的其他键值对。</li>
+</ul>
+<h3 id="2-2-DynamicHashMap：哈希表主体"><a href="#2-2-DynamicHashMap：哈希表主体" class="headerlink" title="2.2 DynamicHashMap：哈希表主体"></a>2.2 DynamicHashMap：哈希表主体</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">typedef struct &#123;</span><br><span class="line">    KeyValueNode **buckets;  // 动态数组（存储链表头节点）</span><br><span class="line">    int size;                // 当前键值对数量</span><br><span class="line">    int capacity;            // 桶数组的当前容量（桶的数量）</span><br><span class="line">    uint32_t hash_seed;      // 哈希种子（用于生成随机哈希值，防碰撞）</span><br><span class="line">&#125; DynamicHashMap;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>buckets</strong>：动态数组，每个元素是一个链表头节点（<code>KeyValueNode*</code>）。桶的数量由<code>capacity</code>决定。</li>
+<li><strong>size</strong>：当前存储的键值对总数，用于计算负载因子（<code>size/capacity</code>）。</li>
+<li><strong>capacity</strong>：桶数组的容量（即最多有多少个桶）。初始通常设为16，扩容时翻倍。</li>
+<li><strong>hash_seed</strong>：哈希函数的种子，通过<code>time(NULL)</code>随机生成，避免相同输入生成相同哈希值（防碰撞攻击）。</li>
+</ul>
+<hr>
+<h2 id="三、关键函数实现逻辑：从创建到删除"><a href="#三、关键函数实现逻辑：从创建到删除" class="headerlink" title="三、关键函数实现逻辑：从创建到删除"></a>三、关键函数实现逻辑：从创建到删除</h2><h3 id="3-1-hashmap-create-：初始化动态哈希表"><a href="#3-1-hashmap-create-：初始化动态哈希表" class="headerlink" title="3.1 hashmap_create()：初始化动态哈希表"></a>3.1 hashmap_create()：初始化动态哈希表</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">DynamicHashMap *hashmap_create() &#123;</span><br><span class="line">    DynamicHashMap *map = (DynamicHashMap *)calloc(1, sizeof(DynamicHashMap));</span><br><span class="line">    if (map == NULL) &#123; perror(&quot;map create&quot;); exit(EXIT_FAILURE); &#125;</span><br><span class="line"></span><br><span class="line">    map-&gt;capacity = 16;         // 初始容量（固定为16）</span><br><span class="line">    map-&gt;size = 0;              // 初始无键值对</span><br><span class="line">    map-&gt;hash_seed = (uint32_t)time(NULL); // 随机哈希种子</span><br><span class="line"></span><br><span class="line">    // 初始化桶数组（动态分配内存，每个元素是链表头节点）</span><br><span class="line">    map-&gt;buckets = (KeyValueNode **)calloc(map-&gt;capacity, sizeof(KeyValueNode *));</span><br><span class="line">    if (!map-&gt;buckets) &#123; perror(&quot;map-&gt;buckets creat&quot;); free(map); exit(EXIT_FAILURE); &#125;</span><br><span class="line"></span><br><span class="line">    return map;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键细节</strong>：</p>
+<ul>
+<li><strong>内存分配</strong>：使用<code>calloc</code>初始化<code>DynamicHashMap</code>和<code>buckets</code>数组，确保内存清零，避免野指针。</li>
+<li><strong>初始容量</strong>：代码中固定为16，实际项目中可根据需求调整。</li>
+<li><strong>哈希种子</strong>：通过<code>time(NULL)</code>生成随机种子，确保不同运行实例的哈希值分布不同，减少碰撞。</li>
+</ul>
+<h3 id="3-2-hashmap-put-：插入键值对（含扩容逻辑）"><a href="#3-2-hashmap-put-：插入键值对（含扩容逻辑）" class="headerlink" title="3.2 hashmap_put()：插入键值对（含扩容逻辑）"></a>3.2 hashmap_put()：插入键值对（含扩容逻辑）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">ValueType hashmap_put(DynamicHashMap *map, KeyType key, ValueType val) &#123;</span><br><span class="line">    if (!map || !key || !val) return NULL; // 参数校验</span><br><span class="line"></span><br><span class="line">    int index = hash_function(map, key); // 计算哈希值对应的桶索引</span><br><span class="line">    KeyValueNode *current = map-&gt;buckets[index]; // 获取桶的链表头</span><br><span class="line"></span><br><span class="line">    // 1. 查找是否已存在相同键</span><br><span class="line">    while (current) &#123;</span><br><span class="line">        if (strcmp(current-&gt;key, key) == 0) &#123;</span><br><span class="line">            // 键已存在：更新值（释放旧值，存储新值副本）</span><br><span class="line">            free(current-&gt;val);</span><br><span class="line">            current-&gt;val = strdupp(val); // strdupp是新实现的字符串复制函数（防内存泄漏）</span><br><span class="line">            return current-&gt;val;</span><br><span class="line">        &#125;</span><br><span class="line">        current = current-&gt;next; // 遍历链表</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 2. 键不存在：新建节点并插入链表头部</span><br><span class="line">    KeyValueNode *new_node = (KeyValueNode *)calloc(1, sizeof(KeyValueNode));</span><br><span class="line">    if (!new_node) return NULL; // 内存分配失败</span><br><span class="line"></span><br><span class="line">    new_node-&gt;key = strdupp(key);   // 复制键（防外部修改）</span><br><span class="line">    new_node-&gt;val = strdupp(val);   // 复制值（防外部修改）</span><br><span class="line">    new_node-&gt;next = map-&gt;buckets[index]; // 新节点插入链表头部</span><br><span class="line">    map-&gt;buckets[index] = new_node;       // 更新链表头</span><br><span class="line">    map-&gt;size++;                        // 键值对数量+1</span><br><span class="line"></span><br><span class="line">    // 3. 检查负载因子，触发扩容（负载因子&gt;0.75时扩容）</span><br><span class="line">    float load_factor = (float)map-&gt;size / map-&gt;capacity;</span><br><span class="line">    if (load_factor &gt; 0.75) &#123;</span><br><span class="line">        if (!hashmap_resize(map)) &#123;       // 扩容失败（如内存不足）</span><br><span class="line">            hashmap_remove(map, key);     // 回滚：删除刚插入的节点</span><br><span class="line">            return NULL;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return new_node-&gt;val;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键逻辑</strong>：</p>
+<ul>
+<li><strong>哈希冲突处理</strong>：通过链表存储同一桶中的冲突键值对，插入时遍历链表查找是否存在相同键。</li>
+<li><strong>动态扩容</strong>：当负载因子超过0.75时，调用<code>hashmap_resize</code>将桶数量翻倍，重新哈希所有现有键值对，确保哈希分布均匀。</li>
+<li><strong>内存管理</strong>：使用<code>strdupp</code>复制键和值（避免外部修改影响哈希表内部数据），插入失败时回滚删除节点，防止内存泄漏。</li>
+</ul>
+<h3 id="3-3-hashmap-get-：查询键值对"><a href="#3-3-hashmap-get-：查询键值对" class="headerlink" title="3.3 hashmap_get()：查询键值对"></a>3.3 hashmap_get()：查询键值对</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">ValueType hashmap_get(DynamicHashMap *map, KeyType key) &#123;</span><br><span class="line">    if (!map || !key) &#123; printf(&quot;参数错误&quot;); return NULL; &#125;</span><br><span class="line"></span><br><span class="line">    int index = hash_function(map, key); // 计算桶索引</span><br><span class="line">    KeyValueNode *current = map-&gt;buckets[index]; // 获取链表头</span><br><span class="line"></span><br><span class="line">    // 遍历链表查找键</span><br><span class="line">    while (current) &#123;</span><br><span class="line">        if (strcmp(current-&gt;key, key) == 0) &#123;</span><br><span class="line">            return current-&gt;val; // 找到键，返回对应值</span><br><span class="line">        &#125;</span><br><span class="line">        current = current-&gt;next; // 未找到，继续遍历</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    printf(&quot;键未找到&quot;); // 遍历完链表未找到</span><br><span class="line">    return NULL;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键细节</strong>：</p>
+<ul>
+<li><strong>哈希定位</strong>：通过<code>hash_function</code>计算键的哈希值，取模得到桶索引（<code>index = hash % capacity</code>）。</li>
+<li><strong>链表遍历</strong>：从桶的链表头开始遍历，逐个比较键，找到后返回对应值；遍历完链表未找到则返回<code>NULL</code>。</li>
+</ul>
+<h3 id="3-4-hashmap-remove-：删除键值对"><a href="#3-4-hashmap-remove-：删除键值对" class="headerlink" title="3.4 hashmap_remove()：删除键值对"></a>3.4 hashmap_remove()：删除键值对</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">bool hashmap_remove(DynamicHashMap *map, KeyType key) &#123;</span><br><span class="line">    if (!map || !key) &#123; printf(&quot;参数错误&quot;); return false; &#125;</span><br><span class="line"></span><br><span class="line">    int index = hash_function(map, key); // 计算桶索引</span><br><span class="line">    KeyValueNode *prev = NULL;           // 记录前一个节点（用于修复链表）</span><br><span class="line">    KeyValueNode *current = map-&gt;buckets[index]; // 当前节点</span><br><span class="line"></span><br><span class="line">    // 遍历链表查找键</span><br><span class="line">    while (current) &#123;</span><br><span class="line">        if (strcmp(current-&gt;key, key) == 0) &#123;</span><br><span class="line">            // 找到键：删除节点</span><br><span class="line">            if (prev) &#123;</span><br><span class="line">                prev-&gt;next = current-&gt;next; // 前一个节点指向当前节点的下一个节点</span><br><span class="line">            &#125; else &#123;</span><br><span class="line">                map-&gt;buckets[index] = current-&gt;next; // 头节点删除（更新链表头）</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            // 释放内存</span><br><span class="line">            free(current-&gt;key);</span><br><span class="line">            free(current-&gt;val);</span><br><span class="line">            free(current);</span><br><span class="line">            map-&gt;size--; // 键值对数量-1</span><br><span class="line">            return true;</span><br><span class="line">        &#125;</span><br><span class="line">        prev = current;   // 记录前一个节点</span><br><span class="line">        current = current-&gt;next; // 移动到下一个节点</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return false; // 未找到键</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键细节</strong>：</p>
+<ul>
+<li><strong>链表指针修复</strong>：删除节点时，若节点是链表头（<code>prev</code>为<code>NULL</code>），则直接更新桶的链表头为<code>current-&gt;next</code>；否则，将前一个节点的<code>next</code>指向当前节点的下一个节点，确保链表不断裂。</li>
+<li><strong>内存释放</strong>：删除节点后，必须释放其<code>key</code>、<code>val</code>和节点本身的内存，防止内存泄漏。</li>
+</ul>
+<hr>
+<h2 id="四、性能优化点：当前瓶颈与改进方向"><a href="#四、性能优化点：当前瓶颈与改进方向" class="headerlink" title="四、性能优化点：当前瓶颈与改进方向"></a>四、性能优化点：当前瓶颈与改进方向</h2><h3 id="4-1-当前实现的潜在瓶颈"><a href="#4-1-当前实现的潜在瓶颈" class="headerlink" title="4.1 当前实现的潜在瓶颈"></a>4.1 当前实现的潜在瓶颈</h3><ul>
+<li><strong>链表过长导致查询变慢</strong>：当负载因子过高（如接近1）时，链表长度增加，查询时间退化为O(n)（最坏情况遍历整个链表）。</li>
+<li><strong>哈希函数分布不均</strong>：若哈希函数设计不佳（如种子固定），可能导致键值对集中在少数桶中，加剧链表冲突。</li>
+<li><strong>扩容开销</strong>：扩容时需要重新哈希所有现有键值对（时间复杂度O(n)），频繁扩容会影响性能。</li>
+</ul>
+<h3 id="4-2-优化方向"><a href="#4-2-优化方向" class="headerlink" title="4.2 优化方向"></a>4.2 优化方向</h3><ul>
+<li><strong>动态调整扩容阈值</strong>：根据实际场景调整负载因子阈值（如0.75→0.8），平衡空间与时间效率。</li>
+<li><strong>优化冲突结构</strong>：当链表长度超过阈值（如8）时，将链表转换为红黑树（时间复杂度O(log n)），提升长链表的查询效率（Java 8的HashMap即采用此策略）。</li>
+<li><strong>哈希函数优化</strong>：使用更复杂的哈希函数（如MurmurHash），减少哈希碰撞概率，确保键值对均匀分布在各个桶中。</li>
+<li><strong>惰性删除</strong>：对于删除操作，标记节点为“已删除”而非立即释放内存，减少频繁内存分配&#x2F;释放的开销（适用于高频删除场景）。</li>
+</ul>
+<hr>
+<h2 id="五、使用示例：插入、查询、删除操作"><a href="#五、使用示例：插入、查询、删除操作" class="headerlink" title="五、使用示例：插入、查询、删除操作"></a>五、使用示例：插入、查询、删除操作</h2><h3 id="5-1-测试代码说明"><a href="#5-1-测试代码说明" class="headerlink" title="5.1 测试代码说明"></a>5.1 测试代码说明</h3><p>以下是用户提供的测试代码，演示了哈希表的完整生命周期：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">int main() &#123;</span><br><span class="line">    DynamicHashMap *map = hashmap_create(); // 创建哈希表</span><br><span class="line">    if (!map) &#123; /* 错误处理 */ &#125;</span><br><span class="line"></span><br><span class="line">    // 插入键值对</span><br><span class="line">    hashmap_put(map, &quot;name&quot;, &quot;Alice&quot;);    // 插入成功</span><br><span class="line">    hashmap_put(map, &quot;age&quot;, &quot;25&quot;);        // 插入成功</span><br><span class="line"></span><br><span class="line">    // 更新键值对</span><br><span class="line">    hashmap_put(map, &quot;name&quot;, &quot;Bob&quot;);      // 更新成功（原&quot;Alice&quot;被替换为&quot;Bob&quot;）</span><br><span class="line"></span><br><span class="line">    // 查询键值对</span><br><span class="line">    ValueType name = hashmap_get(map, &quot;name&quot;); // 返回&quot;Bob&quot;</span><br><span class="line">    ValueType age = hashmap_get(map, &quot;age&quot;);   // 返回&quot;25&quot;</span><br><span class="line"></span><br><span class="line">    // 删除键值对</span><br><span class="line">    hashmap_remove(map, &quot;age&quot;);           // 删除成功</span><br><span class="line">    hashmap_get(map, &quot;age&quot;);              // 返回NULL（键已删除）</span><br><span class="line"></span><br><span class="line">    hashmap_destroy(map);                 // 销毁哈希表（释放所有内存）</span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-注意事项"><a href="#5-2-注意事项" class="headerlink" title="5.2 注意事项"></a>5.2 注意事项</h3><ul>
+<li><strong>内存管理</strong>：插入时<code>strdupp</code>会复制键和值的内存，删除时需手动释放（哈希表内部已处理），避免外部重复释放。</li>
+<li><strong>哈希种子选择</strong>：<code>hash_seed</code>使用<code>time(NULL)</code>随机生成，确保不同运行实例的哈希分布不同，防止恶意构造碰撞攻击。</li>
+<li><strong>负载因子监控</strong>：插入时检查负载因子，触发扩容后需确保新桶数组的内存分配成功（否则回滚删除新插入的节点）。</li>
+</ul>
+<hr>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>本文手把手实现了基于「动态数组+链表」的C语言哈希表，详细解析了核心结构体设计、关键函数逻辑及性能优化方向。动态哈希表通过动态扩容和链表冲突解决，兼顾了空间效率与时间效率，是处理动态数据存储的理想选择。实际应用中，可根据需求进一步优化（如红黑树替代长链表），以应对更复杂的场景。</p>
+<div class="tabs"><div class="nav-tabs"><button type="button" class="tab active">头文件.h</button><button type="button" class="tab">main.c</button><button type="button" class="tab">函数.h</button></div><div class="tab-contents"><div class="tab-item-content active"><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">#ifndef DYNAMIC_HASHMAP_H</span><br><span class="line">#define DYNAMIC_HASHMAP_H</span><br><span class="line"></span><br><span class="line">#include &lt;stdint.h&gt;</span><br><span class="line">#include &lt;stdbool.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;errno.h&gt;</span><br><span class="line"></span><br><span class="line">typedef char *KeyType;</span><br><span class="line">typedef char *ValueType;</span><br><span class="line"></span><br><span class="line">typedef struct node_s &#123;</span><br><span class="line">    KeyType key;          // 键</span><br><span class="line">    ValueType val;        // 值</span><br><span class="line">    struct node_s *next;  // 链表指针</span><br><span class="line">&#125; KeyValueNode;</span><br><span class="line"></span><br><span class="line">typedef struct &#123;</span><br><span class="line">    KeyValueNode **buckets;  // 动态数组（哈希桶）</span><br><span class="line">    int size;                // 键值对数量</span><br><span class="line">    int capacity;            // 桶数组容量</span><br><span class="line">    uint32_t hash_seed;      // 哈希种子（防碰撞）</span><br><span class="line">&#125; DynamicHashMap;</span><br><span class="line"></span><br><span class="line">// 创建一个固定容量的哈希表</span><br><span class="line">DynamicHashMap *hashmap_create();</span><br><span class="line">// 销毁一个哈希表</span><br><span class="line">void hashmap_destroy(DynamicHashMap *map);</span><br><span class="line">// 插入一个键值对</span><br><span class="line">ValueType hashmap_put(DynamicHashMap *map, KeyType key, ValueType val);</span><br><span class="line">// 查询一个键值对</span><br><span class="line">ValueType hashmap_get(DynamicHashMap *map, KeyType key);</span><br><span class="line">// 删除某个键值对</span><br><span class="line">bool hashmap_remove(DynamicHashMap *map, KeyType key);</span><br><span class="line"></span><br><span class="line">#endif // DYNAMIC_HASHMAP_H</span><br></pre></td></tr></table></figure></div><div class="tab-item-content"><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &quot;hash.h&quot;</span><br><span class="line"></span><br><span class="line">int main() &#123;</span><br><span class="line">    // 创建哈希表</span><br><span class="line">    DynamicHashMap *map = hashmap_create();</span><br><span class="line">    if (!map) &#123;</span><br><span class="line">        fprintf(stderr, &quot;Failed to create hashmap.\n&quot;);</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 测试插入操作</span><br><span class="line">    printf(&quot;Testing hashmap_put...\n&quot;);</span><br><span class="line">    const char *key1 = &quot;name&quot;;</span><br><span class="line">    const char *val1 = &quot;Alice&quot;;</span><br><span class="line">    ValueType result1 = hashmap_put(map, (KeyType)key1, (ValueType)val1);</span><br><span class="line">    if (result1) &#123;</span><br><span class="line">        printf(&quot;Inserted key: %s, value: %s\n&quot;, key1, result1);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Failed to insert key: %s\n&quot;, key1);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    const char *key2 = &quot;age&quot;;</span><br><span class="line">    const char *val2 = &quot;25&quot;;</span><br><span class="line">    ValueType result2 = hashmap_put(map, (KeyType)key2, (ValueType)val2);</span><br><span class="line">    if (result2) &#123;</span><br><span class="line">        printf(&quot;Inserted key: %s, value: %s\n&quot;, key2, result2);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Failed to insert key: %s\n&quot;, key2);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 测试更新操作</span><br><span class="line">    printf(&quot;\nTesting update...\n&quot;);</span><br><span class="line">    const char *new_val1 = &quot;Bob&quot;;</span><br><span class="line">    ValueType update_result = hashmap_put(map, (KeyType)key1, (ValueType)new_val1);</span><br><span class="line">    if (update_result) &#123;</span><br><span class="line">        printf(&quot;Updated key: %s, new value: %s\n&quot;, key1, update_result);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Failed to update key: %s\n&quot;, key1);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 测试查询操作</span><br><span class="line">    printf(&quot;\nTesting hashmap_get...\n&quot;);</span><br><span class="line">    ValueType get_result1 = hashmap_get(map, (KeyType)key1);</span><br><span class="line">    if (get_result1) &#123;</span><br><span class="line">        printf(&quot;Got key: %s, value: %s\n&quot;, key1, get_result1);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Key %s not found.\n&quot;, key1);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    ValueType get_result2 = hashmap_get(map, (KeyType)key2);</span><br><span class="line">    if (get_result2) &#123;</span><br><span class="line">        printf(&quot;Got key: %s, value: %s\n&quot;, key2, get_result2);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Key %s not found.\n&quot;, key2);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 测试删除操作</span><br><span class="line">    printf(&quot;\nTesting hashmap_remove...\n&quot;);</span><br><span class="line">    bool remove_result = hashmap_remove(map, (KeyType)key2);</span><br><span class="line">    if (remove_result) &#123;</span><br><span class="line">        printf(&quot;Removed key: %s successfully.\n&quot;, key2);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Failed to remove key: %s\n&quot;, key2);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 再次查询已删除的键</span><br><span class="line">    ValueType get_after_remove = hashmap_get(map, (KeyType)key2);</span><br><span class="line">    if (get_after_remove) &#123;</span><br><span class="line">        printf(&quot;Got key: %s, value: %s\n&quot;, key2, get_after_remove);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        printf(&quot;Key %s not found after removal (expected).\n&quot;, key2);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 销毁哈希表</span><br><span class="line">    printf(&quot;\nDestroying hashmap...\n&quot;);</span><br><span class="line">    hashmap_destroy(map);</span><br><span class="line">    printf(&quot;Hashmap destroyed.\n&quot;);</span><br><span class="line"></span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></div><div class="tab-item-content"><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br></pre></td><td class="code"><pre><span class="line">#include&quot;hash.h&quot;</span><br><span class="line">#include &lt;time.h&gt;</span><br><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line"></span><br><span class="line">// 辅助哈希函数（BKDRHash变种）</span><br><span class="line">static uint32_t hash_function(DynamicHashMap *map, const char *key) &#123;</span><br><span class="line">    uint32_t hash = 0;</span><br><span class="line">    while (*key) &#123;</span><br><span class="line">        hash = hash * map-&gt;hash_seed + (uint8_t)(*key++);</span><br><span class="line">    &#125;</span><br><span class="line">    return hash % map-&gt;capacity;</span><br><span class="line">&#125;</span><br><span class="line">// 创建一个固定容量的哈希表</span><br><span class="line">DynamicHashMap *hashmap_create() &#123;</span><br><span class="line">    DynamicHashMap *map = (DynamicHashMap *)calloc(1, sizeof(DynamicHashMap));</span><br><span class="line">    if (map == NULL) &#123;</span><br><span class="line">        perror(&quot;map create&quot;);</span><br><span class="line">        exit(EXIT_FAILURE);</span><br><span class="line">    &#125;</span><br><span class="line">    // 初始化参数</span><br><span class="line">    map-&gt;capacity = 16;         // 初始容量</span><br><span class="line">    map-&gt;size = 0;              // 初始键值对数量</span><br><span class="line">    uint32_t hash_seed = (uint32_t)time(NULL); //种子值随机，减少哈希冲突</span><br><span class="line">    map-&gt;buckets = (KeyValueNode **)calloc(map-&gt;capacity, sizeof(KeyValueNode *)); //给二重数组设置初始化桶</span><br><span class="line">    if (!map-&gt;buckets) &#123;</span><br><span class="line">        perror(&quot;map-&gt;buckets creat&quot;);</span><br><span class="line">        free(map);</span><br><span class="line">        exit(EXIT_FAILURE);</span><br><span class="line">    &#125;</span><br><span class="line">    return map;</span><br><span class="line">&#125;</span><br><span class="line">// 销毁一个哈希表</span><br><span class="line">void hashmap_destroy(DynamicHashMap *map) &#123;</span><br><span class="line">    if (map == NULL) &#123;</span><br><span class="line">        return;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    for(int i=0;i&lt;map-&gt;capacity;i++) &#123;</span><br><span class="line">        KeyValueNode *p = map-&gt;buckets[i];</span><br><span class="line">        while (p != NULL) &#123;</span><br><span class="line">            KeyValueNode *next = p-&gt;next;</span><br><span class="line">            free(p-&gt;key);</span><br><span class="line">            free(p-&gt;val);</span><br><span class="line">            free(p);</span><br><span class="line">            p = next;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    free(map-&gt;buckets);  // 释放桶数组</span><br><span class="line">    free(map);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 扩容函数，更新桶容量，所以一个是capacity更新，一个是buckets更新</span><br><span class="line">static bool hashmap_resize(DynamicHashMap *map) &#123;</span><br><span class="line">    KeyValueNode **new_buckets = (KeyValueNode **)calloc((2 * map-&gt;capacity), sizeof(KeyValueNode *));</span><br><span class="line">    if (!new_buckets) &#123;</span><br><span class="line">        perror(&quot;new_buckets create&quot;);</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line">    //保存旧数据</span><br><span class="line">    KeyValueNode **old_buckets = map-&gt;buckets;</span><br><span class="line">    int old_capacity = map-&gt;capacity;</span><br><span class="line"></span><br><span class="line">    //更新哈希表参数</span><br><span class="line">    map-&gt;capacity *= 2;</span><br><span class="line">    map-&gt;buckets = new_buckets;</span><br><span class="line">    //更新节点</span><br><span class="line">    for (int i = 0; i &lt; old_capacity; i++) &#123;</span><br><span class="line">        KeyValueNode *current = old_buckets[i];</span><br><span class="line">        while (current) &#123;</span><br><span class="line">            KeyValueNode *next = current-&gt;next;</span><br><span class="line">            int index= hash_function(map, current-&gt;key);</span><br><span class="line"></span><br><span class="line">            current-&gt;next = map-&gt;buckets[index];</span><br><span class="line">            map-&gt;buckets[index] = current;  //此处看做指针可能更好理解</span><br><span class="line">            current = next;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    free(old_buckets);  // 释放旧桶数组</span><br><span class="line">    return true;</span><br><span class="line">&#125;</span><br><span class="line">// 复制字符串 strdup被禁用</span><br><span class="line">static ValueType strdupp(const ValueType val) &#123;</span><br><span class="line">    size_t len = strlen(val) + 1;</span><br><span class="line">    ValueType p = (ValueType)malloc(len);</span><br><span class="line">    if (!p) &#123;</span><br><span class="line">        return NULL;</span><br><span class="line">    &#125;</span><br><span class="line">    if (strcpy_s(p, len, val) != 0) &#123;</span><br><span class="line">        free(p);</span><br><span class="line">        return NULL;</span><br><span class="line">    &#125;</span><br><span class="line">    return p;</span><br><span class="line">&#125;</span><br><span class="line">// 插入一个键值对</span><br><span class="line">ValueType hashmap_put(DynamicHashMap *map, KeyType key, ValueType val) &#123;</span><br><span class="line">    if (!map || !key || !val) return NULL; //保证输出没问题</span><br><span class="line">    int index = hash_function(map,key);</span><br><span class="line">    //查找现有键值，没有就新建，有就顺序插入</span><br><span class="line">    KeyValueNode *current = map-&gt;buckets[index];</span><br><span class="line">    while (current) &#123;</span><br><span class="line">        if (strcmp(current-&gt;key, key) == 0) &#123;</span><br><span class="line">            // 找到重复键，更新值</span><br><span class="line">            free(current-&gt;val);       // 释放旧值</span><br><span class="line">            current-&gt;val = strdupp(val); // 存储新值副本,此处需要新函数，让旧值更新</span><br><span class="line">            if (!current-&gt;val) return NULL; // 内存分配失败处理</span><br><span class="line">            return current-&gt;val;</span><br><span class="line">        &#125;</span><br><span class="line">        current = current-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">    //没有这个值，那就新建</span><br><span class="line">    KeyValueNode *new_node = (KeyValueNode *)calloc(1,sizeof(KeyValueNode));</span><br><span class="line">    if (!new_node) return NULL;</span><br><span class="line">    new_node-&gt;key = strdupp(key);</span><br><span class="line">    new_node-&gt;val = strdupp(val);</span><br><span class="line">    if (!new_node-&gt;key || !new_node-&gt;val) &#123; // 内存分配失败处理</span><br><span class="line">        free(new_node-&gt;key);</span><br><span class="line">        free(new_node-&gt;val);</span><br><span class="line">        free(new_node);</span><br><span class="line">        return NULL;</span><br><span class="line">    &#125;</span><br><span class="line">    // 插入链表头部</span><br><span class="line">    new_node-&gt;next = map-&gt;buckets[index];</span><br><span class="line">    map-&gt;buckets[index] = new_node;</span><br><span class="line">    map-&gt;size++;</span><br><span class="line"></span><br><span class="line">    //检查负载因子</span><br><span class="line">    float load_factor = (float)map-&gt;size / map-&gt;capacity;</span><br><span class="line">    if (load_factor &gt; 0.75) &#123;</span><br><span class="line">        if (!hashmap_resize(map)) &#123;</span><br><span class="line">            // 扩容失败时删除刚插入的节点（可选）</span><br><span class="line">            hashmap_remove(map, key);</span><br><span class="line">            return NULL;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    return new_node-&gt;val;</span><br><span class="line">&#125;</span><br><span class="line">// 查询一个键值对，此处跟正常数组一样了</span><br><span class="line">ValueType hashmap_get(DynamicHashMap *map, KeyType key) &#123;</span><br><span class="line">    if (!map || !key) &#123;</span><br><span class="line">        printf(&quot;没有这个值&quot;);</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line">    int index = hash_function(map, key);</span><br><span class="line">    KeyValueNode *current = map-&gt;buckets[index];</span><br><span class="line">    while (current) &#123;</span><br><span class="line">        if (strcmp(current-&gt;key, key) == 0) &#123;</span><br><span class="line">            return current-&gt;val;</span><br><span class="line">        &#125;</span><br><span class="line">        current=current-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">    printf(&quot;没有这个值&quot;);</span><br><span class="line">    return NULL;</span><br><span class="line">&#125;</span><br><span class="line">// 删除某个键值对</span><br><span class="line">bool hashmap_remove(DynamicHashMap *map, KeyType key) &#123;</span><br><span class="line">    if (!map || !key) &#123;</span><br><span class="line">        printf(&quot;没有这个值&quot;);</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line">    int index = hash_function(map, key);</span><br><span class="line">    KeyValueNode *prev = NULL;</span><br><span class="line">    KeyValueNode *current = map-&gt;buckets[index];</span><br><span class="line">    while (current) &#123;</span><br><span class="line">        if (strcmp(current-&gt;key, key) == 0) &#123;</span><br><span class="line">            if (prev) &#123;</span><br><span class="line">                prev-&gt;next = current-&gt;next;</span><br><span class="line">            &#125;</span><br><span class="line">            else &#123;</span><br><span class="line">                map-&gt;buckets[index] = current-&gt;next;  // 头节点删除</span><br><span class="line">            &#125;</span><br><span class="line">            // 释放内存</span><br><span class="line">            free(current-&gt;key);</span><br><span class="line">            free(current-&gt;val);</span><br><span class="line">            free(current);</span><br><span class="line">            map-&gt;size--;</span><br><span class="line">            return true;</span><br><span class="line">        &#125;</span><br><span class="line">        prev = current;</span><br><span class="line">        current = current-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">    return false;  // 未找到</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></div></div><div class="tab-to-top"><button type="button" aria-label="scroll to top"><i class="fas fa-arrow-up"></i></button></div></div>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/a57786d7/">https://hespethorn.github.io/posts/a57786d7/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C%E8%AF%AD%E8%A8%80/">C语言</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/">数据结构</a><a class="post-meta__tags" href="/tags/%E5%8A%A8%E6%80%81%E6%95%B0%E7%BB%84/">动态数组</a><a class="post-meta__tags" href="/tags/%E5%93%88%E5%B8%8C%E8%A1%A8/">哈希表</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c334b68c/" title="YAML 配置指南">YAML 配置指南</a><time datetime="2025-10-15T12:19:28.000Z" title="Created 2025-10-15 20:19:28">2025-10-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/5765e878/" title="C++相对路径：从编译到运行">C++相对路径：从编译到运行</a><time datetime="2025-10-07T15:16:07.000Z" title="Created 2025-10-07 23:16:07">2025-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/76aee8b3/" title="BM25 算法解析">BM25 算法解析</a><time datetime="2025-10-01T15:00:23.000Z" title="Created 2025-10-01 23:00:23">2025-10-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c75958ed/" title="Trie 树核心原理">Trie 树核心原理</a><time datetime="2025-07-28T14:07:19.000Z" title="Created 2025-07-28 22:07:19">2025-07-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6db2fe52/" title="C 语言序列化和反序列化">C 语言序列化和反序列化</a><time datetime="2022-06-10T13:58:36.000Z" title="Created 2022-06-10 21:58:36">2022-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6f84ed1e/" title="C语言实现二叉搜索树（BST）：从增删改查到三种遍历的完整解析">C语言实现二叉搜索树（BST）：从增删改查到三种遍历的完整解析</a><time datetime="2022-04-29T01:14:25.000Z" title="Created 2022-04-29 09:14:25">2022-04-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a57786d7/" title="动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案">动态哈希表：从0到1解析C语言动态数组+链表冲突解决方案</a><time datetime="2022-04-12T13:01:09.000Z" title="Created 2022-04-12 21:01:09">2022-04-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/95859935/" title="从0到1实现C语言哈希表：底层原理与实战解析">从0到1实现C语言哈希表：底层原理与实战解析</a><time datetime="2022-03-30T01:13:50.000Z" title="Created 2022-03-30 09:13:50">2022-03-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a444b428/" title="从基础到进阶：常见排序算法的C语言实现与深度解析">从基础到进阶：常见排序算法的C语言实现与深度解析</a><time datetime="2022-03-25T01:20:58.000Z" title="Created 2022-03-25 09:20:58">2022-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/32b00d45/" title="C语言实现汉诺塔问题：从递归逻辑到代码解析">C语言实现汉诺塔问题：从递归逻辑到代码解析</a><time datetime="2022-02-28T15:20:10.000Z" title="Created 2022-02-28 23:20:10">2022-02-28</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

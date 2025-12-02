@@ -1,0 +1,568 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Linux 0.11（四）：操作系统核心模块解析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言 在操作系统的演进历程中，Linux 0.11 版本作为开源操作系统发展的重要里程碑，其系统架构设计与核心功能实现对现代操作系统具有深远的研究价值。  详情见品读 Linux 0.11 核心代码。  一、核心模块解析 1.1 物理内存管理的数据结构Linux 0.11 采用mem_map数组作为物理内存管理的核心数据结构，该数组定义于mm&#x2F;memory.c文件中： 123456struct">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux 0.11（四）：操作系统核心模块解析">
+<meta property="og:url" content="https://hespethorn.github.io/posts/72eaee31/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言 在操作系统的演进历程中，Linux 0.11 版本作为开源操作系统发展的重要里程碑，其系统架构设计与核心功能实现对现代操作系统具有深远的研究价值。  详情见品读 Linux 0.11 核心代码。  一、核心模块解析 1.1 物理内存管理的数据结构Linux 0.11 采用mem_map数组作为物理内存管理的核心数据结构，该数组定义于mm&#x2F;memory.c文件中： 123456struct">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2022-07-15T13:40:11.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:34:56.937Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="操作系统">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Linux 0.11（四）：操作系统核心模块解析",
+  "url": "https://hespethorn.github.io/posts/72eaee31/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2022-07-15T13:40:11.000Z",
+  "dateModified": "2025-07-12T15:34:56.937Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/72eaee31/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Linux 0.11（四）：操作系统核心模块解析',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Linux 0.11（四）：操作系统核心模块解析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Linux 0.11（四）：操作系统核心模块解析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2022-07-15T13:40:11.000Z" title="Created 2022-07-15 21:40:11">2022-07-15</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Operating-Systems/">Operating-Systems</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Operating-Systems/Linux-0-11/">Linux 0.11</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><hr>
+<h2 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h2><hr>
+<p>在操作系统的演进历程中，Linux 0.11 版本作为开源操作系统发展的重要里程碑，其系统架构设计与核心功能实现对现代操作系统具有深远的研究价值。</p>
+<blockquote>
+<p>详情见<a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/dibingfa/flash-linux0.11-talk/blob/main/README.md">品读 Linux 0.11 核心代码</a>。</p>
+</blockquote>
+<h2 id="一、核心模块解析"><a href="#一、核心模块解析" class="headerlink" title="一、核心模块解析"></a>一、核心模块解析</h2><hr>
+<h3 id="1-1-物理内存管理的数据结构"><a href="#1-1-物理内存管理的数据结构" class="headerlink" title="1.1 物理内存管理的数据结构"></a>1.1 物理内存管理的数据结构</h3><p>Linux 0.11 采用<code>mem_map</code>数组作为物理内存管理的核心数据结构，该数组定义于<code>mm/memory.c</code>文件中：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">page</span> &#123;</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">long</span> flags;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">page</span> *<span class="title">next</span>;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">page</span> *<span class="title">prev</span>;</span></span><br><span class="line">&#125;;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">page</span> <span class="title">mem_map</span>[<span class="title">MEM_MAP_SIZE</span>];</span></span><br></pre></td></tr></table></figure>
+<p>每个数组元素对应一个物理页面（4KB），通过<code>flags</code>字段记录页面状态（空闲、已分配、锁定等），<code>next</code>和<code>prev</code>指针构成双向链表，用于空闲页面的组织与管理。这种设计实现了对物理内存的精细化管理，为内存分配与回收提供了数据基础。</p>
+<h3 id="1-2-内存分配算法的底层实现"><a href="#1-2-内存分配算法的底层实现" class="headerlink" title="1.2 内存分配算法的底层实现"></a>1.2 内存分配算法的底层实现</h3><p>内存分配的核心函数<code>get_free_page</code>实现于<code>mm/memory.c</code>，其算法流程如下：</p>
+<ol>
+<li>遍历<code>mem_map</code>数组，查找状态为空闲的页面</li>
+<li>找到空闲页面后，更新其状态为已分配</li>
+<li>返回该页面的物理地址<br>该函数采用简单的遍历查找策略，在内存空间较小的 Linux 0.11 环境下能够高效工作。值得注意的是，<code>get_free_page</code>通过<code>__get_free_page</code>函数实现底层内存分配，该函数会处理页面分配时的锁机制和边界条件：</li>
+</ol>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">unsigned</span> <span class="type">long</span> <span class="title function_">get_free_page</span><span class="params">(<span class="type">int</span> priority)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">long</span> page;</span><br><span class="line">    page = __get_free_page(priority);</span><br><span class="line">    <span class="keyword">if</span> (page)</span><br><span class="line">        <span class="built_in">memset</span>((<span class="type">char</span> *)page, <span class="number">0</span>, PAGE_SIZE);</span><br><span class="line">    <span class="keyword">return</span> page;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="1-3-地址映射机制的硬件与软件协同"><a href="#1-3-地址映射机制的硬件与软件协同" class="headerlink" title="1.3 地址映射机制的硬件与软件协同"></a>1.3 地址映射机制的硬件与软件协同</h3><p>Linux 0.11 的地址映射采用 &quot;段表 + 页表&quot; 的两级映射机制：</p>
+<ul>
+<li><strong>段表映射</strong>：将逻辑地址转换为线性地址，由 CPU 的段寄存器（如 CS、DS）和段描述符表共同完成</li>
+<li><strong>页表映射</strong>：将线性地址转换为物理地址，通过页目录表和页表实现<br>页表初始化在<code>mm/mm_init.c</code>的<code>mem_init</code>函数中完成，该函数创建页目录表和页表，并建立内核空间的地址映射。地址映射的关键数据结构为页目录项和页表项，每个表项占 4 字节，包含物理地址、访问权限和状态标志等信息。</li>
+</ul>
+<h2 id="二、进程调度模块的核心机制"><a href="#二、进程调度模块的核心机制" class="headerlink" title="二、进程调度模块的核心机制"></a>二、进程调度模块的核心机制</h2><hr>
+<h3 id="2-1-调度触发与时钟中断处理"><a href="#2-1-调度触发与时钟中断处理" class="headerlink" title="2.1 调度触发与时钟中断处理"></a>2.1 调度触发与时钟中断处理</h3><p>进程调度的触发机制基于 10ms 时钟中断，该中断由 8253 定时器产生，中断号为 0x20。中断处理函数<code>timer_interrupt</code>定义于<code>kernel/sched.c</code>，其核心逻辑为：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">timer_interrupt</span><span class="params">(<span class="type">int</span> irq)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">extern</span> <span class="type">int</span> beepcount;</span><br><span class="line">    <span class="keyword">extern</span> <span class="type">int</span> syscall_count;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">task_struct</span> *<span class="title">p</span> =</span> current;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 递减当前进程的时间片计数器 */</span></span><br><span class="line">    <span class="keyword">if</span> (--p-&gt;counter &gt; <span class="number">0</span>) <span class="keyword">return</span>;</span><br><span class="line">    p-&gt;counter = <span class="number">0</span>;</span><br><span class="line">    need_resched = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>时钟中断处理函数每次执行时，会递减当前进程的<code>counter</code>字段（时间片计数器）。当<code>counter</code>减为 0 时，设置<code>need_resched</code>标志，触发进程调度。</p>
+<h3 id="2-2-调度算法与进程选择策略"><a href="#2-2-调度算法与进程选择策略" class="headerlink" title="2.2 调度算法与进程选择策略"></a>2.2 调度算法与进程选择策略</h3><p>调度函数<code>schedule</code>实现于<code>kernel/sched.c</code>，采用基于优先级的抢占式调度算法：</p>
+<ol>
+<li>遍历所有处于<code>RUNNING</code>状态的进程</li>
+<li>选择<code>counter</code>值最大的进程作为下一个执行进程</li>
+<li>若当前进程不是选中进程，则触发上下文切换</li>
+</ol>
+<p>该算法的核心在于<code>counter</code>字段的动态调整，<code>counter</code>不仅代表剩余时间片，还反映进程的优先级。在<code>fork</code>创建子进程时，子进程会继承父进程的<code>counter</code>值，并在<code>schedule</code>函数中根据系统负载动态调整。</p>
+<h3 id="2-3-上下文切换的底层实现"><a href="#2-3-上下文切换的底层实现" class="headerlink" title="2.3 上下文切换的底层实现"></a>2.3 上下文切换的底层实现</h3><p>上下文切换由<code>switch_to</code>宏定义实现，位于<code>kernel/sched.c</code>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">#define switch_to(n) &#123;\</span><br><span class="line">    struct task_struct *prev = current, *next = (n); \</span><br><span class="line">    if (prev == next) return; \</span><br><span class="line">    __asm__ volatile(&quot;pushfl\n\t&quot;       /* 保存标志寄存器 */\</span><br><span class="line">                    &quot;pushl %%ebp\n\t&quot;     /* 保存ebp */\</span><br><span class="line">                    &quot;movl %%esp,%0\n\t&quot;   /* 保存当前esp到prev-&gt;tss.esp0 */\</span><br><span class="line">                    &quot;movl %2,%esp\n\t&quot;    /* 加载next-&gt;tss.esp0到esp */\</span><br><span class="line">                    &quot;movl $1f,%1\n\t&quot;     /* 保存当前eip到prev-&gt;tss.eip */\</span><br><span class="line">                    &quot;pushl %3\n\t&quot;        /* 压入next-&gt;tss.eip */\</span><br><span class="line">                    &quot;jmp __switch_to\n&quot;   /* 跳转到__switch_to */\</span><br><span class="line">                    &quot;1:\t&quot;                /* 标签1 */\</span><br><span class="line">                    &quot;popl %%ebp\n\t&quot;      /* 恢复ebp */\</span><br><span class="line">                    &quot;popfl\n&quot;             /* 恢复标志寄存器 */\</span><br><span class="line">                    : &quot;=m&quot; (prev-&gt;tss.esp0), &quot;=m&quot; (prev-&gt;tss.eip) \</span><br><span class="line">                    : &quot;m&quot; (next-&gt;tss.esp0), &quot;m&quot; (next-&gt;tss.eip), &quot;a&quot; (next) \</span><br><span class="line">                    : &quot;memory&quot;); \</span><br><span class="line">    current = next; \</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>该宏通过<code>ljmp</code>指令加载任务状态段（TSS），实现进程上下文的切换。TSS 中保存了进程的栈指针、通用寄存器、段寄存器等关键上下文信息，确保进程切换时状态的完整保存与恢复。</p>
+<h2 id="三、文件系统模块的体系结构"><a href="#三、文件系统模块的体系结构" class="headerlink" title="三、文件系统模块的体系结构"></a>三、文件系统模块的体系结构</h2><h3 id="3-1-MINIX-文件系统的逻辑结构"><a href="#3-1-MINIX-文件系统的逻辑结构" class="headerlink" title="3.1 MINIX 文件系统的逻辑结构"></a>3.1 MINIX 文件系统的逻辑结构</h3><p>Linux 0.11 采用 MINIX 文件系统，其逻辑结构由三层组成：</p>
+<ul>
+<li><strong>超级块（Super Block）</strong>：存储文件系统的元信息，如块大小、inode 数量、空闲块指针等</li>
+<li><strong>inode 表</strong>：每个文件对应一个 inode，存储文件的元数据（所有者、权限、大小、数据块指针等）</li>
+<li><strong>数据块</strong>：存储文件的实际数据</li>
+</ul>
+<p>超级块结构定义于<code>fs/minix_fs.h</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">minix_super_block</span> &#123;</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_ninodes;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_nzones;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_imap_blocks;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_zmap_blocks;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_firstdatazone;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_log_zone_size;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">long</span> s_max_size;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> s_magic;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-2-数据块操作的核心函数"><a href="#3-2-数据块操作的核心函数" class="headerlink" title="3.2 数据块操作的核心函数"></a>3.2 数据块操作的核心函数</h3><p>文件系统的数据块操作由<code>bread</code>和<code>bmap</code>函数实现：</p>
+<ul>
+<li><code>bread</code>函数（<code>fs/buffer.c</code>）负责从设备读取数据块，其流程包括：<ol>
+<li>在缓冲区中查找目标块</li>
+<li>若未找到，分配新缓冲区并从设备读取数据</li>
+<li>返回缓冲区指针</li>
+</ol>
+</li>
+<li><code>bmap</code>函数（<code>fs/minix_fs.c</code>）实现逻辑块到物理块的映射，根据 inode 中的数据块指针表，计算逻辑块对应的物理块地址。对于直接块、间接块和双重间接块，<code>bmap</code>采用不同的映射策略，确保大文件的高效访问。</li>
+</ul>
+<h3 id="3-3-根文件系统的挂载过程"><a href="#3-3-根文件系统的挂载过程" class="headerlink" title="3.3 根文件系统的挂载过程"></a>3.3 根文件系统的挂载过程</h3><p>根文件系统的挂载由<code>mount_root</code>函数完成，位于<code>fs/super.c</code>：</p>
+<ol>
+<li>初始化块设备驱动</li>
+<li>读取根设备的超级块</li>
+<li>验证文件系统类型（MINIX）</li>
+<li>建立根目录的 inode 和文件描述符</li>
+</ol>
+<p>该函数是文件系统初始化的关键环节，通过<code>read_super</code>函数读取超级块信息，并通过<code>iget</code>函数获取根目录的 inode，为后续文件操作奠定基础。</p>
+<h2 id="四、设备管理模块的实现原理"><a href="#四、设备管理模块的实现原理" class="headerlink" title="四、设备管理模块的实现原理"></a>四、设备管理模块的实现原理</h2><h3 id="4-1-终端设备的驱动机制"><a href="#4-1-终端设备的驱动机制" class="headerlink" title="4.1 终端设备的驱动机制"></a>4.1 终端设备的驱动机制</h3><p>Linux 0.11 中的终端设备以<code>/dev/tty0</code>为控制台，其驱动实现于<code>kernel/chr_drv/tty_io.c</code>。终端设备的管理通过<code>tty_table</code>数组实现，每个元素对应一个终端：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">tty_struct</span> <span class="title">tty_table</span>[<span class="title">NR_TTY</span>];</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">tty_struct</span> &#123;</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> *write_q;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> *read_q;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> *secondary;</span><br><span class="line">    <span class="type">int</span> write_q_head;</span><br><span class="line">    <span class="type">int</span> write_q_tail;</span><br><span class="line">    <span class="comment">/* 其他字段 */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>终端的读写操作通过操作上述队列实现，<code>tty_read</code>和<code>tty_write</code>函数分别处理终端的输入和输出，实现了字符缓冲与终端设备的交互。</p>
+<h3 id="4-2-块设备的初始化与-IO-处理"><a href="#4-2-块设备的初始化与-IO-处理" class="headerlink" title="4.2 块设备的初始化与 IO 处理"></a>4.2 块设备的初始化与 IO 处理</h3><p>块设备的初始化由<code>hd_init</code>函数完成，位于<code>kernel/blk_drv/hd.c</code>：</p>
+<ol>
+<li>检测硬盘参数（柱面数、磁头数、扇区数等）</li>
+<li>初始化硬盘中断处理函数</li>
+<li>建立硬盘请求队列</li>
+</ol>
+<p>块设备的 IO 请求通过请求队列处理，<code>make_request</code>函数将 IO 请求添加到队列，<code>do_hd_request</code>函数处理队列中的请求，实现硬盘的读写操作。请求队列的设计使得多个 IO 请求可以批量处理，提高了硬盘的访问效率。</p>
+<h3 id="4-3-中断处理机制的统一框架"><a href="#4-3-中断处理机制的统一框架" class="headerlink" title="4.3 中断处理机制的统一框架"></a>4.3 中断处理机制的统一框架</h3><p>Linux 0.11 的中断处理采用统一的框架，通过<code>set_intr_gate</code>和<code>set_system_gate</code>等宏初始化中断向量表（IDT）。以键盘中断为例，初始化代码位于<code>kernel/traps.c</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">set_system_gate(<span class="number">0x21</span>, &amp;keyboard_interrupt);</span><br></pre></td></tr></table></figure>
+
+<p>中断处理流程遵循 &quot;保存现场 - 执行处理函数 - 恢复现场&quot; 的标准模式，确保中断处理的原子性和系统的稳定性。不同设备的中断处理函数注册到中断向量表中，实现了设备中断的统一管理与分发。</p>
+<h2 id="五、关键技术点的深度分析"><a href="#五、关键技术点的深度分析" class="headerlink" title="五、关键技术点的深度分析"></a>五、关键技术点的深度分析</h2><h3 id="5-1-特权级控制的三重校验机制"><a href="#5-1-特权级控制的三重校验机制" class="headerlink" title="5.1 特权级控制的三重校验机制"></a>5.1 特权级控制的三重校验机制</h3><p>Linux 0.11 的特权级控制基于 CPU 的保护模式，采用 CPL（当前特权级）、DPL（描述符特权级）和 RPL（请求特权级）三重校验：</p>
+<ul>
+<li><strong>CPL</strong>：当前执行代码的特权级，存于 CS 寄存器的低两位</li>
+<li><strong>DPL</strong>：段描述符或门描述符的特权级，定义访问权限</li>
+<li><strong>RPL</strong>：请求者的特权级，存于段选择子的低两位</li>
+</ul>
+<p>三重校验的逻辑为：只有当 CPL ≤ DPL 且 RPL ≤ DPL 时，才能访问相应的段或执行相应的操作。这种机制确保了内核资源不被低特权级的代码非法访问，提高了系统的安全性。</p>
+<h3 id="5-2-系统调用的实现与参数传递"><a href="#5-2-系统调用的实现与参数传递" class="headerlink" title="5.2 系统调用的实现与参数传递"></a>5.2 系统调用的实现与参数传递</h3><p>系统调用通过<code>int 0x80</code>指令触发，其处理流程如下：</p>
+<ol>
+<li>用户态程序执行<code>int 0x80</code>指令，触发系统调用</li>
+<li>CPU 根据 IDT 找到系统调用处理函数<code>system_call</code></li>
+<li><code>system_call</code>根据<code>eax</code>寄存器的值索引<code>sys_call_table</code>，调用具体的系统调用函数</li>
+<li>系统调用完成后，通过<code>iret</code>指令返回用户态</li>
+</ol>
+<p>参数传递采用寄存器方式：系统调用号存于<code>eax</code>，参数依次存于<code>ebx</code>、<code>ecx</code>、<code>edx</code>等寄存器。这种设计避免了参数在用户态和内核态之间的多次复制，提高了系统调用的效率。</p>
+<h3 id="5-3-程序执行的加载与运行机制"><a href="#5-3-程序执行的加载与运行机制" class="headerlink" title="5.3 程序执行的加载与运行机制"></a>5.3 程序执行的加载与运行机制</h3><p>程序的加载与执行由<code>execve</code>系统调用实现，位于<code>fs/exec.c</code>，其核心流程为：</p>
+<ol>
+<li>读取可执行文件头，验证文件格式（a.out 格式）</li>
+<li>分配内存空间，映射程序的代码段和数据段</li>
+<li>构建新的程序环境（环境变量、命令行参数）</li>
+<li>设置进程的<code>eip</code>和<code>esp</code>，指向程序入口</li>
+</ol>
+<p>程序执行时采用按需加载策略，当访问未加载的代码段或数据段时，触发缺页中断，由<code>do_page_fault</code>函数加载相应的页面。这种机制减少了程序启动时的内存占用，提高了内存使用效率。</p>
+<h2 id="六、调试与验证方法"><a href="#六、调试与验证方法" class="headerlink" title="六、调试与验证方法"></a>六、调试与验证方法</h2><h3 id="6-1-调试环境的搭建"><a href="#6-1-调试环境的搭建" class="headerlink" title="6.1 调试环境的搭建"></a>6.1 调试环境的搭建</h3><p>调试 Linux 0.11 可采用 QEMU+GDB 组合：</p>
+<ol>
+<li>配置 QEMU 模拟器，指定 Linux 0.11 镜像文件</li>
+<li>启动 QEMU 时添加调试参数：<code>-s -S</code></li>
+<li>在 GDB 中连接 QEMU 调试端口：<code>target remote :1234</code></li>
+</ol>
+<p>该环境支持单步执行、设置断点、查看内存和寄存器等调试功能，便于深入分析系统底层行为。</p>
+<h3 id="6-2-关键断点的设置与分析"><a href="#6-2-关键断点的设置与分析" class="headerlink" title="6.2 关键断点的设置与分析"></a>6.2 关键断点的设置与分析</h3><p>在调试过程中，可在以下关键函数设置断点：</p>
+<ul>
+<li><code>main</code>函数：系统初始化的入口</li>
+<li><code>fork</code>函数：进程创建的关键函数</li>
+<li><code>execve</code>函数：程序加载的核心函数</li>
+<li><code>schedule</code>函数：进程调度的核心函数</li>
+<li><code>do_page_fault</code>函数：缺页中断处理函数</li>
+</ul>
+<p>通过分析这些函数的执行流程和参数变化，可以深入理解 Linux 0.11 的核心机制。例如，在<code>execve</code>断点处，可以观察可执行文件的加载过程和内存映射的建立过程。</p>
+<h3 id="6-3-运行时行为的观察与分析"><a href="#6-3-运行时行为的观察与分析" class="headerlink" title="6.3 运行时行为的观察与分析"></a>6.3 运行时行为的观察与分析</h3><p>调试过程中可重点观察以下运行时行为：</p>
+<ul>
+<li><strong>内存分配</strong>：通过观察<code>mem_map</code>数组的变化，分析内存分配策略</li>
+<li><strong>进程切换</strong>：跟踪<code>current</code>指针的变化和<code>schedule</code>函数的调用，理解进程调度过程</li>
+<li><strong>文件读写</strong>：监控<code>bread</code>和<code>bmap</code>函数的调用，分析文件系统的工作流程</li>
+<li><strong>中断处理</strong>：观察中断处理函数的调用频率和执行时间，评估系统的中断响应能力</li>
+</ul>
+<p>通过这些观察，可以验证理论分析的正确性，发现系统实现中的优化点，为深入理解操作系统原理提供实践支撑。</p>
+<h2 id="七、后记"><a href="#七、后记" class="headerlink" title="七、后记"></a>七、后记</h2><p>Linux 0.11 虽然是一个早期的操作系统版本，但其设计思想和实现技术为现代操作系统的发展奠定了基础。深入研究该版本的源代码，对于理解操作系统的核心原理、掌握系统级编程技术具有重要意义。</p>
+<hr>
+<img src="/img/PageCode/31.1.png" alt="操作系统核心模块解析" style="width: 90%;height: auto;margin: 0 auto;display: block;border: 3px solid #f0f0f0;border-radius: 12px;box-shadow: 0 4px 8px rgba(0,0,0,0.1);" loading='lazy'></article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/72eaee31/">https://hespethorn.github.io/posts/72eaee31/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Linux/">Linux</a><a class="post-meta__tags" href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/">操作系统</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dec2c511/" title="Linux 0.11（五）：从键盘输入到结果显示的底层机制">Linux 0.11（五）：从键盘输入到结果显示的底层机制</a><time datetime="2022-07-25T14:27:52.000Z" title="Created 2022-07-25 22:27:52">2022-07-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/72eaee31/" title="Linux 0.11（四）：操作系统核心模块解析">Linux 0.11（四）：操作系统核心模块解析</a><time datetime="2022-07-15T13:40:11.000Z" title="Created 2022-07-15 21:40:11">2022-07-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/587ab151/" title="Linux 0.11（三）：新进程诞生全流程解析">Linux 0.11（三）：新进程诞生全流程解析</a><time datetime="2022-07-09T15:47:52.000Z" title="Created 2022-07-09 23:47:52">2022-07-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1a3e9ae6/" title="Linux 0.11（二）：从底层搭建到系统觉醒的深度探索">Linux 0.11（二）：从底层搭建到系统觉醒的深度探索</a><time datetime="2022-07-01T11:47:52.000Z" title="Created 2022-07-01 19:47:52">2022-07-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c0ee3b8d/" title="Linux 0.11（一）：进入内核前的底层机制剖析">Linux 0.11（一）：进入内核前的底层机制剖析</a><time datetime="2022-06-28T15:31:44.000Z" title="Created 2022-06-28 23:31:44">2022-06-28</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

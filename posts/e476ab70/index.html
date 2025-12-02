@@ -1,0 +1,663 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Linux 基础操作与核心概念详解 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、Linux 系统架构：用户空间与内核的交互桥梁Linux 系统采用分层架构，核心逻辑围绕“用户空间”与“内核空间”的协作展开。用户程序无法直接操作硬件，必须通过内核提供的接口——这一接口正是我们今天要深入理解的系统调用、库函数与Shell 命令。  1.1 层次结构概览Linux 系统的运行逻辑可简化为三层模型（从用户到内核）：    层级 角色描述 典型代表&#x2F;技术    应用层">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux 基础操作与核心概念详解">
+<meta property="og:url" content="https://hespethorn.github.io/posts/e476ab70/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、Linux 系统架构：用户空间与内核的交互桥梁Linux 系统采用分层架构，核心逻辑围绕“用户空间”与“内核空间”的协作展开。用户程序无法直接操作硬件，必须通过内核提供的接口——这一接口正是我们今天要深入理解的系统调用、库函数与Shell 命令。  1.1 层次结构概览Linux 系统的运行逻辑可简化为三层模型（从用户到内核）：    层级 角色描述 典型代表&#x2F;技术    应用层">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2022-06-18T14:12:36.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:43:09.079Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="系统调用">
+<meta property="article:tag" content="shell命令">
+<meta property="article:tag" content="库函数">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Linux 基础操作与核心概念详解",
+  "url": "https://hespethorn.github.io/posts/e476ab70/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2022-06-18T14:12:36.000Z",
+  "dateModified": "2025-07-12T15:43:09.079Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/e476ab70/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Linux 基础操作与核心概念详解',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Linux 基础操作与核心概念详解</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Linux 基础操作与核心概念详解</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2022-06-18T14:12:36.000Z" title="Created 2022-06-18 22:12:36">2022-06-18</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Linux/">Linux</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><hr>
+<h2 id="一、Linux-系统架构：用户空间与内核的交互桥梁"><a href="#一、Linux-系统架构：用户空间与内核的交互桥梁" class="headerlink" title="一、Linux 系统架构：用户空间与内核的交互桥梁"></a>一、Linux 系统架构：用户空间与内核的交互桥梁</h2><p>Linux 系统采用<strong>分层架构</strong>，核心逻辑围绕“用户空间”与“内核空间”的协作展开。用户程序无法直接操作硬件，必须通过内核提供的接口——这一接口正是我们今天要深入理解的<strong>系统调用</strong>、<strong>库函数</strong>与<strong>Shell 命令</strong>。</p>
+<hr>
+<h3 id="1-1-层次结构概览"><a href="#1-1-层次结构概览" class="headerlink" title="1.1 层次结构概览"></a>1.1 层次结构概览</h3><p>Linux 系统的运行逻辑可简化为三层模型（从用户到内核）：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>角色描述</th>
+<th>典型代表&#x2F;技术</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>应用层</strong></td>
+<td>用户直接使用的软件（如浏览器、文本编辑器）</td>
+<td>Vim、GCC、Python</td>
+</tr>
+<tr>
+<td><strong>库函数层</strong></td>
+<td>对系统调用的封装，提供更易用的编程接口</td>
+<td>C 标准库（如 <code>fopen</code>）、GNU C 库</td>
+</tr>
+<tr>
+<td><strong>系统调用层</strong></td>
+<td>内核暴露给用户空间的“唯一入口”，直接控制硬件资源</td>
+<td><code>open</code>、<code>read</code>、<code>write</code></td>
+</tr>
+<tr>
+<td><strong>内核层</strong></td>
+<td>管理硬件资源（CPU、内存、磁盘），实现进程调度、文件系统等核心功能</td>
+<td>Linux 内核（进程管理、内存管理）</td>
+</tr>
+</tbody></table>
+<p><strong>关键结论</strong>：所有用户程序的操作（如读写文件、启动进程），最终都必须通过系统调用请求内核完成。</p>
+<hr>
+<h3 id="1-2-系统调用：用户与内核的“翻译官”"><a href="#1-2-系统调用：用户与内核的“翻译官”" class="headerlink" title="1.2 系统调用：用户与内核的“翻译官”"></a>1.2 系统调用：用户与内核的“翻译官”</h3><p>系统调用（System Call）是内核向用户空间提供的<strong>有限接口</strong>，相当于用户程序与内核之间的“翻译官”。它规定了用户程序“能做什么”和“不能做什么”，确保了系统的安全性和稳定性。</p>
+<h4 id="核心特点："><a href="#核心特点：" class="headerlink" title="核心特点："></a>核心特点：</h4><ul>
+<li><strong>唯一性</strong>：用户程序无法直接访问硬件，必须通过系统调用；</li>
+<li><strong>原子性</strong>：系统调用一旦启动，内核会全程接管直至完成；</li>
+<li><strong>特权隔离</strong>：用户空间运行在“用户态”，内核运行在“内核态”，系统调用是状态切换的触发点。</li>
+</ul>
+<h4 id="常见系统调用示例："><a href="#常见系统调用示例：" class="headerlink" title="常见系统调用示例："></a>常见系统调用示例：</h4><table>
+<thead>
+<tr>
+<th>功能</th>
+<th>系统调用</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>文件操作</td>
+<td><code>open</code>、<code>read</code>、<code>write</code>、<code>close</code></td>
+<td>打开&#x2F;读取&#x2F;写入&#x2F;关闭文件</td>
+</tr>
+<tr>
+<td>进程控制</td>
+<td><code>fork</code>、<code>exec</code>、<code>wait</code></td>
+<td>创建进程、执行程序、等待子进程结束</td>
+</tr>
+<tr>
+<td>网络通信</td>
+<td><code>socket</code>、<code>connect</code>、<code>send</code>、<code>recv</code></td>
+<td>创建套接字、连接网络、发送&#x2F;接收数据</td>
+</tr>
+</tbody></table>
+<hr>
+<h3 id="1-3-库函数层：系统调用的“包装纸”"><a href="#1-3-库函数层：系统调用的“包装纸”" class="headerlink" title="1.3 库函数层：系统调用的“包装纸”"></a>1.3 库函数层：系统调用的“包装纸”</h3><p>库函数（如 C 标准库 <code>libc</code>）是对系统调用的<strong>高级封装</strong>，目的是简化开发。开发者无需直接编写系统调用（需处理参数、错误码等细节），只需调用库函数即可。</p>
+<h4 id="典型示例：fopen-与-open-的关系"><a href="#典型示例：fopen-与-open-的关系" class="headerlink" title="典型示例：fopen 与 open 的关系"></a>典型示例：<code>fopen</code> 与 <code>open</code> 的关系</h4><ul>
+<li><code>fopen(&quot;file.txt&quot;, &quot;r&quot;)</code>（C 库函数）最终会调用 <code>open(&quot;/path/to/file.txt&quot;, O_RDONLY)</code>（系统调用）；</li>
+<li>库函数可能添加缓冲机制（如 <code>fread</code> 会一次性读取更多数据减少系统调用次数），提升效率。</li>
+</ul>
+<p><strong>注意</strong>：并非所有库函数都依赖系统调用（如数学库 <code>math.h</code> 中的 <code>sqrt</code> 仅在用户空间计算），但涉及资源操作（文件、网络、进程）的库函数必然依赖系统调用。</p>
+<hr>
+<h3 id="1-4-应用层与-Shell：用户操作的“指挥中心”"><a href="#1-4-应用层与-Shell：用户操作的“指挥中心”" class="headerlink" title="1.4 应用层与 Shell：用户操作的“指挥中心”"></a>1.4 应用层与 Shell：用户操作的“指挥中心”</h3><p>Shell 是用户与 Linux 交互的<strong>命令行解释器</strong>，既是“命令输入窗口”，也是“脚本编程环境”。它的核心功能是：</p>
+<ul>
+<li>解析用户输入的命令（如 <code>ls -l</code>、<code>cd ~</code>）；</li>
+<li>调用库函数或直接发起系统调用完成任务；</li>
+<li>支持命令组合（如管道 <code>|</code>、重定向 <code>&gt;</code>）和脚本自动化。</li>
+</ul>
+<p><strong>类比</strong>：Shell 就像“翻译+调度员”——将用户的自然语言命令翻译成系统能理解的指令，并协调各程序协作执行。</p>
+<hr>
+<h2 id="二、Shell-命令行：Linux-的“瑞士军刀”"><a href="#二、Shell-命令行：Linux-的“瑞士军刀”" class="headerlink" title="二、Shell 命令行：Linux 的“瑞士军刀”"></a>二、Shell 命令行：Linux 的“瑞士军刀”</h2><p>掌握 Shell 命令是 Linux 运维、开发的基础。以下是最常用的几类命令，覆盖目录、文件、权限等核心操作。</p>
+<hr>
+<h3 id="2-1-基础操作：目录与文件管理"><a href="#2-1-基础操作：目录与文件管理" class="headerlink" title="2.1 基础操作：目录与文件管理"></a>2.1 基础操作：目录与文件管理</h3><h4 id="2-1-1-查看与切换目录（pwd、cd）"><a href="#2-1-1-查看与切换目录（pwd、cd）" class="headerlink" title="2.1.1 查看与切换目录（pwd、cd）"></a>2.1.1 查看与切换目录（<code>pwd</code>、<code>cd</code>）</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">pwd：查看当前工作目录的绝对路径。</span><br><span class="line">$ pwd</span><br><span class="line">/home/user/documents</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">cd [目录]：切换目录。</span><br><span class="line">常用参数：</span><br><span class="line">- `cd ..`：切换到父目录；</span><br><span class="line">- `cd ~` 或 `cd`：切换到用户主目录（如 `/home/user`）；</span><br><span class="line">- `cd -`：切换到上一个工作目录。</span><br></pre></td></tr></table></figure>
+<h4 id="2-1-2-创建与删除目录（mkdir、rmdir）"><a href="#2-1-2-创建与删除目录（mkdir、rmdir）" class="headerlink" title="2.1.2 创建与删除目录（mkdir、rmdir）"></a>2.1.2 创建与删除目录（<code>mkdir</code>、<code>rmdir</code>）</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">mkdir [-p] 目录名：创建目录（ -p 参数允许递归创建多级目录）。</span><br><span class="line"></span><br><span class="line">$ mkdir dir1          # 创建一级目录 dir1</span><br><span class="line">$ mkdir -p a/b/c      # 创建多级目录 a/b/c（即使 a/b 不存在）</span><br><span class="line">`rmdir 目录名`：删除空目录（若目录非空，需用 `rm -r`）。</span><br></pre></td></tr></table></figure>
+<h4 id="2-1-3-文件操作（touch、cp、mv、rm）"><a href="#2-1-3-文件操作（touch、cp、mv、rm）" class="headerlink" title="2.1.3 文件操作（touch、cp、mv、rm）"></a>2.1.3 文件操作（<code>touch</code>、<code>cp</code>、<code>mv</code>、<code>rm</code>）</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">touch 文件名：创建新文件或更新文件时间戳。</span><br><span class="line">$ touch new_file.txt  # 创建空文件 new_file.txt</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">cp [选项] 源文件 目标路径  ：复制文件/目录（ -r 递归复制目录）。</span><br><span class="line">$ cp 1.txt 2.txt       # 复制 1.txt 为 2.txt（同目录）</span><br><span class="line">$ cp 1.txt dir/        # 复制 1.txt 到 dir 目录下</span><br><span class="line">$ cp -r dir1 dir2      # 递归复制整个目录 dir1 到 dir2</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mv [源文件/目录] [目标路径]：移动文件/目录，或重命名。</span><br><span class="line">$ mv 1.txt dir/        # 将 1.txt 移动到 dir 目录</span><br><span class="line">$ mv old_name.txt new_name.txt  # 重命名文件</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">rm [选项] 文件/目录：删除文件/目录（ -r 递归删除目录， -f 强制删除）。</span><br><span class="line">$ rm 1.txt             # 删除文件 1.txt</span><br><span class="line">$ rm -r dir/           # 递归删除目录 dir/</span><br><span class="line">$ rm -f important.txt  # 强制删除（不提示确认）</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="2-2-高级操作：搜索、查看与管道"><a href="#2-2-高级操作：搜索、查看与管道" class="headerlink" title="2.2 高级操作：搜索、查看与管道"></a>2.2 高级操作：搜索、查看与管道</h3><h4 id="2-2-1-文件内容查看（cat、less、head、tail）"><a href="#2-2-1-文件内容查看（cat、less、head、tail）" class="headerlink" title="2.2.1 文件内容查看（cat、less、head、tail）"></a>2.2.1 文件内容查看（<code>cat</code>、<code>less</code>、<code>head</code>、<code>tail</code>）</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">cat 文件名：一次性显示文件全部内容（适合小文件）。</span><br><span class="line">$ cat hello.txt  # 输出文件 hello.txt 的内容</span><br><span class="line">`less 文件名`：分屏查看大文件，支持上下翻页（`j` 下翻，`k` 上翻）、搜索（`/关键词`）。</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">head -n 行数 文件名：显示文件前 N 行（默认 10 行）。</span><br><span class="line">$ head -n 5 log.txt  # 显示 log.txt 前 5 行</span><br><span class="line">tail -n 行数 文件名：显示文件后 N 行；</span><br><span class="line">tail -f 文件名 实时跟踪文件新增内容（监控日志神器）。</span><br><span class="line">$ tail -f /var/log/syslog  # 实时查看系统日志</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-2-2-搜索工具（grep、find）"><a href="#2-2-2-搜索工具（grep、find）" class="headerlink" title="2.2.2 搜索工具（grep、find）"></a>2.2.2 搜索工具（<code>grep</code>、<code>find</code>）</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">grep [选项] 关键词 文件名：在文件中搜索关键词（支持正则表达式）。</span><br><span class="line">$ grep -n &quot;error&quot; app.log  # 显示 app.log 中包含 &quot;error&quot; 的行及行号</span><br><span class="line">$ grep -E &quot;http|https&quot; urls.txt  # 用正则匹配 &quot;http&quot; 或 &quot;https&quot;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">find 路径 [条件] [操作]：递归搜索目录下的文件/目录（支持按名称、类型、时间等过滤）。</span><br><span class="line">$ find /usr/include -name &quot;stdio.h&quot;  # 在 /usr/include 目录下查找 stdio.h</span><br><span class="line">$ find . -type d -name &quot;test&quot;        # 在当前目录下查找名为 test 的目录</span><br><span class="line">$ find . -mtime -7                   # 查找最近 7 天内修改过的文件</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-2-3-命令组合：让效率翻倍"><a href="#2-2-3-命令组合：让效率翻倍" class="headerlink" title="2.2.3 命令组合：让效率翻倍"></a>2.2.3 命令组合：让效率翻倍</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">;：顺序执行多个命令（前一个失败不影响后一个）。</span><br><span class="line">$ mkdir backup; cp data.txt backup/  # 先创建 backup 目录，再复制文件</span><br><span class="line"></span><br><span class="line">|：管道（将前一个命令的输出作为后一个命令的输入）。</span><br><span class="line">$ ps aux | grep &quot;nginx&quot;  # 查看所有进程，筛选出包含 &quot;nginx&quot; 的进程</span><br><span class="line">$ cat large.log | grep &quot;ERROR&quot; | wc -l  # 统计日志中 &quot;ERROR&quot; 出现的次数</span><br><span class="line"></span><br><span class="line">&amp;&amp;：前一个命令成功则执行后一个（ || 前一个失败则执行后一个）。</span><br><span class="line">$ make &amp;&amp; make install  # 编译成功后才执行安装</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="2-3-权限管理：控制资源的“钥匙”"><a href="#2-3-权限管理：控制资源的“钥匙”" class="headerlink" title="2.3 权限管理：控制资源的“钥匙”"></a>2.3 权限管理：控制资源的“钥匙”</h3><p>Linux 是多用户系统，权限管理是核心安全机制。每个文件&#x2F;目录有<strong>三类权限</strong>（用户、组、其他用户），通过 <code>rwx</code>（读、写、执行）控制。</p>
+<h4 id="2-3-1-权限基础：rwx-的含义"><a href="#2-3-1-权限基础：rwx-的含义" class="headerlink" title="2.3.1 权限基础：rwx 的含义"></a>2.3.1 权限基础：rwx 的含义</h4><table>
+<thead>
+<tr>
+<th>权限类型</th>
+<th>对文件的含义</th>
+<th>对目录的含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>r</code>（Read）</td>
+<td>允许读取文件内容</td>
+<td>允许列出目录下的文件&#x2F;子目录</td>
+</tr>
+<tr>
+<td><code>w</code>（Write）</td>
+<td>允许修改文件内容（删除需配合目录写权限）</td>
+<td>允许在目录中新建&#x2F;删除&#x2F;重命名文件</td>
+</tr>
+<tr>
+<td><code>x</code>（Execute）</td>
+<td>允许执行文件（脚本或可执行程序）</td>
+<td>允许进入目录（<code>cd</code>）或访问目录元数据</td>
+</tr>
+</tbody></table>
+<p><strong>示例</strong>：<code>-rwxr-xr--</code> 表示：</p>
+<ul>
+<li>所有者（User）：读、写、执行（<code>rwx</code>）；</li>
+<li>所属组（Group）：读、执行（<code>r-x</code>）；</li>
+<li>其他用户（Others）：只读（<code>r--</code>）。</li>
+</ul>
+<h4 id="2-3-2-修改权限：chmod-命令"><a href="#2-3-2-修改权限：chmod-命令" class="headerlink" title="2.3.2 修改权限：chmod 命令"></a>2.3.2 修改权限：<code>chmod</code> 命令</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">`chmod` 用于修改文件/目录的权限，支持两种模式：</span><br><span class="line"></span><br><span class="line">  数字模式：将 rwx 转换为八进制数（ r=4，w=2 ,x=1，无权限=0），三类权限值相加。</span><br><span class="line">  $ chmod 755 script.sh  # 所有者 7（4+2+1=rwx），组和其他 5（4+1=r-x）</span><br><span class="line">  </span><br><span class="line">  符号模式：通过 用户类别[+=-]权限灵活调整。</span><br><span class="line">  $ chmod u+w,g-r,o=x file.txt  # 所有者加写权限，组去读权限，其他设为执行</span><br><span class="line">  $ chmod a+x script.sh         # 所有用户加执行权限（a=所有）</span><br></pre></td></tr></table></figure>
+<h4 id="2-3-3-默认权限：umask-命令"><a href="#2-3-3-默认权限：umask-命令" class="headerlink" title="2.3.3 默认权限：umask 命令"></a>2.3.3 默认权限：<code>umask</code> 命令</h4><p><code>umask</code> 控制新建文件&#x2F;目录的默认权限（默认值为 <code>022</code>）：</p>
+<ul>
+<li>目录默认权限 &#x3D; <code>777 - umask</code>（如 <code>umask 022</code>，则目录权限 <code>755</code>）；</li>
+<li>文件默认权限 &#x3D; <code>666 - umask</code>（如 <code>umask 022</code>，则文件权限 <code>644</code>）。</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ umask 007  # 设置新建文件权限 660（666-007），目录权限 770（777-007）</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="三、文件系统：数据的“组织蓝图”"><a href="#三、文件系统：数据的“组织蓝图”" class="headerlink" title="三、文件系统：数据的“组织蓝图”"></a>三、文件系统：数据的“组织蓝图”</h2><p>Linux 文件系统采用<strong>树形结构</strong>（根目录 <code>/</code> 为起点），所有文件&#x2F;目录均挂载在这棵“树”下。要深入理解文件系统，需掌握以下核心概念：</p>
+<hr>
+<h3 id="3-1-Inode：文件的“身份证”"><a href="#3-1-Inode：文件的“身份证”" class="headerlink" title="3.1 Inode：文件的“身份证”"></a>3.1 Inode：文件的“身份证”</h3><p>Inode（索引节点）是 Linux 文件系统的核心数据结构，存储文件的<strong>元数据</strong>（非文件内容），包括：</p>
+<ul>
+<li>文件类型（普通文件、目录、符号链接等）；</li>
+<li>权限（<code>rwx</code>）、硬链接数；</li>
+<li>所有者（User）、所属组（Group）；</li>
+<li>文件大小、最后修改时间；</li>
+<li>数据块指针（指向文件内容存储的磁盘位置）。</li>
+</ul>
+<h4 id="查看-Inode-信息："><a href="#查看-Inode-信息：" class="headerlink" title="查看 Inode 信息："></a>查看 Inode 信息：</h4><ul>
+<li><code>ls -i 文件名</code>：显示文件的 Inode 编号。</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ ls -i hello.txt  # 输出：12345 hello.txt（12345 是 Inode 号）</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>stat 文件名</code>：显示 Inode 的详细信息（包括数据块位置、时间戳等）。<br><strong>关键结论</strong>：文件内容存储在数据块中，Inode 存储“如何找到数据块”的信息。删除文件时，实际是删除 Inode 与数据块的关联（数据块不会立即被覆盖）。</li>
+</ul>
+<hr>
+<h3 id="3-2-软硬链接：文件的“别名”与“克隆”"><a href="#3-2-软硬链接：文件的“别名”与“克隆”" class="headerlink" title="3.2 软硬链接：文件的“别名”与“克隆”"></a>3.2 软硬链接：文件的“别名”与“克隆”</h3><p>链接（Link）是 Inode 的“快捷方式”，分为两种：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>特点</th>
+<th>示例命令</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>硬链接</strong></td>
+<td>与原文件共享同一个 Inode，删除原文件不影响硬链接（需至少一个硬链接存在）</td>
+<td><code>ln 原文件 硬链接名</code></td>
+</tr>
+<tr>
+<td><strong>软链接</strong></td>
+<td>独立文件，存储原文件的路径（类似 Windows 快捷方式），原文件删除后失效</td>
+<td><code>ln -s 原文件路径 软链接名</code></td>
+</tr>
+</tbody></table>
+<p><strong>示例</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ ln data.txt hard_link.txt  # 创建 data.txt 的硬链接 hard_link.txt</span><br><span class="line">$ ln -s /home/user/data.txt soft_link.txt  # 创建软链接 soft_link.txt</span><br></pre></td></tr></table></figure>
+<hr>
+<h3 id="3-3-虚拟文件系统（VFS）：统一存储的“魔法桥梁”"><a href="#3-3-虚拟文件系统（VFS）：统一存储的“魔法桥梁”" class="headerlink" title="3.3 虚拟文件系统（VFS）：统一存储的“魔法桥梁”"></a>3.3 虚拟文件系统（VFS）：统一存储的“魔法桥梁”</h3><p>Linux 支持多种文件系统（如 ext4、XFS、NTFS），虚拟文件系统（VFS）是它们的“统一接口”。VFS 定义了一套通用操作（如 <code>open</code>、<code>read</code>），不同文件系统实现这些操作的具体逻辑。</p>
+<p><strong>作用</strong>：用户无需关心底层是 ext4 还是 NTFS，只需通过统一的系统调用操作文件。例如，挂载 U 盘（NTFS 格式）后，可直接用 <code>cd</code>、<code>ls</code> 访问，VFS 会自动调用 NTFS 驱动处理请求。</p>
+<hr>
+<h2 id="四、Vim-编辑器：文本处理的“效率神器”"><a href="#四、Vim-编辑器：文本处理的“效率神器”" class="headerlink" title="四、Vim 编辑器：文本处理的“效率神器”"></a>四、Vim 编辑器：文本处理的“效率神器”</h2><p>Vim 是 Linux 下经典的文本编辑器，以“模式化操作”和“高效编辑”著称。掌握 Vim 能大幅提升文本处理效率。</p>
+<hr>
+<h3 id="4-1-模式与基本操作"><a href="#4-1-模式与基本操作" class="headerlink" title="4.1 模式与基本操作"></a>4.1 模式与基本操作</h3><p>Vim 有三种核心模式：</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>功能</th>
+<th>切换方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>普通模式</strong></td>
+<td>输入命令（移动光标、删除文本、复制粘贴等）</td>
+<td>启动 Vim 默认进入此模式</td>
+</tr>
+<tr>
+<td><strong>插入模式</strong></td>
+<td>输入文本内容</td>
+<td>按 <code>i</code>（当前位置）、<code>a</code>（光标后）、<code>o</code>（下一行）等进入</td>
+</tr>
+<tr>
+<td><strong>命令模式</strong></td>
+<td>执行保存、退出、查找替换等全局命令</td>
+<td>按 <code>:</code> 进入（如 <code>:wq</code> 保存退出）</td>
+</tr>
+</tbody></table>
+<h4 id="常用操作示例："><a href="#常用操作示例：" class="headerlink" title="常用操作示例："></a>常用操作示例：</h4><ul>
+<li>打开&#x2F;创建文件：<code>vim 文件名</code>（如 <code>vim test.txt</code>）；</li>
+<li>移动光标：<code>h</code>（左）、<code>j</code>（下）、<code>k</code>（上）、<code>l</code>（右）；</li>
+<li>复制粘贴：<code>yy</code>（复制当前行）、<code>p</code>（粘贴到光标下一行）；</li>
+<li>删除文本：<code>dd</code>（删除当前行）、<code>dw</code>（删除当前单词）；</li>
+<li>保存退出：<code>:w</code>（保存）、<code>:q</code>（退出）、<code>:wq</code>（保存并退出）、&#96;:q!</li>
+</ul>
+<blockquote>
+<p>未完待续……</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/e476ab70/">https://hespethorn.github.io/posts/e476ab70/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Linux/">Linux</a><a class="post-meta__tags" href="/tags/%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8/">系统调用</a><a class="post-meta__tags" href="/tags/shell%E5%91%BD%E4%BB%A4/">shell命令</a><a class="post-meta__tags" href="/tags/%E5%BA%93%E5%87%BD%E6%95%B0/">库函数</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5dbae0d/" title="CMake 案例实战：构建多文件计算项目">CMake 案例实战：构建多文件计算项目</a><time datetime="2024-10-02T15:33:18.000Z" title="Created 2024-10-02 23:33:18">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cda3cd81/" title="CMake 初步使用">CMake 初步使用</a><time datetime="2024-10-02T14:40:38.000Z" title="Created 2024-10-02 22:40:38">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b980104e/" title="linux：多线程编程中互斥访问与线程同步机制的理论与实践">linux：多线程编程中互斥访问与线程同步机制的理论与实践</a><time datetime="2023-02-14T12:12:06.000Z" title="Created 2023-02-14 20:12:06">2023-02-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ae1b13b2/" title="linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践">linux:POSIX 线程库 (`pthread`) 详解与多线程编程实践</a><time datetime="2023-02-09T12:37:13.000Z" title="Created 2023-02-09 20:37:13">2023-02-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dc16c223/" title="信号与线程机制详解：从屏蔽位图到共享独立区域">信号与线程机制详解：从屏蔽位图到共享独立区域</a><time datetime="2023-01-18T12:41:11.000Z" title="Created 2023-01-18 20:41:11">2023-01-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/baa1fd95/" title="进程与线程中全局变量、变量、函数及主进程的差异剖析">进程与线程中全局变量、变量、函数及主进程的差异剖析</a><time datetime="2023-01-12T14:56:54.000Z" title="Created 2023-01-12 22:56:54">2023-01-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/998c94d/" title="Linux：进程间通信技术">Linux：进程间通信技术</a><time datetime="2022-12-24T14:52:38.000Z" title="Created 2022-12-24 22:52:38">2022-12-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7cf36d2/" title="Linux 系统监控利器：ps、free、top 指令深度解析">Linux 系统监控利器：ps、free、top 指令深度解析</a><time datetime="2022-12-11T12:50:02.000Z" title="Created 2022-12-11 20:50:02">2022-12-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e3f594d1/" title="Linux：为什么用 dup 而不是直接赋值">Linux：为什么用 dup 而不是直接赋值</a><time datetime="2022-12-05T15:56:03.000Z" title="Created 2022-12-05 23:56:03">2022-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f3bb7775/" title="Linux：输入输出与文件操作函数学习笔记整理">Linux：输入输出与文件操作函数学习笔记整理</a><time datetime="2022-11-29T11:29:03.000Z" title="Created 2022-11-29 19:29:03">2022-11-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/977e2aa9/" title="Linux：stat 与 fstat 函数学习笔记">Linux：stat 与 fstat 函数学习笔记</a><time datetime="2022-11-24T12:59:03.000Z" title="Created 2022-11-24 20:59:03">2022-11-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/701ef8f6/" title="Linux：基于 select 的即时聊天程序设计与实现">Linux：基于 select 的即时聊天程序设计与实现</a><time datetime="2022-11-05T15:59:41.000Z" title="Created 2022-11-05 23:59:41">2022-11-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/701ef8f6/" title="Linux：内存映射实现文件复制详解">Linux：内存映射实现文件复制详解</a><time datetime="2022-10-07T05:59:41.000Z" title="Created 2022-10-07 13:59:41">2022-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/417a14db/" title="Linux：实现目录树结构打印">Linux：实现目录树结构打印</a><time datetime="2022-10-02T05:59:29.000Z" title="Created 2022-10-02 13:59:29">2022-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2402767f/" title="Linux：文件系统编程函数统计">Linux：文件系统编程函数统计</a><time datetime="2022-10-01T14:55:12.000Z" title="Created 2022-10-01 22:55:12">2022-10-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2402767f/" title="文件系统编程深度解析：从目录流到 IO 多路复用">文件系统编程深度解析：从目录流到 IO 多路复用</a><time datetime="2022-09-26T14:11:42.000Z" title="Created 2022-09-26 22:11:42">2022-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/26dd11b4/" title="探秘 Linux 目录流：从概念到实践的深度解析">探秘 Linux 目录流：从概念到实践的深度解析</a><time datetime="2022-09-20T15:01:42.000Z" title="Created 2022-09-20 23:01:42">2022-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/15bdd4f8/" title="Linux：类似ls -al的目录列表程序">Linux：类似ls -al的目录列表程序</a><time datetime="2022-08-25T14:12:29.000Z" title="Created 2022-08-25 22:12:29">2022-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/624b716d/" title="Linux：测试不同缓冲区大小对文件复制性能的影响">Linux：测试不同缓冲区大小对文件复制性能的影响</a><time datetime="2022-08-17T16:12:18.000Z" title="Created 2022-08-18 00:12:18">2022-08-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/458961e4/" title="Linux新手入门：GNU工具链实战笔记（从“啥都不懂”到“能打能修”）">Linux新手入门：GNU工具链实战笔记（从“啥都不懂”到“能打能修”）</a><time datetime="2022-06-28T14:32:11.000Z" title="Created 2022-06-28 22:32:11">2022-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e476ab70/" title="Linux 基础操作与核心概念详解">Linux 基础操作与核心概念详解</a><time datetime="2022-06-18T14:12:36.000Z" title="Created 2022-06-18 22:12:36">2022-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/195fb17c/" title="Linux：从极客玩具到全球技术基石的传奇之路">Linux：从极客玩具到全球技术基石的传奇之路</a><time datetime="2022-06-14T15:46:13.000Z" title="Created 2022-06-14 23:46:13">2022-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/de790f21/" title="我的 Linux 学习计划书">我的 Linux 学习计划书</a><time datetime="2022-06-14T13:35:22.000Z" title="Created 2022-06-14 21:35:22">2022-06-14</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

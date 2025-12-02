@@ -1,0 +1,574 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>进程间通信：pipe 与 socketpair 对比 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、pipe 机制详解1.1 管道的基本概念管道 (pipe) 是 Unix 系统中最古老的 IPC 机制之一，它通过一对文件描述符实现进程间的单向通信：  一个文件描述符用于读取数据 (fd[0])  另一个文件描述符用于写入数据 (fd[1])  数据在管道中以先进先出 (FIFO) 的方式传输   管道本质上是内核维护的一个缓冲区，其大小因系统而异 (通常为 64KB)，当缓冲区满时，写入操">
+<meta property="og:type" content="article">
+<meta property="og:title" content="进程间通信：pipe 与 socketpair 对比">
+<meta property="og:url" content="https://hespethorn.github.io/posts/d568c8d6/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、pipe 机制详解1.1 管道的基本概念管道 (pipe) 是 Unix 系统中最古老的 IPC 机制之一，它通过一对文件描述符实现进程间的单向通信：  一个文件描述符用于读取数据 (fd[0])  另一个文件描述符用于写入数据 (fd[1])  数据在管道中以先进先出 (FIFO) 的方式传输   管道本质上是内核维护的一个缓冲区，其大小因系统而异 (通常为 64KB)，当缓冲区满时，写入操">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2023-06-21T10:50:11.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:29:16.529Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="文件描述符">
+<meta property="article:tag" content="进程间通信 (IPC)">
+<meta property="article:tag" content="Unix 系统编程">
+<meta property="article:tag" content="pipe">
+<meta property="article:tag" content="socketpair">
+<meta property="article:tag" content="fork">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "进程间通信：pipe 与 socketpair 对比",
+  "url": "https://hespethorn.github.io/posts/d568c8d6/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2023-06-21T10:50:11.000Z",
+  "dateModified": "2025-07-12T15:29:16.529Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/d568c8d6/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '进程间通信：pipe 与 socketpair 对比',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">进程间通信：pipe 与 socketpair 对比</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">进程间通信：pipe 与 socketpair 对比</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2023-06-21T10:50:11.000Z" title="Created 2023-06-21 18:50:11">2023-06-21</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Computer-Networking/">Computer-Networking</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、pipe-机制详解"><a href="#一、pipe-机制详解" class="headerlink" title="一、pipe 机制详解"></a>一、pipe 机制详解</h2><h3 id="1-1-管道的基本概念"><a href="#1-1-管道的基本概念" class="headerlink" title="1.1 管道的基本概念"></a>1.1 管道的基本概念</h3><p>管道 (pipe) 是 Unix 系统中最古老的 IPC 机制之一，它通过一对文件描述符实现进程间的单向通信：</p>
+<ul>
+<li><p>一个文件描述符用于读取数据 (<code>fd[0]</code>)</p>
+</li>
+<li><p>另一个文件描述符用于写入数据 (<code>fd[1]</code>)</p>
+</li>
+<li><p>数据在管道中以先进先出 (FIFO) 的方式传输</p>
+</li>
+</ul>
+<p>管道本质上是内核维护的一个缓冲区，其大小因系统而异 (通常为 64KB)，当缓冲区满时，写入操作会阻塞；当缓冲区空时，读取操作会阻塞。</p>
+<h3 id="1-2-pipe-系统调用"><a href="#1-2-pipe-系统调用" class="headerlink" title="1.2 pipe () 系统调用"></a>1.2 pipe () 系统调用</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">int pipe(int pipefd[2]);</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p>成功时返回 0，失败时返回 -1 并设置 errno</p>
+</li>
+<li><p><code>pipefd[0]</code>：读取端文件描述符</p>
+</li>
+<li><p><code>pipefd[1]</code>：写入端文件描述符</p>
+</li>
+</ul>
+<h3 id="1-3-父子进程通信实现"><a href="#1-3-父子进程通信实现" class="headerlink" title="1.3 父子进程通信实现"></a>1.3 父子进程通信实现</h3><p>使用 pipe 进行父子进程通信的典型流程：</p>
+<ol>
+<li><p>创建管道</p>
+</li>
+<li><p>调用 <code>fork()</code> 创建子进程</p>
+</li>
+<li><p>关闭不需要的文件描述符</p>
+</li>
+<li><p>进行数据读写操作</p>
+</li>
+<li><p>关闭所有文件描述符</p>
+</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;sys/wait.h&gt;</span><br><span class="line">int main() &#123;</span><br><span class="line"></span><br><span class="line">   int pipefd[2];</span><br><span class="line">   pid_t pid;</span><br><span class="line">   char buf[1024];</span><br><span class="line"></span><br><span class="line">   // 创建管道</span><br><span class="line">   if (pipe(pipefd) == -1) &#123;</span><br><span class="line">       perror(&quot;pipe创建失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line"></span><br><span class="line">   // 创建子进程</span><br><span class="line">   pid = fork();</span><br><span class="line">   if (pid == 0) &#123;  // 子进程</span><br><span class="line">       // 子进程关闭写入端</span><br><span class="line">       close(pipefd[1]);</span><br><span class="line">       // 从管道读取数据</span><br><span class="line">       ssize_t n = read(pipefd[0], buf, sizeof(buf) - 1);</span><br><span class="line">       if (n == -1) &#123;</span><br><span class="line">           perror(&quot;读取失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       buf[n] = &#x27;0&#x27;;</span><br><span class="line">       printf(&quot;子进程收到: %sn&quot;, buf);</span><br><span class="line">       // 关闭读取端</span><br><span class="line">       close(pipefd[0]);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125; else &#123;  // 父进程</span><br><span class="line">       // 父进程关闭读取端</span><br><span class="line">       close(pipefd[0]);</span><br><span class="line">       // 向管道写入数据</span><br><span class="line">       const char *msg = &quot;Hello from parent&quot;;</span><br><span class="line">       if (write(pipefd[1], msg, strlen(msg)) == -1) &#123;</span><br><span class="line">           perror(&quot;写入失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       // 关闭写入端</span><br><span class="line">       close(pipefd[1]);</span><br><span class="line">       // 等待子进程结束</span><br><span class="line">       wait(NULL);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-4-双向通信实现"><a href="#1-4-双向通信实现" class="headerlink" title="1.4 双向通信实现"></a>1.4 双向通信实现</h3><p>管道本身是单向的，要实现双向通信需要创建两个管道：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;sys/wait.h&gt;</span><br><span class="line">int main() &#123;</span><br><span class="line">   int parent_to_child[2];  // 父进程到子进程的管道</span><br><span class="line">   int child_to_parent[2];  // 子进程到父进程的管道</span><br><span class="line">   pid_t pid;</span><br><span class="line">   char buf[1024];</span><br><span class="line">   // 创建两个管道</span><br><span class="line">   if (pipe(parent_to_child) == -1 || pipe(child_to_parent) == -1) &#123;</span><br><span class="line">       perror(&quot;pipe创建失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   pid = fork();</span><br><span class="line">   if (pid == -1) &#123;</span><br><span class="line">       perror(&quot;fork失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   if (pid == 0) &#123;  // 子进程</span><br><span class="line">       // 关闭不需要的文件描述符</span><br><span class="line">       close(parent_to_child[1]);  // 关闭父-&gt;子管道的写入端</span><br><span class="line">       close(child_to_parent[0]);  // 关闭子-&gt;父管道的读取端</span><br><span class="line">       // 从父进程读取数据</span><br><span class="line">       ssize_t n = read(parent_to_child[0], buf, sizeof(buf) - 1);</span><br><span class="line">       if (n == -1) &#123;</span><br><span class="line">           perror(&quot;子进程读取失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       buf[n] = &#x27;0&#x27;;</span><br><span class="line">       printf(&quot;子进程收到: %sn&quot;, buf);</span><br><span class="line">       // 向父进程发送数据</span><br><span class="line">      const char *msg = &quot;Hello from child&quot;;</span><br><span class="line">       if (write(child_to_parent[1], msg, strlen(msg)) == -1) &#123;</span><br><span class="line">           perror(&quot;子进程写入失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       // 关闭所有文件描述符</span><br><span class="line">       close(parent_to_child[0]);</span><br><span class="line">       close(child_to_parent[1]);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125; else &#123;  // 父进程</span><br><span class="line">       // 关闭不需要的文件描述符</span><br><span class="line">       close(parent_to_child[0]);  // 关闭父-&gt;子管道的读取端</span><br><span class="line">       close(child_to_parent[1]);  // 关闭子-&gt;父管道的写入端</span><br><span class="line">       // 向子进程发送数据</span><br><span class="line">       const char *msg = &quot;Hello from parent&quot;;</span><br><span class="line">       if (write(parent_to_child[1], msg, strlen(msg)) == -1) &#123;</span><br><span class="line">           perror(&quot;父进程写入失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       // 等待子进程响应</span><br><span class="line">       sleep(1);</span><br><span class="line">       // 从子进程读取数据</span><br><span class="line">       ssize_t n = read(child_to_parent[0], buf, sizeof(buf) - 1);</span><br><span class="line">       if (n == -1) &#123;</span><br><span class="line">           perror(&quot;父进程读取失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       buf[n] = &#x27;0&#x27;;</span><br><span class="line">      printf(&quot;父进程收到: %sn&quot;, buf);</span><br><span class="line">       // 关闭所有文件描述符</span><br><span class="line">       close(parent_to_child[1]);</span><br><span class="line">       close(child_to_parent[0]);</span><br><span class="line">       // 等待子进程结束</span><br><span class="line">       wait(NULL);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-5-pipe-使用注意事项"><a href="#1-5-pipe-使用注意事项" class="headerlink" title="1.5 pipe 使用注意事项"></a>1.5 pipe 使用注意事项</h3><ul>
+<li><p>管道是半双工的，默认情况下不支持双向通信</p>
+</li>
+<li><p>管道只能在具有亲缘关系的进程间使用 (父子进程、兄弟进程)</p>
+</li>
+<li><p>必须正确关闭不需要的文件描述符，否则可能导致读取端阻塞</p>
+</li>
+<li><p>管道有容量限制，写入数据超过缓冲区大小时会阻塞</p>
+</li>
+<li><p>当所有写入端关闭后，读取端读取会返回 0 (EOF)</p>
+</li>
+<li><p>当所有读取端关闭后，写入操作会导致进程收到 SIGPIPE 信号</p>
+</li>
+</ul>
+<h2 id="二、socketpair-机制详解"><a href="#二、socketpair-机制详解" class="headerlink" title="二、socketpair 机制详解"></a>二、socketpair 机制详解</h2><h3 id="2-1-socketpair-的基本概念"><a href="#2-1-socketpair-的基本概念" class="headerlink" title="2.1 socketpair 的基本概念"></a>2.1 socketpair 的基本概念</h3><p>socketpair 创建一对相互连接的套接字，与 pipe 相比：</p>
+<ul>
+<li><p>支持全双工通信</p>
+</li>
+<li><p>可用于任意进程间通信 (不仅限于亲缘进程)</p>
+</li>
+<li><p>提供更多的控制选项</p>
+</li>
+<li><p>可通过 <code>sendmsg/recvmsg</code> 传递文件描述符</p>
+</li>
+</ul>
+<h3 id="2-2-socketpair-系统调用"><a href="#2-2-socketpair-系统调用" class="headerlink" title="2.2 socketpair () 系统调用"></a>2.2 socketpair () 系统调用</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;sys/types.h&gt;</span><br><span class="line">#include &lt;sys/socket.h&gt;</span><br><span class="line">int socketpair(int domain, int type, int protocol, int sv[2]);</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p><code>domain</code>：协议族，通常使用 <code>AF_UNIX</code> (本地通信)</p>
+</li>
+<li><p><code>type</code>：套接字类型，<code>SOCK_STREAM</code> (字节流) 或 <code>SOCK_DGRAM</code> (数据报)</p>
+</li>
+<li><p><code>protocol</code>：协议，通常为 0 (默认协议)</p>
+</li>
+<li><p><code>sv</code>：输出参数，存储创建的两个套接字描述符</p>
+</li>
+<li><p>成功时返回 0，失败时返回 -1 并设置 errno</p>
+</li>
+</ul>
+<h3 id="2-3-进程间通信实现"><a href="#2-3-进程间通信实现" class="headerlink" title="2.3 进程间通信实现"></a>2.3 进程间通信实现</h3><p>使用 socketpair 进行双向通信的示例：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;sys/socket.h&gt;</span><br><span class="line">#include &lt;sys/wait.h&gt;</span><br><span class="line">int main() &#123;</span><br><span class="line">   int sv[2];</span><br><span class="line">   pid_t pid;</span><br><span class="line">   char buf[1024];</span><br><span class="line">   // 创建套接字对</span><br><span class="line">   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) &#123;</span><br><span class="line">       perror(&quot;socketpair创建失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   // 创建子进程</span><br><span class="line">   pid = fork();</span><br><span class="line">   if (pid == -1) &#123;</span><br><span class="line">       perror(&quot;fork失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   if (pid == 0) &#123;  // 子进程</span><br><span class="line">       // 关闭一个套接字(每个进程使用一个)</span><br><span class="line">       close(sv[1]);</span><br><span class="line">       // 从套接字读取数据</span><br><span class="line">       ssize_t n = read(sv[0], buf, sizeof(buf) - 1);</span><br><span class="line">       if (n == -1) &#123;</span><br><span class="line">           perror(&quot;子进程读取失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       buf[n] = &#x27;0&#x27;;</span><br><span class="line">       printf(&quot;子进程收到: %sn&quot;, buf);</span><br><span class="line">       // 向父进程发送数据</span><br><span class="line">       const char *msg = &quot;Hello from child&quot;;</span><br><span class="line">       if (write(sv[0], msg, strlen(msg)) == -1) &#123;</span><br><span class="line">           perror(&quot;子进程写入失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">      // 关闭套接字</span><br><span class="line">       close(sv[0]);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125; else &#123;  // 父进程</span><br><span class="line">       // 关闭一个套接字</span><br><span class="line">       close(sv[0]);</span><br><span class="line">       // 向子进程发送数据</span><br><span class="line">       const char *msg = &quot;Hello from parent&quot;;</span><br><span class="line">       if (write(sv[1], msg, strlen(msg)) == -1) &#123;</span><br><span class="line">           perror(&quot;父进程写入失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       // 从子进程读取数据</span><br><span class="line">       ssize_t n = read(sv[1], buf, sizeof(buf) - 1);</span><br><span class="line">       if (n == -1) &#123;</span><br><span class="line">           perror(&quot;父进程读取失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       buf[n] = &#x27;0&#x27;;</span><br><span class="line">       printf(&quot;父进程收到: %sn&quot;, buf);</span><br><span class="line">       // 关闭套接字</span><br><span class="line">       close(sv[1]);</span><br><span class="line">       // 等待子进程结束</span><br><span class="line">       wait(NULL);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-4-通过-socketpair-传递文件描述符"><a href="#2-4-通过-socketpair-传递文件描述符" class="headerlink" title="2.4 通过 socketpair 传递文件描述符"></a>2.4 通过 socketpair 传递文件描述符</h3><p>socketpair 的一个强大功能是能够传递文件描述符，这在许多场景下非常有用：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;stdlib.h&gt;</span><br><span class="line">#include &lt;string.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;sys/socket.h&gt;</span><br><span class="line">#include &lt;sys/wait.h&gt;</span><br><span class="line">#include &lt;sys/stat.h&gt;</span><br><span class="line">#include &lt;fcntl.h&gt;</span><br><span class="line">#include &lt;errno.h&gt;</span><br><span class="line">// 传递文件描述符的辅助函数</span><br><span class="line">ssize_t send_fd(int sockfd, int fd) &#123;</span><br><span class="line">   struct msghdr msg = &#123;0&#125;;</span><br><span class="line">   struct iovec iov;</span><br><span class="line">   char buf[1] = &#123;&#x27;x&#x27;&#125;;  // 发送一个虚拟字节</span><br><span class="line">   // 设置消息头</span><br><span class="line">   union &#123;</span><br><span class="line">       struct cmsghdr cm;</span><br><span class="line">       char control[CMSG_SPACE(sizeof(int))];</span><br><span class="line">   &#125; control_un;</span><br><span class="line">   msg.msg_control = control_un.control;</span><br><span class="line">   msg.msg_controllen = sizeof(control_un.control);</span><br><span class="line">   // 设置控制消息</span><br><span class="line">   struct cmsghdr *cmptr = CMSG_FIRSTHDR(&amp;msg);</span><br><span class="line">   cmptr-&gt;cmsg_len = CMSG_LEN(sizeof(int));</span><br><span class="line">   cmptr-&gt;cmsg_level = SOL_SOCKET;</span><br><span class="line">   cmptr-&gt;cmsg_type = SCM_RIGHTS;  // 用于传递文件描述符</span><br><span class="line">  *((int *)CMSG_DATA(cmptr)) = fd;</span><br><span class="line">   // 设置数据部分</span><br><span class="line">   msg.msg_iov = &amp;iov;</span><br><span class="line">   msg.msg_iovlen = 1;</span><br><span class="line">   iov.iov_base = buf;</span><br><span class="line">   iov.iov_len = 1;</span><br><span class="line">   return sendmsg(sockfd, &amp;msg, 0);</span><br><span class="line">&#125;</span><br><span class="line">// 接收文件描述符的辅助函数</span><br><span class="line">ssize_t recv_fd(int sockfd, int *fd) &#123;</span><br><span class="line">   struct msghdr msg = &#123;0&#125;;</span><br><span class="line">   struct iovec iov;</span><br><span class="line">   char buf[1];</span><br><span class="line">   // 设置数据部分</span><br><span class="line">   iov.iov_base = buf;</span><br><span class="line">   iov.iov_len = 1;</span><br><span class="line">   msg.msg_iov = &amp;iov;</span><br><span class="line">   msg.msg_iovlen = 1;</span><br><span class="line">   // 设置控制消息缓冲区</span><br><span class="line">   union &#123;</span><br><span class="line">       struct cmsghdr cm;</span><br><span class="line">       char control[CMSG_SPACE(sizeof(int))];</span><br><span class="line">   &#125; control_un;</span><br><span class="line">   msg.msg_control = control_un.control;</span><br><span class="line">   msg.msg_controllen = sizeof(control_un.control);</span><br><span class="line">   // 接收消息</span><br><span class="line">   ssize_t n = recvmsg(sockfd, &amp;msg, 0);</span><br><span class="line">   if (n &lt;= 0) &#123;</span><br><span class="line">       return n;</span><br><span class="line">   &#125;</span><br><span class="line">   // 提取文件描述符</span><br><span class="line">   struct cmsghdr *cmptr = CMSG_FIRSTHDR(&amp;msg);</span><br><span class="line">   if (cmptr == NULL) &#123;</span><br><span class="line">       return -1;  // 没有控制消息</span><br><span class="line">  &#125;</span><br><span class="line">   if (cmptr-&gt;cmsg_level != SOL_SOCKET ||</span><br><span class="line">       cmptr-&gt;cmsg_type != SCM_RIGHTS) &#123;</span><br><span class="line">       return -1;  // 不是预期的控制消息</span><br><span class="line">   &#125;</span><br><span class="line">   *fd = *((int *)CMSG_DATA(cmptr));</span><br><span class="line">   return n;</span><br><span class="line">&#125;</span><br><span class="line">int main() &#123;</span><br><span class="line">   int sv[2];</span><br><span class="line">   pid_t pid;</span><br><span class="line">   int fd, new_fd;</span><br><span class="line">   char buf[1024];</span><br><span class="line">   // 创建套接字对</span><br><span class="line">   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) &#123;</span><br><span class="line">       perror(&quot;socketpair创建失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   // 创建测试文件</span><br><span class="line">   fd = open(&quot;test.txt&quot;, O_CREAT | O_WRONLY | O_TRUNC, 0644);</span><br><span class="line">   if (fd == -1) &#123;</span><br><span class="line">       perror(&quot;文件打开失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   write(fd, &quot;测试文件内容&quot;, strlen(&quot;测试文件内容&quot;));</span><br><span class="line">   close(fd);</span><br><span class="line">   // 重新以只读方式打开</span><br><span class="line">   fd = open(&quot;test.txt&quot;, O_RDONLY);</span><br><span class="line">   if (fd == -1) &#123;</span><br><span class="line">       perror(&quot;文件打开失败&quot;);</span><br><span class="line">       exit(EXIT_FAILURE);</span><br><span class="line">   &#125;</span><br><span class="line">   // 创建子进程</span><br><span class="line">   pid = fork();</span><br><span class="line">   if (pid == 0) &#123;  // 子进程</span><br><span class="line">       close(sv[1]);  // 关闭不使用的套接字</span><br><span class="line">       // 接收文件描述符</span><br><span class="line">       // 读取通过传递的文件描述符打开的文件</span><br><span class="line">       ssize_t n = read(new_fd, buf, sizeof(buf) - 1);</span><br><span class="line">       buf[n] = &#x27;0&#x27;;</span><br><span class="line">       printf(&quot;子进程读取到的文件内容: %sn&quot;, buf);</span><br><span class="line">       // 关闭文件和套接字</span><br><span class="line">       close(new_fd);</span><br><span class="line">       close(sv[0]);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125; else &#123;  // 父进程</span><br><span class="line">       close(sv[0]);  // 关闭不使用的套接字</span><br><span class="line">       // 发送文件描述符</span><br><span class="line">       if (send_fd(sv[1], fd) == -1) &#123;</span><br><span class="line">           perror(&quot;发送文件描述符失败&quot;);</span><br><span class="line">           exit(EXIT_FAILURE);</span><br><span class="line">       &#125;</span><br><span class="line">       // 关闭文件和套接字</span><br><span class="line">       close(fd);</span><br><span class="line">       close(sv[1]);</span><br><span class="line">       // 等待子进程结束</span><br><span class="line">       wait(NULL);</span><br><span class="line">       // 清理测试文件</span><br><span class="line">       unlink(&quot;test.txt&quot;);</span><br><span class="line">       exit(EXIT_SUCCESS);</span><br><span class="line">   &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-5-socketpair-使用注意事项"><a href="#2-5-socketpair-使用注意事项" class="headerlink" title="2.5 socketpair 使用注意事项"></a>2.5 socketpair 使用注意事项</h3><ul>
+<li><p>socketpair 创建的套接字是全双工的，支持双向通信</p>
+</li>
+<li><p>套接字对可以在任意进程间使用，不限于亲缘进程</p>
+</li>
+<li><p>可以通过 <code>SCM_RIGHTS</code> 控制消息传递文件描述符</p>
+</li>
+<li><p>与 pipe 不同，不需要关闭一个方向来使用另一个方向</p>
+</li>
+<li><p>使用 <code>SOCK_STREAM</code> 类型时提供字节流服务，保证数据有序且不丢失</p>
+</li>
+<li><p>使用 <code>SOCK_DGRAM</code> 类型时提供数据报服务，保留消息边界</p>
+</li>
+</ul>
+<h2 id="三、pipe-与-socketpair-对比分析"><a href="#三、pipe-与-socketpair-对比分析" class="headerlink" title="三、pipe 与 socketpair 对比分析"></a>三、pipe 与 socketpair 对比分析</h2><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>pipe</th>
+<th>socketpair</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>通信方向</td>
+<td>半双工</td>
+<td>全双工</td>
+</tr>
+<tr>
+<td>适用进程</td>
+<td>主要用于亲缘进程</td>
+<td>可用于任意进程</td>
+</tr>
+<tr>
+<td>通信方式</td>
+<td>仅支持数据传输</td>
+<td>支持数据传输和文件描述符传递</td>
+</tr>
+<tr>
+<td>创建方式</td>
+<td>简单，单一系统调用</td>
+<td>稍复杂，需要指定协议族和类型</td>
+</tr>
+<tr>
+<td>灵活性</td>
+<td>较低</td>
+<td>较高，支持多种选项</td>
+</tr>
+</tbody></table>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/d568c8d6/">https://hespethorn.github.io/posts/d568c8d6/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%96%87%E4%BB%B6%E6%8F%8F%E8%BF%B0%E7%AC%A6/">文件描述符</a><a class="post-meta__tags" href="/tags/%E8%BF%9B%E7%A8%8B%E9%97%B4%E9%80%9A%E4%BF%A1-IPC/">进程间通信 (IPC)</a><a class="post-meta__tags" href="/tags/Unix-%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/">Unix 系统编程</a><a class="post-meta__tags" href="/tags/pipe/">pipe</a><a class="post-meta__tags" href="/tags/socketpair/">socketpair</a><a class="post-meta__tags" href="/tags/fork/">fork</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/64148787/" title="TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践">TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践</a><time datetime="2023-06-28T13:06:21.000Z" title="Created 2023-06-28 21:06:21">2023-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d568c8d6/" title="进程间通信：pipe 与 socketpair 对比">进程间通信：pipe 与 socketpair 对比</a><time datetime="2023-06-21T10:50:11.000Z" title="Created 2023-06-21 18:50:11">2023-06-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3d48b2b/" title="多进程文件传输服务器与客户端实现">多进程文件传输服务器与客户端实现</a><time datetime="2023-06-16T12:55:11.000Z" title="Created 2023-06-16 20:55:11">2023-06-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/449dee1e/" title="网络编程中的系统调用与信号处理机制">网络编程中的系统调用与信号处理机制</a><time datetime="2023-06-10T11:55:51.000Z" title="Created 2023-06-10 19:55:51">2023-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9df713de/" title="多进程并发服务器的选择与放弃">多进程并发服务器的选择与放弃</a><time datetime="2023-05-28T14:00:55.000Z" title="Created 2023-05-28 22:00:55">2023-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c6e7059/" title="Linux 进程间文件描述符传输技术详解">Linux 进程间文件描述符传输技术详解</a><time datetime="2023-05-22T14:00:55.000Z" title="Created 2023-05-22 22:00:55">2023-05-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3a91ba7/" title="多进程编程：早期服务器实现逻辑">多进程编程：早期服务器实现逻辑</a><time datetime="2023-05-16T11:50:22.000Z" title="Created 2023-05-16 19:50:22">2023-05-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b71210bb/" title="聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现">聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现</a><time datetime="2023-05-12T12:10:55.000Z" title="Created 2023-05-12 20:10:55">2023-05-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4667e6/" title="select 与 epoll 的核心区别整理">select 与 epoll 的核心区别整理</a><time datetime="2023-05-11T13:20:00.000Z" title="Created 2023-05-11 21:20:00">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a898a0c/" title="基于多人聊天室系统的实现，详细学习 epoll 函数基础">基于多人聊天室系统的实现，详细学习 epoll 函数基础</a><time datetime="2023-05-11T12:28:55.000Z" title="Created 2023-05-11 20:28:55">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f26b2da3/" title="Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</a><time datetime="2023-05-06T14:55:14.000Z" title="Created 2023-05-06 22:55:14">2023-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9c7e901d/" title="基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践">基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践</a><time datetime="2023-04-30T12:22:10.000Z" title="Created 2023-04-30 20:22:10">2023-04-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/800c7140/" title="基于多人聊天室系统的实现，详细学习select 函数基础">基于多人聊天室系统的实现，详细学习select 函数基础</a><time datetime="2023-04-26T15:42:10.000Z" title="Created 2023-04-26 23:42:10">2023-04-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bb924032/" title="Linux：基于 select 多路复用的 C 语言多人聊天室实现">Linux：基于 select 多路复用的 C 语言多人聊天室实现</a><time datetime="2023-04-21T14:12:40.000Z" title="Created 2023-04-21 22:12:40">2023-04-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6841069c/" title="基于 TCP 协议的双向通信程序实现与解析">基于 TCP 协议的双向通信程序实现与解析</a><time datetime="2023-04-15T13:10:43.000Z" title="Created 2023-04-15 21:10:43">2023-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cb884869/" title="基于 UDP 协议的双向通信程序实现与解析">基于 UDP 协议的双向通信程序实现与解析</a><time datetime="2023-04-08T12:50:13.000Z" title="Created 2023-04-08 20:50:13">2023-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/266e4756/" title="TCP 泛洪攻击">TCP 泛洪攻击</a><time datetime="2023-03-30T14:16:08.000Z" title="Created 2023-03-30 22:16:08">2023-03-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/29e62ba/" title="《Linux C 语言 TCP Socket 编程详解》学习笔记">《Linux C 语言 TCP Socket 编程详解》学习笔记</a><time datetime="2023-03-24T14:11:13.000Z" title="Created 2023-03-24 22:11:13">2023-03-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a30c1e5/" title="基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究">基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究</a><time datetime="2023-03-19T09:36:28.000Z" title="Created 2023-03-19 17:36:28">2023-03-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/634cd8cb/" title="URL：网络资源的精准定位机制">URL：网络资源的精准定位机制</a><time datetime="2023-03-12T09:36:28.000Z" title="Created 2023-03-12 17:36:28">2023-03-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/84e78701/" title="网络理论核心知识整理">网络理论核心知识整理</a><time datetime="2023-03-06T14:14:09.000Z" title="Created 2023-03-06 22:14:09">2023-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</a><time datetime="2023-02-28T13:25:25.000Z" title="Created 2023-02-28 21:25:25">2023-02-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="HTTP 无状态性相关概念详解">HTTP 无状态性相关概念详解</a><time datetime="2023-02-20T11:44:27.000Z" title="Created 2023-02-20 19:44:27">2023-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）">从Socket编程到QUIC协议（Computer-Networking）</a><time datetime="2022-05-26T15:40:56.000Z" title="Created 2022-05-26 23:40:56">2022-05-26</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

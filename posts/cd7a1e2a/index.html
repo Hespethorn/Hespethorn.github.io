@@ -1,0 +1,537 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>基于Trie树的词频统计与前缀匹配 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、为什么需要 Trie 树？—— 先搞懂核心价值在开始写代码前，我们先明确 Trie 树的 “不可替代性”：    数据结构 插入 &#x2F; 查询复杂度 前缀匹配能力 内存效率（重复前缀） 适用场景    哈希表（unordered_map） 平均 O (1) 不支持 低（存完整字符串） 单键精准查询（如缓存）   红黑树（map） O(log n) 支持（遍历） 低 有序键值对查询   T">
+<meta property="og:type" content="article">
+<meta property="og:title" content="基于Trie树的词频统计与前缀匹配">
+<meta property="og:url" content="https://hespethorn.github.io/posts/cd7a1e2a/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、为什么需要 Trie 树？—— 先搞懂核心价值在开始写代码前，我们先明确 Trie 树的 “不可替代性”：    数据结构 插入 &#x2F; 查询复杂度 前缀匹配能力 内存效率（重复前缀） 适用场景    哈希表（unordered_map） 平均 O (1) 不支持 低（存完整字符串） 单键精准查询（如缓存）   红黑树（map） O(log n) 支持（遍历） 低 有序键值对查询   T">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-08-05T12:03:33.000Z">
+<meta property="article:modified_time" content="2025-09-09T13:34:22.528Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Practical System Development">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "基于Trie树的词频统计与前缀匹配",
+  "url": "https://hespethorn.github.io/posts/cd7a1e2a/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-08-05T12:03:33.000Z",
+  "dateModified": "2025-09-09T13:34:22.528Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/cd7a1e2a/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '基于Trie树的词频统计与前缀匹配',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">基于Trie树的词频统计与前缀匹配</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">基于Trie树的词频统计与前缀匹配</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-08-05T12:03:33.000Z" title="Created 2025-08-05 20:03:33">2025-08-05</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/C/">C++</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/C/Practical-System-Development/">Practical System Development</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>17mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、为什么需要-Trie-树？——-先搞懂核心价值"><a href="#一、为什么需要-Trie-树？——-先搞懂核心价值" class="headerlink" title="一、为什么需要 Trie 树？—— 先搞懂核心价值"></a>一、为什么需要 Trie 树？—— 先搞懂核心价值</h2><p>在开始写代码前，我们先明确 Trie 树的 “不可替代性”：</p>
+<table>
+<thead>
+<tr>
+<th>数据结构</th>
+<th>插入 &#x2F; 查询复杂度</th>
+<th>前缀匹配能力</th>
+<th>内存效率（重复前缀）</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>哈希表（unordered_map）</td>
+<td>平均 O (1)</td>
+<td>不支持</td>
+<td>低（存完整字符串）</td>
+<td>单键精准查询（如缓存）</td>
+</tr>
+<tr>
+<td>红黑树（map）</td>
+<td>O(log n)</td>
+<td>支持（遍历）</td>
+<td>低</td>
+<td>有序键值对查询</td>
+</tr>
+<tr>
+<td>Trie 树</td>
+<td>O (k)（k 为字符串长度）</td>
+<td>原生支持</td>
+<td>高（前缀共享）</td>
+<td>前缀相关操作（自动补全）</td>
+</tr>
+</tbody></table>
+<p>简单说：如果你的需求涉及 “前缀”（如输入 “app” 要提示 “apple”“application”），Trie 树是最优解之一。</p>
+<p>本文实现的 Trie 树将包含以下核心功能：</p>
+<ol>
+<li>单词插入（自动统计重复单词的出现次数）</li>
+<li>词频查询（返回单词出现次数，0 表示不存在）</li>
+<li>前缀匹配（返回所有以指定前缀开头的单词，支持字典序 &#x2F; 词频排序）</li>
+<li>单词删除（智能回收无用节点，不破坏共享前缀）</li>
+<li>整体清空（安全释放所有内存，避免泄漏）</li>
+</ol>
+<h2 id="二、代码结构设计-——-工程化拆分"><a href="#二、代码结构设计-——-工程化拆分" class="headerlink" title="二、代码结构设计 —— 工程化拆分"></a>二、代码结构设计 —— 工程化拆分</h2><p>为了保证代码的可维护性，我们将代码拆分为 3 个文件，符合 C++ 工程化规范：</p>
+<ul>
+<li><code>Trie.h</code>：头文件，定义结构体、类接口（对外暴露的功能）</li>
+<li><code>Trie.cpp</code>：实现文件，编写类成员函数的具体逻辑</li>
+<li><code>main.cpp</code>：测试文件，验证所有功能的正确性</li>
+</ul>
+<h2 id="三、逐文件解析代码-——-从接口到实现"><a href="#三、逐文件解析代码-——-从接口到实现" class="headerlink" title="三、逐文件解析代码 —— 从接口到实现"></a>三、逐文件解析代码 —— 从接口到实现</h2><h3 id="1-头文件-Trie-h：定义核心结构与接口"><a href="#1-头文件-Trie-h：定义核心结构与接口" class="headerlink" title="1. 头文件 Trie.h：定义核心结构与接口"></a>1. 头文件 Trie.h：定义核心结构与接口</h3><p>头文件的作用是 “声明”—— 告诉编译器有哪些结构和函数，不涉及具体实现。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br></pre></td><td class="code"><pre><span class="line">#ifndef TRIE_H</span><br><span class="line">#define TRIE_H</span><br><span class="line"></span><br><span class="line">#include &lt;vector&gt;</span><br><span class="line">#include &lt;string&gt;</span><br><span class="line">#include &lt;unordered_map&gt;</span><br><span class="line"></span><br><span class="line">// 存储“单词-词频”的结构体，用于返回前缀匹配结果</span><br><span class="line">struct WordCount &#123;</span><br><span class="line">    std::string word;  // 单词本身</span><br><span class="line">    int count;         // 出现次数</span><br><span class="line">    // 构造函数，简化对象创建</span><br><span class="line">    WordCount(std::string w, int c) : word(std::move(w)), count(c) &#123;&#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">class Trie &#123;</span><br><span class="line">private:</span><br><span class="line">    // 嵌套定义Trie节点结构（仅类内部可见，封装实现细节）</span><br><span class="line">    struct TrieNode &#123;</span><br><span class="line">        // 子节点：用unordered_map存储，支持任意字符（字母、数字、符号）</span><br><span class="line">        std::unordered_map&lt;char, TrieNode*&gt; children;</span><br><span class="line">        // 词频计数器：0表示非单词结尾，&gt;0表示单词出现次数（替代传统isEnd标记）</span><br><span class="line">        int count = 0;</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    TrieNode* root;  // 根节点：所有单词的入口，不存储实际字符</span><br><span class="line"></span><br><span class="line">    // 辅助函数：递归销毁节点（用于析构、删除、清空）</span><br><span class="line">    void destroyNode(TrieNode* node);</span><br><span class="line">    // 辅助函数：递归删除单词（判断节点是否可回收）</span><br><span class="line">    bool eraseHelper(TrieNode* node, const std::string&amp; word, size_t index);</span><br><span class="line">    // 辅助函数：递归收集前缀匹配的单词</span><br><span class="line">    void collectWords(TrieNode* node, std::string current, std::vector&lt;WordCount&gt;&amp; result);</span><br><span class="line"></span><br><span class="line">public:</span><br><span class="line">    // 构造函数：初始化根节点</span><br><span class="line">    Trie();</span><br><span class="line">    // 析构函数：释放所有节点内存，避免泄漏</span><br><span class="line">    ~Trie();</span><br><span class="line"></span><br><span class="line">    // 1. 插入单词（支持重复插入，自动累加词频）</span><br><span class="line">    void insert(const std::string&amp; word);</span><br><span class="line">    // 2. 查询单词出现次数（0表示单词不存在）</span><br><span class="line">    int getFrequency(const std::string&amp; word);</span><br><span class="line">    // 3. 获取前缀匹配的所有单词（支持按词频降序排序）</span><br><span class="line">    std::vector&lt;WordCount&gt; getPrefixMatches(const std::string&amp; prefix, bool sortByFrequency = false);</span><br><span class="line">    // 4. 删除单词（减少词频，必要时回收节点）</span><br><span class="line">    bool remove(const std::string&amp; word);</span><br><span class="line">    // 5. 清空所有数据（销毁所有节点，重建根节点）</span><br><span class="line">    void clear();</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">#endif // TRIE_H</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p>用WordCount结构体封装结果：不仅返回单词，还返回词频，满足实际开发需求；</p>
+</li>
+<li><p>节点用unordered_map存子节点：相比固定数组（如TrieNode* children[26]），支持任意字符，无需限制字符集；</p>
+</li>
+<li><p>count字段复用：既标记 “是否为单词结尾”（count&gt;0），又统计词频，减少冗余字段。</p>
+</li>
+</ul>
+<h3 id="2-实现文件-Trie-cpp：核心逻辑落地"><a href="#2-实现文件-Trie-cpp：核心逻辑落地" class="headerlink" title="2. 实现文件 Trie.cpp：核心逻辑落地"></a>2. 实现文件 Trie.cpp：核心逻辑落地</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br></pre></td><td class="code"><pre><span class="line">#include &quot;Trie.h&quot;</span><br><span class="line">#include &lt;algorithm&gt;</span><br><span class="line">#include &lt;stdexcept&gt;</span><br><span class="line"></span><br><span class="line">// 构造函数</span><br><span class="line">Trie::Trie() : root(new TrieNode()) &#123;&#125;</span><br><span class="line"></span><br><span class="line">// 析构函数</span><br><span class="line">Trie::~Trie() &#123;</span><br><span class="line">    destroyNode(root);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 递归销毁节点</span><br><span class="line">void Trie::destroyNode(TrieNode* node) &#123;</span><br><span class="line">    if (!node) return;</span><br><span class="line">    // 先销毁所有子节点</span><br><span class="line">    for (auto&amp; pair : node-&gt;children) &#123;</span><br><span class="line">        destroyNode(pair.second);</span><br><span class="line">    &#125;</span><br><span class="line">    // 再销毁当前节点</span><br><span class="line">    delete node;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 插入单词</span><br><span class="line">void Trie::insert(const std::string&amp; word) &#123;</span><br><span class="line">    if (word.empty()) &#123;</span><br><span class="line">        throw std::invalid_argument(&quot;单词不能为空字符串&quot;);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    TrieNode* curr = root;</span><br><span class="line">    for (char c : word) &#123;</span><br><span class="line">        // 如果当前字符对应的子节点不存在，则创建</span><br><span class="line">        if (curr-&gt;children.find(c) == curr-&gt;children.end()) &#123;</span><br><span class="line">            curr-&gt;children[c] = new TrieNode();</span><br><span class="line">        &#125;</span><br><span class="line">        // 移动到子节点</span><br><span class="line">        curr = curr-&gt;children[c];</span><br><span class="line">    &#125;</span><br><span class="line">    // 单词结尾，计数加1</span><br><span class="line">    curr-&gt;count++;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 获取单词出现次数</span><br><span class="line">int Trie::getFrequency(const std::string&amp; word) &#123;</span><br><span class="line">    TrieNode* curr = root;</span><br><span class="line">    for (char c : word) &#123;</span><br><span class="line">        // 如果路径断裂，说明单词不存在</span><br><span class="line">        if (curr-&gt;children.find(c) == curr-&gt;children.end()) &#123;</span><br><span class="line">            return 0;</span><br><span class="line">        &#125;</span><br><span class="line">        curr = curr-&gt;children[c];</span><br><span class="line">    &#125;</span><br><span class="line">    // 返回计数（0表示不存在）</span><br><span class="line">    return curr-&gt;count;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 递归收集前缀匹配的单词</span><br><span class="line">void Trie::collectWords(TrieNode* node, std::string current, std::vector&lt;WordCount&gt;&amp; result) &#123;</span><br><span class="line">    if (!node) return;</span><br><span class="line">    </span><br><span class="line">    // 如果当前节点是单词结尾，加入结果集</span><br><span class="line">    if (node-&gt;count &gt; 0) &#123;</span><br><span class="line">        result.emplace_back(current, node-&gt;count);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    // 递归遍历所有子节点</span><br><span class="line">    for (const auto&amp; pair : node-&gt;children) &#123;</span><br><span class="line">        collectWords(pair.second, current + pair.first, result);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 获取所有前缀匹配单词</span><br><span class="line">std::vector&lt;WordCount&gt; Trie::getPrefixMatches(const std::string&amp; prefix, bool sortByFrequency) &#123;</span><br><span class="line">    std::vector&lt;WordCount&gt; result;</span><br><span class="line">    TrieNode* curr = root;</span><br><span class="line"></span><br><span class="line">    // 先定位到前缀的最后一个节点</span><br><span class="line">    for (char c : prefix) &#123;</span><br><span class="line">        if (curr-&gt;children.find(c) == curr-&gt;children.end()) &#123;</span><br><span class="line">            return result; // 前缀不存在，返回空</span><br><span class="line">        &#125;</span><br><span class="line">        curr = curr-&gt;children[c];</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 收集所有以该前缀开头的单词</span><br><span class="line">    collectWords(curr, prefix, result);</span><br><span class="line"></span><br><span class="line">    // 如果需要按词频排序（降序）</span><br><span class="line">    if (sortByFrequency) &#123;</span><br><span class="line">        std::sort(result.begin(), result.end(),</span><br><span class="line">            [](const WordCount&amp; a, const WordCount&amp; b) &#123;</span><br><span class="line">                return a.count &gt; b.count;</span><br><span class="line">            &#125;);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return result;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 递归删除单词辅助函数</span><br><span class="line">bool Trie::eraseHelper(TrieNode* node, const std::string&amp; word, size_t index) &#123;</span><br><span class="line">    // 递归终止条件：已处理完所有字符</span><br><span class="line">    if (index == word.size()) &#123;</span><br><span class="line">        if (node-&gt;count == 0) &#123;</span><br><span class="line">            return false; // 单词不存在</span><br><span class="line">        &#125;</span><br><span class="line">        node-&gt;count--; // 减少计数</span><br><span class="line">        // 当计数为0且没有子节点时，该节点可删除</span><br><span class="line">        return (node-&gt;count == 0) &amp;&amp; (node-&gt;children.empty());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    char c = word[index];</span><br><span class="line">    // 如果当前字符的子节点不存在，说明单词不存在</span><br><span class="line">    if (node-&gt;children.find(c) == node-&gt;children.end()) &#123;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 递归处理子节点</span><br><span class="line">    bool canDeleteChild = eraseHelper(node-&gt;children[c], word, index + 1);</span><br><span class="line">    if (canDeleteChild) &#123;</span><br><span class="line">        // 删除子节点并从映射中移除</span><br><span class="line">        delete node-&gt;children[c];</span><br><span class="line">        node-&gt;children.erase(c);</span><br><span class="line">        // 当前节点是否可删除：计数为0且没有其他子节点</span><br><span class="line">        return (node-&gt;count == 0) &amp;&amp; (node-&gt;children.empty());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return false;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 删除单词</span><br><span class="line">bool Trie::remove(const std::string&amp; word) &#123;</span><br><span class="line">    if (word.empty()) &#123;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line">    return eraseHelper(root, word, 0);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 清空所有数据</span><br><span class="line">void Trie::clear() &#123;</span><br><span class="line">    destroyNode(root);</span><br><span class="line">    root = new TrieNode();</span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
+
+<p>这部分是 Trie 树的 “灵魂”，我们逐函数解析核心逻辑：</p>
+<h4 id="（1）内存管理：destroyNode与构造-析构-清空"><a href="#（1）内存管理：destroyNode与构造-析构-清空" class="headerlink" title="（1）内存管理：destroyNode与构造 &#x2F; 析构 &#x2F; 清空"></a>（1）内存管理：destroyNode与构造 &#x2F; 析构 &#x2F; 清空</h4><p>Trie 树是动态结构，必须做好内存管理，避免泄漏：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">#include &quot;Trie.h&quot;</span><br><span class="line">#include &lt;algorithm&gt;</span><br><span class="line">#include &lt;stdexcept&gt;</span><br><span class="line"></span><br><span class="line">// 递归销毁节点：后序遍历（先删子节点，再删当前节点）</span><br><span class="line">void Trie::destroyNode(TrieNode* node) &#123;</span><br><span class="line">    if (!node) return;  // 空节点直接返回，避免崩溃</span><br><span class="line">    // 遍历所有子节点，递归销毁</span><br><span class="line">    for (auto&amp; pair : node-&gt;children) &#123;</span><br><span class="line">        destroyNode(pair.second);</span><br><span class="line">    &#125;</span><br><span class="line">    delete node;  // 销毁当前节点</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 构造函数：初始化根节点</span><br><span class="line">Trie::Trie() : root(new TrieNode()) &#123;&#125;</span><br><span class="line"></span><br><span class="line">// 析构函数：调用destroyNode销毁所有节点</span><br><span class="line">Trie::~Trie() &#123;</span><br><span class="line">    destroyNode(root);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 清空所有数据：销毁旧根，重建新根</span><br><span class="line">void Trie::clear() &#123;</span><br><span class="line">    destroyNode(root);</span><br><span class="line">    root = new TrieNode();  // 重建空的根节点</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>为什么用递归销毁？</strong></p>
+<p>Trie 树是树形结构，递归能自然遍历所有节点，避免遗漏；后序遍历确保先删子节点，再删父节点，不会出现悬空指针。</p>
+<h4 id="（2）插入操作：insert——-构建前缀路径"><a href="#（2）插入操作：insert——-构建前缀路径" class="headerlink" title="（2）插入操作：insert—— 构建前缀路径"></a>（2）插入操作：insert—— 构建前缀路径</h4><p>插入的核心是 “按字符遍历，无节点则创建，结尾处累加词频”：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">void Trie::insert(const std::string&amp; word) &#123;</span><br><span class="line">    if (word.empty()) &#123;</span><br><span class="line">        throw std::invalid_argument(&quot;不支持插入空字符串&quot;);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    TrieNode* curr = root;  // 从根节点开始</span><br><span class="line">    for (char c : word) &#123;</span><br><span class="line">        // 若当前字符的子节点不存在，创建新节点</span><br><span class="line">        if (!curr-&gt;children.count(c)) &#123;</span><br><span class="line">            curr-&gt;children[c] = new TrieNode();</span><br><span class="line">        &#125;</span><br><span class="line">        // 移动到下一层节点</span><br><span class="line">        curr = curr-&gt;children[c];</span><br><span class="line">    &#125;</span><br><span class="line">    curr-&gt;count++;  // 单词结尾，词频+1（支持重复插入）</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>示例</strong>：插入 “apple” 两次，最终 “apple” 结尾节点的count为 2；插入 “app” 后，“app” 结尾节点的count为 1，且与 “apple” 共享 “a-&gt;p-&gt;p” 路径。</p>
+<h4 id="（3）词频查询：getFrequency——-验证路径与词频"><a href="#（3）词频查询：getFrequency——-验证路径与词频" class="headerlink" title="（3）词频查询：getFrequency—— 验证路径与词频"></a>（3）词频查询：getFrequency—— 验证路径与词频</h4><p>查询逻辑很简单：遍历单词字符路径，若路径断裂则返回 0，否则返回结尾节点的count：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">int Trie::getFrequency(const std::string&amp; word) &#123;</span><br><span class="line">    if (word.empty()) return 0;</span><br><span class="line"></span><br><span class="line">    TrieNode* curr = root;</span><br><span class="line">    for (char c : word) &#123;</span><br><span class="line">        // 路径断裂（字符不存在），单词不存在</span><br><span class="line">        if (!curr-&gt;children.count(c)) &#123;</span><br><span class="line">            return 0;</span><br><span class="line">        &#125;</span><br><span class="line">        curr = curr-&gt;children[c];</span><br><span class="line">    &#125;</span><br><span class="line">    // 返回词频（count=0表示路径存在但不是单词）</span><br><span class="line">    return curr-&gt;count;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="（4）前缀匹配：collectWords与getPrefixMatches——-核心功能"><a href="#（4）前缀匹配：collectWords与getPrefixMatches——-核心功能" class="headerlink" title="（4）前缀匹配：collectWords与getPrefixMatches—— 核心功能"></a>（4）前缀匹配：collectWords与getPrefixMatches—— 核心功能</h4><p>前缀匹配分两步：</p>
+<ol>
+<li><p>定位到前缀的 “终点节点”；</p>
+</li>
+<li><p>递归遍历该节点的所有子路径，收集所有count&gt;0的单词。</p>
+</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line">// 辅助函数：递归收集前缀匹配的单词</span><br><span class="line">void Trie::collectWords(TrieNode* node, std::string current, std::vector&lt;WordCount&gt;&amp; result) &#123;</span><br><span class="line">    if (!node) return;</span><br><span class="line"></span><br><span class="line">    // 若当前节点是单词结尾，加入结果集</span><br><span class="line">    if (node-&gt;count &gt; 0) &#123;</span><br><span class="line">        result.emplace_back(current, node-&gt;count);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 遍历所有子节点，递归收集（保证字典序，因为unordered_map不排序？这里注意：实际unordered_map是无序的，若需严格字典序可改用map）</span><br><span class="line">    for (auto&amp; pair : node-&gt;children) &#123;</span><br><span class="line">        // 拼接当前字符，递归下一层</span><br><span class="line">        collectWords(pair.second, current + pair.first, result);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 对外接口：获取前缀匹配的所有单词</span><br><span class="line">std::vector&lt;WordCount&gt; Trie::getPrefixMatches(const std::string&amp; prefix, bool sortByFrequency) &#123;</span><br><span class="line">    std::vector&lt;WordCount&gt; result;</span><br><span class="line">    if (prefix.empty()) return result;</span><br><span class="line"></span><br><span class="line">    TrieNode* curr = root;</span><br><span class="line">    // 第一步：定位到前缀的终点节点</span><br><span class="line">    for (char c : prefix) &#123;</span><br><span class="line">        if (!curr-&gt;children.count(c)) &#123;</span><br><span class="line">            return result;  // 前缀不存在，返回空</span><br><span class="line">        &#125;</span><br><span class="line">        curr = curr-&gt;children[c];</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 第二步：递归收集所有匹配单词</span><br><span class="line">    collectWords(curr, prefix, result);</span><br><span class="line"></span><br><span class="line">    // 可选：按词频降序排序（满足“热门提示”需求）</span><br><span class="line">    if (sortByFrequency) &#123;</span><br><span class="line">        std::sort(result.begin(), result.end(),</span><br><span class="line">            [](const WordCount&amp; a, const WordCount&amp; b) &#123;</span><br><span class="line">                return a.count &gt; b.count;  // 降序：词频高的在前</span><br><span class="line">            &#125;);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return result;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键细节</strong>：</p>
+<ul>
+<li><p>若需严格字典序，可将节点的unordered_map改为map（map内部按键排序）；</p>
+</li>
+<li><p>sortByFrequency参数：满足 “搜索引擎按热度排序提示” 的实际需求，默认不排序（字典序）。</p>
+</li>
+</ul>
+<h4 id="（5）删除操作：eraseHelper与remove——-最复杂的逻辑"><a href="#（5）删除操作：eraseHelper与remove——-最复杂的逻辑" class="headerlink" title="（5）删除操作：eraseHelper与remove—— 最复杂的逻辑"></a>（5）删除操作：eraseHelper与remove—— 最复杂的逻辑</h4><p>删除的难点是 “不破坏共享前缀”，比如删除 “apple” 时，不能误删 “app” 或 “application” 共享的 “a-&gt;p-&gt;p” 路径。核心逻辑是：<strong>仅当节点词频为 0 且无子节点时，才回收该节点</strong>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line">// 辅助函数：递归删除单词，返回值表示“当前节点是否可回收”</span><br><span class="line">bool Trie::eraseHelper(TrieNode* node, const std::string&amp; word, size_t index) &#123;</span><br><span class="line">    // 递归终止1：已遍历完单词所有字符</span><br><span class="line">    if (index == word.size()) &#123;</span><br><span class="line">        if (node-&gt;count == 0) &#123;</span><br><span class="line">            return false;  // 单词不存在，无需删除</span><br><span class="line">        &#125;</span><br><span class="line">        node-&gt;count--;  // 词频-1</span><br><span class="line">        // 若词频为0且无子节点，当前节点可回收</span><br><span class="line">        return (node-&gt;count == 0) &amp;&amp; (node-&gt;children.empty());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    char c = word[index];</span><br><span class="line">    // 递归终止2：路径断裂，单词不存在</span><br><span class="line">    if (!node-&gt;children.count(c)) &#123;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 递归删除子节点，判断子节点是否可回收</span><br><span class="line">    bool canDeleteChild = eraseHelper(node-&gt;children[c], word, index + 1);</span><br><span class="line">    if (canDeleteChild) &#123;</span><br><span class="line">        // 子节点可回收：释放内存并从map中删除</span><br><span class="line">        delete node-&gt;children[c];</span><br><span class="line">        node-&gt;children.erase(c);</span><br><span class="line">        // 当前节点是否可回收：词频为0且无其他子节点</span><br><span class="line">        return (node-&gt;count == 0) &amp;&amp; (node-&gt;children.empty());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 子节点不可回收，当前节点也不可回收</span><br><span class="line">    return false;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">// 对外接口：删除单词，返回“是否删除成功”</span><br><span class="line">bool Trie::remove(const std::string&amp; word) &#123;</span><br><span class="line">    if (word.empty()) return false;</span><br><span class="line">    return eraseHelper(root, word, 0);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>示例</strong>：删除 “apple”（原词频 2）一次后，词频变为 1，节点不回收；再删除一次，词频变为 0，若该节点无其他子节点（如 “apple” 后面没有延伸单词），则从 “e” 节点开始回溯，直到遇到有子节点或count&gt;0的节点（如 “p” 节点，因为 “app” 的count&gt;0），停止回收。</p>
+<h3 id="3-测试文件-main-cpp：验证所有功能"><a href="#3-测试文件-main-cpp：验证所有功能" class="headerlink" title="3. 测试文件 main.cpp：验证所有功能"></a>3. 测试文件 main.cpp：验证所有功能</h3><p>测试用例覆盖核心场景，确保代码正确性：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br></pre></td><td class="code"><pre><span class="line">#include &quot;Trie.h&quot;</span><br><span class="line">#include &lt;iostream&gt;</span><br><span class="line"></span><br><span class="line">// 辅助函数：打印前缀匹配结果</span><br><span class="line">void printMatches(const std::vector&lt;WordCount&gt;&amp; matches, const std::string&amp; title) &#123;</span><br><span class="line">    std::cout &lt;&lt; title &lt;&lt; &quot; (&quot; &lt;&lt; matches.size() &lt;&lt; &quot;个结果):&quot; &lt;&lt; std::endl;</span><br><span class="line">    for (const auto&amp; wc : matches) &#123;</span><br><span class="line">        std::cout &lt;&lt; &quot;  - &quot; &lt;&lt; wc.word &lt;&lt; &quot;（出现&quot; &lt;&lt; wc.count &lt;&lt; &quot;次）&quot; &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int main() &#123;</span><br><span class="line">    try &#123;</span><br><span class="line">        Trie trie;</span><br><span class="line"></span><br><span class="line">        // 1. 插入测试数据</span><br><span class="line">        trie.insert(&quot;apple&quot;);</span><br><span class="line">        trie.insert(&quot;apple&quot;);  // 重复插入，词频=2</span><br><span class="line">        trie.insert(&quot;app&quot;);    // 词频=1</span><br><span class="line">        trie.insert(&quot;application&quot;);  // 词频=1</span><br><span class="line">        trie.insert(&quot;applet&quot;);       // 词频=1</span><br><span class="line">        trie.insert(&quot;banana&quot;);       // 词频=1</span><br><span class="line">        trie.insert(&quot;application&quot;);  // 重复插入，词频=2</span><br><span class="line">        trie.insert(&quot;app&quot;);          // 重复插入，词频=2</span><br><span class="line">        trie.insert(&quot;apricot&quot;);      // 词频=1</span><br><span class="line"></span><br><span class="line">        // 2. 测试词频统计</span><br><span class="line">        std::cout &lt;&lt; &quot;=== 1. 词频统计测试 ===&quot; &lt;&lt; std::endl;</span><br><span class="line">        std::cout &lt;&lt; &quot;apple: &quot; &lt;&lt; trie.getFrequency(&quot;apple&quot;) &lt;&lt; &quot;次&quot; &lt;&lt; std::endl;       // 2次</span><br><span class="line">        std::cout &lt;&lt; &quot;app: &quot; &lt;&lt; trie.getFrequency(&quot;app&quot;) &lt;&lt; &quot;次&quot; &lt;&lt; std::endl;           // 2次</span><br><span class="line">        std::cout &lt;&lt; &quot;application: &quot; &lt;&lt; trie.getFrequency(&quot;application&quot;) &lt;&lt; &quot;次&quot; &lt;&lt; std::endl; // 2次</span><br><span class="line">        std::cout &lt;&lt; &quot;orange: &quot; &lt;&lt; trie.getFrequency(&quot;orange&quot;) &lt;&lt; &quot;次&quot; &lt;&lt; std::endl;     // 0次（不存在）</span><br><span class="line">        std::cout &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">        // 3. 测试前缀匹配（字典序）</span><br><span class="line">        std::cout &lt;&lt; &quot;=== 2. 前缀匹配测试（字典序） ===&quot; &lt;&lt; std::endl;</span><br><span class="line">        auto appMatches = trie.getPrefixMatches(&quot;app&quot;);</span><br><span class="line">        printMatches(appMatches, &quot;前缀\&quot;app\&quot;匹配结果&quot;);  // app、apple、applet、application</span><br><span class="line">        </span><br><span class="line">        auto aMatches = trie.getPrefixMatches(&quot;a&quot;);</span><br><span class="line">        printMatches(aMatches, &quot;前缀\&quot;a\&quot;匹配结果&quot;);      // app、apple、applet、application、apricot</span><br><span class="line">        std::cout &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">        // 4. 测试前缀匹配（按词频排序）</span><br><span class="line">        std::cout &lt;&lt; &quot;=== 3. 前缀匹配测试（按词频排序） ===&quot; &lt;&lt; std::endl;</span><br><span class="line">        auto sortedMatches = trie.getPrefixMatches(&quot;app&quot;, true);</span><br><span class="line">        printMatches(sortedMatches, &quot;前缀\&quot;app\&quot;按词频排序结果&quot;);  // app(2)、apple(2)、application(2)、applet(1)</span><br><span class="line">        std::cout &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">        // 5. 测试删除操作</span><br><span class="line">        std::cout &lt;&lt; &quot;=== 4. 删除操作测试 ===&quot; &lt;&lt; std::endl;</span><br><span class="line">        std::cout &lt;&lt; &quot;删除前 apple 出现次数: &quot; &lt;&lt; trie.getFrequency(&quot;apple&quot;) &lt;&lt; std::endl;  // 2次</span><br><span class="line">        trie.remove(&quot;apple&quot;);</span><br><span class="line">        std::cout &lt;&lt; &quot;删除后 apple 出现次数: &quot; &lt;&lt; trie.getFrequency(&quot;apple&quot;) &lt;&lt; std::endl;  // 1次</span><br><span class="line">        </span><br><span class="line">        auto afterDelete = trie.getPrefixMatches(&quot;app&quot;);</span><br><span class="line">        printMatches(afterDelete, &quot;删除后前缀\&quot;app\&quot;匹配结果&quot;);  // 仍包含apple（词频1）</span><br><span class="line">        std::cout &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">        // 6. 测试清空操作</span><br><span class="line">        std::cout &lt;&lt; &quot;=== 5. 清空操作测试 ===&quot; &lt;&lt; std::endl;</span><br><span class="line">        trie.clear();</span><br><span class="line">        std::cout &lt;&lt; &quot;清空后 app 出现次数: &quot; &lt;&lt; trie.getFrequency(&quot;app&quot;) &lt;&lt; std::endl;  // 0次</span><br><span class="line">        auto emptyMatches = trie.getPrefixMatches(&quot;a&quot;);</span><br><span class="line">        printMatches(emptyMatches, &quot;清空后前缀\&quot;a\&quot;匹配结果&quot;);  // 0个结果</span><br><span class="line"></span><br><span class="line">    &#125; catch (const std::exception&amp; e) &#123;</span><br><span class="line">        std::cerr &lt;&lt; &quot;错误：&quot; &lt;&lt; e.what() &lt;&lt; std::endl;</span><br><span class="line">        return 1;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="四、实际运行"><a href="#四、实际运行" class="headerlink" title="四、实际运行"></a>四、实际运行</h2><h3 id="1-预期输出"><a href="#1-预期输出" class="headerlink" title="1. 预期输出"></a>1. 预期输出</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">=== 1. 词频统计测试 ===</span><br><span class="line">apple: 2次</span><br><span class="line">app: 2次</span><br><span class="line">application: 2次</span><br><span class="line">orange: 0次</span><br><span class="line"></span><br><span class="line">=== 2. 前缀匹配测试（字典序） ===</span><br><span class="line">前缀&quot;app&quot;匹配结果 (4个结果):</span><br><span class="line">  - app（出现2次）</span><br><span class="line">  - apple（出现2次）</span><br><span class="line">  - applet（出现1次）</span><br><span class="line">  - application（出现2次）</span><br><span class="line">前缀&quot;a&quot;匹配结果 (5个结果):</span><br><span class="line">  - app（出现2次）</span><br><span class="line">  - apple（出现2次）</span><br><span class="line">  - applet（出现1次）</span><br><span class="line">  - application（出现2次）</span><br><span class="line">  - apricot（出现1次）</span><br><span class="line"></span><br><span class="line">=== 3. 前缀匹配测试（按词频排序） ===</span><br><span class="line">前缀&quot;app&quot;按词频排序结果 (4个结果):</span><br><span class="line">  - app（出现2次）</span><br><span class="line">  - apple（出现2次）</span><br><span class="line">  - application（出现2次）</span><br><span class="line">  - applet（出现1次）</span><br><span class="line"></span><br><span class="line">=== 4. 删除操作测试 ===</span><br><span class="line">删除前 apple 出现次数: 2</span><br><span class="line">删除后 apple 出现次数: 1</span><br><span class="line">删除后前缀&quot;app&quot;匹配结果 (4个结果):</span><br><span class="line">  - app（出现2次）</span><br><span class="line">  - apple（出现1次）</span><br><span class="line">  - applet（出现1次）</span><br><span class="line">  - application（出现2次）</span><br><span class="line"></span><br><span class="line">=== 5. 清空操作测试 ===</span><br><span class="line">清空后 app 出现次数: 0</span><br><span class="line">清空后前缀&quot;a&quot;匹配结果 (0个结果):</span><br></pre></td></tr></table></figure>
+
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/cd7a1e2a/">https://hespethorn.github.io/posts/cd7a1e2a/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Practical-System-Development/">Practical System Development</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9f783423/" title="CMake+Git实现C++项目版本号自动更新">CMake+Git实现C++项目版本号自动更新</a><time datetime="2025-11-29T10:30:41.000Z" title="Created 2025-11-29 18:30:41">2025-11-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/960a436d/" title="C++ 语句解析器实战：用注册式工厂打造可扩展语法分析器">C++ 语句解析器实战：用注册式工厂打造可扩展语法分析器</a><time datetime="2025-11-19T13:07:42.000Z" title="Created 2025-11-19 21:07:42">2025-11-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ac85f283/" title="C++ 模板工厂模式：从手动注册到自动发现的进化之路">C++ 模板工厂模式：从手动注册到自动发现的进化之路</a><time datetime="2025-11-12T13:07:28.000Z" title="Created 2025-11-12 21:07:28">2025-11-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9aed61e6/" title="CMake+Git实现C++项目版本号管理">CMake+Git实现C++项目版本号管理</a><time datetime="2025-10-21T10:30:41.000Z" title="Created 2025-10-21 18:30:41">2025-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a71dc607/" title="C++ 实现 JWT 工具类封装">C++ 实现 JWT 工具类封装</a><time datetime="2025-09-22T14:18:50.000Z" title="Created 2025-09-22 22:18:50">2025-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8ae6ef6e/" title="双栈 TCP 回声服务器 -- v3.0">双栈 TCP 回声服务器 -- v3.0</a><time datetime="2025-09-20T14:26:27.000Z" title="Created 2025-09-20 22:26:27">2025-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/614c11d0/" title="简单echo服务器 -- v2.0">简单echo服务器 -- v2.0</a><time datetime="2025-09-20T12:36:25.000Z" title="Created 2025-09-20 20:36:25">2025-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2db0d1c/" title="timefd定时器封装">timefd定时器封装</a><time datetime="2025-09-16T12:42:09.000Z" title="Created 2025-09-16 20:42:09">2025-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2a4bc159/" title="简单echo服务器 -- IPv4/IPv6 双栈兼容">简单echo服务器 -- IPv4/IPv6 双栈兼容</a><time datetime="2025-09-16T12:22:11.000Z" title="Created 2025-09-16 20:22:11">2025-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cd7a1e2a/" title="基于Trie树的词频统计与前缀匹配">基于Trie树的词频统计与前缀匹配</a><time datetime="2025-08-05T12:03:33.000Z" title="Created 2025-08-05 20:03:33">2025-08-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7aefcfc3/" title="自定义对象支持 C++ 范围循环（Range-based for）的实现">自定义对象支持 C++ 范围循环（Range-based for）的实现</a><time datetime="2025-03-12T15:43:17.000Z" title="Created 2025-03-12 23:43:17">2025-03-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a665bf6f/" title="文件词频代码解析">文件词频代码解析</a><time datetime="2025-02-16T12:59:31.000Z" title="Created 2025-02-16 20:59:31">2025-02-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6d45d0a7/" title="文件词频统计系统设计">文件词频统计系统设计</a><time datetime="2025-02-12T12:19:14.000Z" title="Created 2025-02-12 20:19:14">2025-02-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/834f76ba/" title="用C语言文件流实现轻量级图书管理系统：从0到1的实战解析">用C语言文件流实现轻量级图书管理系统：从0到1的实战解析</a><time datetime="2022-04-19T02:34:41.000Z" title="Created 2022-04-19 10:34:41">2022-04-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/12989e68/" title="C语言实现简易书籍管理系统">C语言实现简易书籍管理系统</a><time datetime="2022-01-26T13:15:14.000Z" title="Created 2022-01-26 21:15:14">2022-01-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/39679951/" title="C语言日期工具完整实现">C语言日期工具完整实现</a><time datetime="2022-01-16T15:51:31.000Z" title="Created 2022-01-16 23:51:31">2022-01-16</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

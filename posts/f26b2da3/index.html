@@ -1,0 +1,549 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言在网络编程领域，聊天室系统是一个经典的实践案例，它涵盖了套接字通信、并发处理、数据结构应用等多个核心知识点。本文将从零开始，一步步讲解如何使用 C 语言实现一个支持多人聊天、超时管理和私聊功能的完整聊天室系统，包括服务器端和客户端的实现细节。同时，为了让代码更具可读性和可维护性，会对关键代码段添加详细注释，帮助读者更好地理解每一步的逻辑。 一、系统整体设计与功能规划1.1 核心功能定位本聊天室">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析">
+<meta property="og:url" content="https://hespethorn.github.io/posts/f26b2da3/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言在网络编程领域，聊天室系统是一个经典的实践案例，它涵盖了套接字通信、并发处理、数据结构应用等多个核心知识点。本文将从零开始，一步步讲解如何使用 C 语言实现一个支持多人聊天、超时管理和私聊功能的完整聊天室系统，包括服务器端和客户端的实现细节。同时，为了让代码更具可读性和可维护性，会对关键代码段添加详细注释，帮助读者更好地理解每一步的逻辑。 一、系统整体设计与功能规划1.1 核心功能定位本聊天室">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2023-05-06T14:55:14.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:39:08.037Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="计算机网络">
+<meta property="article:tag" content="多人聊天">
+<meta property="article:tag" content="及时退出">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析",
+  "url": "https://hespethorn.github.io/posts/f26b2da3/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2023-05-06T14:55:14.000Z",
+  "dateModified": "2025-07-12T15:39:08.037Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/f26b2da3/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2023-05-06T14:55:14.000Z" title="Created 2023-05-06 22:55:14">2023-05-06</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Computer-Networking/">Computer-Networking</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">5.8k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>24mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h1 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h1><p>在网络编程领域，聊天室系统是一个经典的实践案例，它涵盖了套接字通信、并发处理、数据结构应用等多个核心知识点。本文将从零开始，一步步讲解如何使用 C 语言实现一个支持多人聊天、超时管理和私聊功能的完整聊天室系统，包括服务器端和客户端的实现细节。同时，为了让代码更具可读性和可维护性，会对关键代码段添加详细注释，帮助读者更好地理解每一步的逻辑。</p>
+<h2 id="一、系统整体设计与功能规划"><a href="#一、系统整体设计与功能规划" class="headerlink" title="一、系统整体设计与功能规划"></a>一、系统整体设计与功能规划</h2><h3 id="1-1-核心功能定位"><a href="#1-1-核心功能定位" class="headerlink" title="1.1 核心功能定位"></a>1.1 核心功能定位</h3><p>本聊天室系统旨在实现一个轻量化的多人即时通信工具，通过逐步迭代的方式完成以下功能：</p>
+<ul>
+<li><p><strong>基础双人通信</strong>：实现两个客户端之间通过服务器转发消息，为后续多人通信奠定基础。在开发初期先聚焦双人通信，能简化调试流程，快速验证消息转发逻辑。</p>
+</li>
+<li><p><strong>多人聊天功能</strong>：支持多个客户端同时连接并进行群聊，满足多人实时交流需求。该功能适用于在线讨论、小组协作等场景，是聊天室的核心使用场景。</p>
+</li>
+<li><p><strong>超时管理机制</strong>：对长时间不活跃的客户端进行自动清理，释放系统资源，保持服务器高效运行。当服务器连接数较多时，此机制能有效避免资源浪费，提升整体性能。</p>
+</li>
+<li><p><strong>私聊功能</strong>：允许客户端之间建立一对一的私密对话，保护用户隐私。用户在需要分享敏感信息或进行私人交流时，该功能可提供安全的沟通环境。</p>
+</li>
+<li><p><strong>服务器重连</strong>：客户端在服务器下线后能自动尝试重新连接，提升系统可用性。即使服务器临时故障，用户也无需手动频繁操作，保障通信连续性。</p>
+</li>
+</ul>
+<h3 id="1-2-技术选型与架构设计"><a href="#1-2-技术选型与架构设计" class="headerlink" title="1.2 技术选型与架构设计"></a>1.2 技术选型与架构设计</h3><p>系统采用 C&#x2F;S（客户端 &#x2F; 服务器）架构，基于 TCP 协议实现可靠通信：</p>
+<ul>
+<li><p><strong>服务器端</strong>：负责管理客户端连接、消息转发、状态监控，是整个系统的核心枢纽。服务器需具备高稳定性，处理大量并发请求，保证消息准确及时分发。</p>
+</li>
+<li><p><strong>客户端</strong>：提供用户交互界面，处理消息收发，为用户提供聊天交互入口。客户端设计需注重易用性，确保用户能流畅输入和查看消息。</p>
+</li>
+<li><p><strong>数据结构</strong>：使用链表存储在线客户端信息，方便动态管理客户端连接。链表结构插入和删除操作高效，适合频繁变化的在线客户端列表。</p>
+</li>
+<li><p><strong>并发处理</strong>：采用 select 多路复用机制实现对多个客户端的同时管理，提高服务器资源利用率。该机制能在单线程内处理多个 I&#x2F;O 事件，降低资源消耗。</p>
+</li>
+</ul>
+<h2 id="二、核心数据结构设计"><a href="#二、核心数据结构设计" class="headerlink" title="二、核心数据结构设计"></a>二、核心数据结构设计</h2><p>在实现具体功能前，我们需要设计合适的数据结构来管理客户端信息，这是整个系统的基础。</p>
+<h3 id="2-1-客户端节点结构"><a href="#2-1-客户端节点结构" class="headerlink" title="2.1 客户端节点结构"></a>2.1 客户端节点结构</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">typedef struct Node&#123;</span><br><span class="line">    int client_fd;       // 客户端套接字描述符，用于标识客户端连接，是与客户端通信的关键句柄</span><br><span class="line">    uint32_t addr;       // 客户端IP地址，存储客户端的网络地址，采用32位无符号整数存储IPv4地址</span><br><span class="line">    int port;            // 客户端端口号，用于区分同一IP下的不同客户端，确保通信唯一性</span><br><span class="line">    int chat_fd;         // 私聊对象的套接字描述符（-1表示未进行私聊），记录当前私聊状态</span><br><span class="line">    int sec;             // 最后活动时间戳，用于超时检测，记录客户端最后一次发送消息的时间</span><br><span class="line">    struct Node *next;   // 链表节点指针，指向下一个节点，用于构建链表结构</span><br><span class="line">&#125;Node;</span><br></pre></td></tr></table></figure>
+
+<p>该结构存储了单个客户端的关键信息，包括网络标识（IP 和端口）、通信句柄（套接字描述符）、状态信息（活动时间和私聊状态）。通过这些信息，服务器可全面掌握客户端状态，进行精准管理。</p>
+<h3 id="2-2-客户端链表结构"><a href="#2-2-客户端链表结构" class="headerlink" title="2.2 客户端链表结构"></a>2.2 客户端链表结构</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">typedef struct List&#123;</span><br><span class="line">    Node *head;          // 链表头节点，指向链表第一个节点，便于快速访问链表</span><br><span class="line">    Node *tail;          // 链表尾节点，指向链表最后一个节点，支持高效的节点插入操作</span><br><span class="line">    int size;            // 链表长度（在线客户端数量），记录当前在线客户端总数，方便统计和管理</span><br><span class="line">&#125;List;</span><br></pre></td></tr></table></figure>
+
+<p>通过链表结构可以动态管理所有在线客户端，支持高效的节点添加、删除和遍历操作，为多人聊天功能提供基础支持。无论是新客户端加入还是已有客户端退出，链表都能快速更新状态。</p>
+<h2 id="三、功能实现步骤详解"><a href="#三、功能实现步骤详解" class="headerlink" title="三、功能实现步骤详解"></a>三、功能实现步骤详解</h2><h3 id="3-1-第一步：实现基础网络通信框架"><a href="#3-1-第一步：实现基础网络通信框架" class="headerlink" title="3.1 第一步：实现基础网络通信框架"></a>3.1 第一步：实现基础网络通信框架</h3><h4 id="3-1-1-服务器端初始化"><a href="#3-1-1-服务器端初始化" class="headerlink" title="3.1.1 服务器端初始化"></a>3.1.1 服务器端初始化</h4><p>服务器端的核心工作是创建套接字、绑定地址端口、监听连接请求，代码如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">int main(int argc, char *argv[])&#123;</span><br><span class="line">    // 检查命令行参数是否正确，确保传入了IP和端口，格式为./server [IP] [PORT]</span><br><span class="line">    ARGS_CHECK(argc,3); </span><br><span class="line">    // 创建TCP套接字，使用IPv4协议，流式套接字，基于TCP协议提供可靠连接</span><br><span class="line">    int sockfd = socket(AF_INET,SOCK_STREAM,0);</span><br><span class="line">    // 检查套接字创建是否失败，若失败输出错误信息</span><br><span class="line">    ERROR_CHECK(sockfd,-1,&quot;error socket&quot;); </span><br><span class="line">    // 设置服务器地址结构，用于绑定套接字</span><br><span class="line">    struct sockaddr_in server_addr;</span><br><span class="line">    server_addr.sin_family = AF_INET;</span><br><span class="line">    // 将端口号从主机字节序转换为网络字节序，确保网络通信一致性</span><br><span class="line">    server_addr.sin_port = htons(atoi(argv[2])); </span><br><span class="line">    // 将IP地址字符串转换为网络字节序的二进制形式，便于网络传输</span><br><span class="line">    server_addr.sin_addr.s_addr = inet_addr(argv[1]); </span><br><span class="line">    // 设置端口复用，避免服务器重启时出现地址占用错误，提升部署灵活性</span><br><span class="line">    int res_addr = 1;</span><br><span class="line">    setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&amp;res_addr,sizeof(int));</span><br><span class="line">    // 绑定套接字到指定地址和端口，建立网络连接基础</span><br><span class="line">    int b_ret = bind(sockfd,(struct sockaddr*)&amp;server_addr,sizeof(server_addr));</span><br><span class="line">    // 检查绑定是否失败，若失败输出错误信息</span><br><span class="line">    ERROR_CHECK(b_ret,-1,&quot;bind error&quot;); </span><br><span class="line">    // 开始监听连接请求，最大等待队列长度为50，控制连接请求积压数量</span><br><span class="line">    int lis = listen(sockfd,50);</span><br><span class="line">    // 检查监听是否失败，若失败输出错误信息</span><br><span class="line">    ERROR_CHECK(lis,-1,&quot;listen error&quot;); </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="3-1-2-客户端连接实现"><a href="#3-1-2-客户端连接实现" class="headerlink" title="3.1.2 客户端连接实现"></a>3.1.2 客户端连接实现</h4><p>客户端需要创建套接字并连接到服务器，代码如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">int main(int argc, char *argv[])&#123;</span><br><span class="line">    // 检查命令行参数是否正确，格式为./client [IP] [PORT]</span><br><span class="line">    ARGS_CHECK(argc,3);</span><br><span class="line">    // 创建套接字，准备与服务器建立连接</span><br><span class="line">    int sockfd=socket(AF_INET,SOCK_STREAM,0);</span><br><span class="line">    // 检查套接字创建是否失败，若失败输出错误信息</span><br><span class="line">    ERROR_CHECK(sockfd,-1,&quot;error socket&quot;); </span><br><span class="line">    // 获取服务器地址信息，封装成结构体</span><br><span class="line">    struct sockaddr_in server_addr=GetServerSockfd(argv[1],argv[2]);</span><br><span class="line">    // 连接到服务器，发起通信请求</span><br><span class="line">    int con=connect(sockfd,(struct sockaddr*)&amp;server_addr,sizeof(server_addr));</span><br><span class="line">    // 检查连接是否失败，若失败输出错误信息</span><br><span class="line">    ERROR_CHECK(con,-1,&quot;error connect&quot;); </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-2-第二步：实现双人通信功能"><a href="#3-2-第二步：实现双人通信功能" class="headerlink" title="3.2 第二步：实现双人通信功能"></a>3.2 第二步：实现双人通信功能</h3><p>双人通信的核心是服务器能够接收一个客户端的消息并转发给另一个客户端。这需要服务器能够：</p>
+<ul>
+<li><p>接受客户端连接（<code>AcceptClient</code>函数）</p>
+</li>
+<li><p>存储客户端信息（<code>CreateClientFd</code>函数）</p>
+</li>
+<li><p>接收并转发消息（<code>RecvAndSendClient</code>和<code>SendClinetMes</code>函数）</p>
+</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">void AcceptClient(int sockfd,fd_set *monitorset,List* list)&#123;</span><br><span class="line">    // 接受新连接，获取客户端地址信息</span><br><span class="line">    struct sockaddr_in client_addr;</span><br><span class="line">    socklen_t client_len = sizeof(client_addr);</span><br><span class="line">    int cli_sockfd=accept(sockfd,(struct sockaddr*)&amp;client_addr,&amp;client_len);</span><br><span class="line">    // 检查接受连接是否失败，若失败输出错误信息</span><br><span class="line">    ERROR_CHECK(cli_sockfd,-1,&quot;error accept&quot;); </span><br><span class="line">    // 将新客户端添加到链表，便于后续管理</span><br><span class="line">    CreateClientFd(list,cli_sockfd,client_addr,monitorset);</span><br><span class="line">    // 通知其他客户端有新连接，更新在线状态</span><br><span class="line">    Node* p = list-&gt;head;</span><br><span class="line">    while(p != NULL)&#123;</span><br><span class="line">        if(p-&gt;client_fd != cli_sockfd)&#123;</span><br><span class="line">            char new_conn_msg[100];</span><br><span class="line">            sprintf(new_conn_msg, &quot;新客户端%d已连接\n&quot;, cli_sockfd);</span><br><span class="line">            send(p-&gt;client_fd, new_conn_msg, strlen(new_conn_msg), 0);</span><br><span class="line">        &#125;</span><br><span class="line">        p = p-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-3-第三步：实现多人聊天功能"><a href="#3-3-第三步：实现多人聊天功能" class="headerlink" title="3.3 第三步：实现多人聊天功能"></a>3.3 第三步：实现多人聊天功能</h3><p>多人聊天在双人通信的基础上，需要将消息广播给所有在线客户端。这通过遍历客户端链表实现：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">void SendClinetMes(List *list,char* buf,Node *p)&#123;</span><br><span class="line">    if(p != NULL &amp;&amp; p-&gt;chat_fd != -1)&#123;</span><br><span class="line">        // 私聊状态，仅发送给私聊对象，确保消息私密性</span><br><span class="line">        SendMsg(p-&gt;chat_fd, p,buf);</span><br><span class="line">    &#125;else&#123;</span><br><span class="line">        // 群聊状态，广播给所有其他客户端，实现多人交流</span><br><span class="line">        Node* new_p = list-&gt;head;</span><br><span class="line">        while(new_p != NULL)&#123;</span><br><span class="line">            if(new_p != p)&#123;  // 不发给自己</span><br><span class="line">                SendMsg(new_p-&gt;client_fd,p, buf);</span><br><span class="line">            &#125;</span><br><span class="line">            new_p = new_p-&gt;next;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>服务器使用select函数实现 I&#x2F;O 多路复用，同时监听多个客户端的消息：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">while(1)&#123;</span><br><span class="line">    // 复制监控集合，避免select修改原始集合，确保下次监听准确</span><br><span class="line">    memcpy(&amp;readyset,&amp;monitorset,sizeof(fd_set));</span><br><span class="line">    // 使用select进行I/O多路复用，设置超时时间，避免长时间阻塞</span><br><span class="line">    select(1024,&amp;readyset,NULL,NULL,&amp;timeout);</span><br><span class="line">    // 处理新连接，及时响应客户端请求</span><br><span class="line">    if(FD_ISSET(sockfd,&amp;readyset))&#123;</span><br><span class="line">        AcceptClient(sockfd,&amp;monitorset,list);</span><br><span class="line">    &#125;</span><br><span class="line">    // 处理客户端消息，实现消息接收和转发</span><br><span class="line">    Node *list_p = list-&gt;head;</span><br><span class="line">    while(list_p != NULL)&#123;</span><br><span class="line">        Node *p=list_p-&gt;next;</span><br><span class="line">        if(FD_ISSET(list_p-&gt;client_fd,&amp;readyset))&#123;</span><br><span class="line">            RecvAndSendClient(list,list_p,buf,&amp;monitorset);</span><br><span class="line">        &#125;</span><br><span class="line">        list_p=p;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-4-第四步：实现超时退出机制"><a href="#3-4-第四步：实现超时退出机制" class="headerlink" title="3.4 第四步：实现超时退出机制"></a>3.4 第四步：实现超时退出机制</h3><p>超时退出机制需要服务器定期检查客户端的最后活动时间，对超过设定时间（本系统为 10 秒）未活动的客户端进行清理：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">Node *list_p = list-&gt;head;</span><br><span class="line">while(list_p != NULL)&#123;</span><br><span class="line">    Node *p=list_p-&gt;next;</span><br><span class="line">    // 检查是否超时，判断客户端活跃度</span><br><span class="line">    if((time(NULL)-list_p-&gt;sec)&gt;10)&#123;</span><br><span class="line">        char server_msg[1024];</span><br><span class="line">        sprintf(server_msg,&quot;客户端%d超时退出&quot;,list_p-&gt;port);</span><br><span class="line">        SendClinetMes(list,server_msg,NULL);</span><br><span class="line">        // 关闭连接并从链表中删除，释放系统资源</span><br><span class="line">        close(list_p-&gt;client_fd);</span><br><span class="line">        DelectClientFd(list, list_p-&gt;client_fd,&amp;monitorset);</span><br><span class="line">    &#125;</span><br><span class="line">    list_p=p;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>同时，每次客户端发送消息时更新其最后活动时间：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">if(FD_ISSET(list_p-&gt;client_fd,&amp;readyset))&#123;</span><br><span class="line">    list_p-&gt;sec=time(NULL);  // 更新活动时间，记录最新操作时刻</span><br><span class="line">    RecvAndSendClient(list,list_p,buf,&amp;monitorset);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-5-第五步：实现私聊功能"><a href="#3-5-第五步：实现私聊功能" class="headerlink" title="3.5 第五步：实现私聊功能"></a>3.5 第五步：实现私聊功能</h3><p>私聊功能允许客户端之间建立一对一的私密对话，实现思路是：</p>
+<ol>
+<li>客户端通过特定指令（*chat 客户端ID）发起私聊请求</li>
+<li>服务器记录私聊关系（<code>chat_fd</code>字段）</li>
+<li>处于私聊状态的客户端消息仅发送给私聊对象</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">// 处理私聊请求</span><br><span class="line">if(strncmp(buf,&quot;*chat &quot;,6) == 0)&#123;</span><br><span class="line">    int num_fd = atoi(buf+6);  // 获取目标客户端ID，解析指令参数</span><br><span class="line">    Node *new_p = list-&gt;head;</span><br><span class="line">    while(new_p != NULL)&#123;</span><br><span class="line">        if(num_fd == new_p-&gt;client_fd)&#123;</span><br><span class="line">            // 建立双向私聊关系，确保双方都能通信</span><br><span class="line">            p-&gt;chat_fd = new_p-&gt;client_fd;</span><br><span class="line">            new_p-&gt;chat_fd = p-&gt;client_fd;</span><br><span class="line">            printf(&quot;客户端%d与%d开始私聊\n&quot;,p-&gt;client_fd,p-&gt;chat_fd);</span><br><span class="line">            return;</span><br><span class="line">        &#125;</span><br><span class="line">        new_p = new_p-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line">// 处理结束私聊指令</span><br><span class="line">if (strcmp(buf, &quot;*endchat\n&quot;) == 0) &#123;</span><br><span class="line">    // 解除私聊关系，恢复群聊状态</span><br><span class="line">    Node* target = list-&gt;head;</span><br><span class="line">    while (target != NULL &amp;&amp; target-&gt;client_fd != p-&gt;chat_fd) &#123;</span><br><span class="line">        target = target-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">    if (target != NULL) &#123;</span><br><span class="line">        target-&gt;chat_fd = -1;</span><br><span class="line">    &#125;</span><br><span class="line">    p-&gt;chat_fd = -1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="四、客户端实现细节"><a href="#四、客户端实现细节" class="headerlink" title="四、客户端实现细节"></a>四、客户端实现细节</h2><p>客户端需要实现的核心功能包括：</p>
+<ol>
+<li><p>与服务器建立连接</p>
+</li>
+<li><p>接收用户输入并发送给服务器</p>
+</li>
+<li><p>接收服务器转发的消息并显示</p>
+</li>
+<li><p>处理服务器下线后的重连逻辑</p>
+</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">while(1)&#123;</span><br><span class="line">    FD_ZERO(&amp;sockset);</span><br><span class="line">    FD_SET(sockfd,&amp;sockset);</span><br><span class="line">    FD_SET(STDIN_FILENO,&amp;sockset);</span><br><span class="line">    select(max_fd,&amp;sockset,NULL,NULL,NULL);</span><br><span class="line">    // 处理服务器消息，接收并展示聊天内容</span><br><span class="line">    if(FD_ISSET(sockfd,&amp;sockset))&#123;</span><br><span class="line">        recv(sockfd,buf,sizeof(buf),0);</span><br><span class="line">        TimeNow();</span><br><span class="line">        printf(&quot;%s\n&quot;,buf);</span><br><span class="line">        // 处理服务器下线情况，自动尝试重连</span><br><span class="line">        if(strcmp(buf,&quot;serverexit\n&quot;)==0)&#123;</span><br><span class="line">            printf(&quot;服务器下线，将尝试重连...\n&quot;);</span><br><span class="line">            while(1)&#123;</span><br><span class="line">                int new_sockfd=socket(AF_INET,SOCK_STREAM,0);</span><br><span class="line">                if(connect(new_sockfd,(struct sockaddr*)&amp;server_addr,sizeof(server_addr))!=-1)&#123;</span><br><span class="line">                    close(sockfd);</span><br><span class="line">                    sockfd=new_sockfd;</span><br><span class="line">                    printf(&quot;重连成功\n&quot;);</span><br><span class="line">                    break;</span><br><span class="line">                &#125;</span><br><span class="line">                sleep(1);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    // 处理用户输入，发送消息到服务器</span><br><span class="line">    if(FD_ISSET(STDIN_FILENO,&amp;sockset))&#123;</span><br><span class="line">        int ret=read(STDIN_FILENO,buf,sizeof(buf));</span><br><span class="line">        send(sockfd,buf,ret,0);</span><br><span class="line">        if(strcmp(buf,&quot;exit\n&quot;)==0)&#123;</span><br><span class="line">            printf(&quot;退出聊天\n&quot;);</span><br><span class="line">            return 0;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="五、系统测试与使用说明"><a href="#五、系统测试与使用说明" class="headerlink" title="五、系统测试与使用说明"></a>五、系统测试与使用说明</h2><h3 id="5-1-编译与运行"><a href="#5-1-编译与运行" class="headerlink" title="5.1 编译与运行"></a>5.1 编译与运行</h3><ol>
+<li><p>编译服务器端：<code>gcc server.c -o server</code>，生成服务器可执行文件</p>
+</li>
+<li><p>编译客户端：<code>gcc client.c -o client</code>，生成客户端可执行文件</p>
+</li>
+<li><p>启动服务器：<code>./server [127.0.0.1](http://127.0.0.1) 8888</code>，在本地地址 <code>[127.0.0.1]</code>(<a target="_blank" rel="noopener external nofollow noreferrer" href="http://127.0.0.1)、端口/">http://127.0.0.1)、端口</a> 8888 启动服务器</p>
+</li>
+<li><p>启动客户端：<code>./client [127.0.0.1](http://127.0.0.1) 8888</code>（可启动多个客户端），连接到指定服务器进行测试</p>
+</li>
+</ol>
+<h3 id="5-2-基本操作指令"><a href="#5-2-基本操作指令" class="headerlink" title="5.2 基本操作指令"></a>5.2 基本操作指令</h3><ul>
+<li><p><strong>发送群聊消息</strong>：直接输入消息内容并回车，实现多人公开交流</p>
+</li>
+<li><p><strong>发起私聊</strong>：<code>*chat </code>客户端ID（客户端 ID 可从服务器通知中获取），开启一对一私密对话</p>
+</li>
+<li><p><strong>结束私聊</strong>：<code>*endchat</code>，退出私聊模式恢复群聊</p>
+</li>
+<li><p><strong>退出聊天</strong>：<code>exit</code>，关闭客户端连接退出系统</p>
+</li>
+</ul>
+<h2 id="六、总结"><a href="#六、总结" class="headerlink" title="六、总结"></a>六、总结</h2><p>本文通过逐步实现的方式，详细讲解了基于 C 语言的多人聊天室系统的开发过程。从基础的套接字通信到复杂的多人聊天和私聊功能，我们学习了如何使用链表管理客户端、如何利用 select 实现多路复用、如何设计消息转发机制等关键技术点。</p>
+<p><strong>客户端代码</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;my_header.h&gt;</span><br><span class="line">#include &lt;sys/socket.h&gt;</span><br><span class="line">#include &lt;sys/types.h&gt;</span><br><span class="line">#include &lt;netinet/in.h&gt;</span><br><span class="line">#include &lt;arpa/inet.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">/* Usage:</span><br><span class="line"> * 第一步实现双人通信</span><br><span class="line"> * 第二步实现通过服务器的双人通信</span><br><span class="line"> * 第三步实现通过服务器的多人聊天</span><br><span class="line"> * 第四步实现30秒不通讯退出</span><br><span class="line"> * 第五步实现私聊</span><br><span class="line"> */</span><br><span class="line">struct sockaddr_in GetServerSockfd(char* addr,char* port)&#123;</span><br><span class="line">    struct sockaddr_in server_addr;</span><br><span class="line">    server_addr.sin_family=AF_INET;</span><br><span class="line">    server_addr.sin_port=htons(atoi(port));</span><br><span class="line">    server_addr.sin_addr.s_addr=inet_addr(addr);</span><br><span class="line">    return server_addr;</span><br><span class="line">&#125;</span><br><span class="line">void TimeNow()&#123;</span><br><span class="line">    time_t now=time(NULL);</span><br><span class="line">    struct tm *time_n=localtime(&amp;now);</span><br><span class="line">    printf(&quot;[%02d:%02d:%02d]&quot;,time_n-&gt;tm_hour,time_n-&gt;tm_min,time_n-&gt;tm_sec);</span><br><span class="line">&#125;</span><br><span class="line">int main(int argc, char *argv[])&#123;                                  </span><br><span class="line">    ARGS_CHECK(argc,3);</span><br><span class="line">    int sockfd=socket(AF_INET,SOCK_STREAM,0);</span><br><span class="line">    ERROR_CHECK(sockfd,-1,&quot;error socket&quot;);</span><br><span class="line">    struct sockaddr_in server_addr=GetServerSockfd(argv[1],argv[2]);</span><br><span class="line">    //server_addr.sin_family=AF_INET;</span><br><span class="line">    //erver_addr.sin_port=htons(atoi(argv[2]));</span><br><span class="line">    //server_addr.sin_addr.s_addr=inet_addr(argv[1]);</span><br><span class="line">    //十进制转二进制</span><br><span class="line">    int con=connect(sockfd,(struct sockaddr*)&amp;server_addr,sizeof(server_addr));</span><br><span class="line">    ERROR_CHECK(con,-1,&quot;error connect&quot;);</span><br><span class="line">    fd_set sockset;</span><br><span class="line">    int port;</span><br><span class="line">    recv(sockfd,&amp;port,sizeof(int),0);</span><br><span class="line">    printf(&quot;已经与服务端链接，输入exit退出;\n你的端口号是:%d\n&quot;,ntohs(port));</span><br><span class="line">    char buf[4068]=&#123;0&#125;;</span><br><span class="line">    while(1)&#123;</span><br><span class="line">        FD_ZERO(&amp;sockset);</span><br><span class="line">        FD_SET(sockfd,&amp;sockset);</span><br><span class="line">        FD_SET(STDIN_FILENO,&amp;sockset);</span><br><span class="line">        int max_fd=1+((sockfd&gt;STDIN_FILENO)?sockfd:STDIN_FILENO);</span><br><span class="line">        select(max_fd,&amp;sockset,NULL,NULL,NULL);</span><br><span class="line">        if(FD_ISSET(sockfd,&amp;sockset))&#123;</span><br><span class="line">            recv(sockfd,buf,sizeof(buf),0);</span><br><span class="line">            TimeNow();</span><br><span class="line">            printf(&quot;%s\n&quot;,buf);</span><br><span class="line">            if(strcmp(buf,&quot;exit\n&quot;)==0)&#123;</span><br><span class="line">                TimeNow();</span><br><span class="line">                printf(&quot;对面已经脱水\n&quot;);</span><br><span class="line">            &#125;</span><br><span class="line">            if(strcmp(buf,&quot;serverexit\n&quot;)==0||strlen(buf)==0)&#123;</span><br><span class="line">                TimeNow();</span><br><span class="line">                printf(&quot;服务器下线,将循环寻找服务器，直到新链接建立\n&quot;);</span><br><span class="line">                while(1)&#123;</span><br><span class="line">                    int new_sockfd=socket(AF_INET,SOCK_STREAM,0);</span><br><span class="line">                    ERROR_CHECK(new_sockfd,-1,&quot;creat newfd&quot;);</span><br><span class="line">                    if(connect(new_sockfd,(struct sockaddr*)&amp;server_addr,sizeof(server_addr))!=-1)&#123;</span><br><span class="line">                        //这种方式可以考虑网络连接 recv(sockfd,client_addr,sizeof(client_addr),0);</span><br><span class="line">                        close (sockfd);</span><br><span class="line">                        sockfd=new_sockfd;</span><br><span class="line">                        recv(sockfd,&amp;port,sizeof(int),0);</span><br><span class="line">                        printf(&quot;已经与服务端链接，输入exit退出;\n你的端口号是:%d\n&quot;,ntohs(port));</span><br><span class="line">                        break;</span><br><span class="line">                    &#125;else&#123;</span><br><span class="line">                        close(new_sockfd);</span><br><span class="line">                    &#125;</span><br><span class="line">                    sleep(1);</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            memset(buf,0,sizeof(buf));</span><br><span class="line">        &#125;</span><br><span class="line">        if(FD_ISSET(STDIN_FILENO,&amp;sockset))&#123;</span><br><span class="line">            int ret=read(STDIN_FILENO,buf,sizeof(buf));</span><br><span class="line">            ERROR_CHECK(ret,-1,&quot;error read&quot;);</span><br><span class="line">            send(sockfd,buf,ret,0);</span><br><span class="line">            if(ret==0||strcmp(buf,&quot;exit\n&quot;)==0)&#123;</span><br><span class="line">                TimeNow();</span><br><span class="line">                printf(&quot;脱水\n&quot;);</span><br><span class="line">                return 0;</span><br><span class="line">            &#125;</span><br><span class="line">            memset(buf,0,sizeof(buf));</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    close(sockfd);</span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p><strong>服务端代码</strong></p>
+ <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br><span class="line">233</span><br><span class="line">234</span><br><span class="line">235</span><br><span class="line">236</span><br><span class="line">237</span><br><span class="line">238</span><br><span class="line">239</span><br><span class="line">240</span><br><span class="line">241</span><br><span class="line">242</span><br><span class="line">243</span><br><span class="line">244</span><br><span class="line">245</span><br><span class="line">246</span><br><span class="line">247</span><br><span class="line">248</span><br><span class="line">249</span><br><span class="line">250</span><br><span class="line">251</span><br><span class="line">252</span><br><span class="line">253</span><br><span class="line">254</span><br><span class="line">255</span><br><span class="line">256</span><br><span class="line">257</span><br><span class="line">258</span><br><span class="line">259</span><br><span class="line">260</span><br><span class="line">261</span><br><span class="line">262</span><br><span class="line">263</span><br><span class="line">264</span><br><span class="line">265</span><br><span class="line">266</span><br><span class="line">267</span><br><span class="line">268</span><br><span class="line">269</span><br><span class="line">270</span><br><span class="line">271</span><br><span class="line">272</span><br><span class="line">273</span><br><span class="line">274</span><br><span class="line">275</span><br><span class="line">276</span><br><span class="line">277</span><br><span class="line">278</span><br><span class="line">279</span><br><span class="line">280</span><br><span class="line">281</span><br><span class="line">282</span><br><span class="line">283</span><br><span class="line">284</span><br><span class="line">285</span><br><span class="line">286</span><br><span class="line">287</span><br><span class="line">288</span><br><span class="line">289</span><br><span class="line">290</span><br><span class="line">291</span><br><span class="line">292</span><br><span class="line">293</span><br><span class="line">294</span><br><span class="line">295</span><br><span class="line">296</span><br><span class="line">297</span><br><span class="line">298</span><br><span class="line">299</span><br><span class="line">300</span><br><span class="line">301</span><br><span class="line">302</span><br><span class="line">303</span><br><span class="line">304</span><br><span class="line">305</span><br><span class="line">306</span><br><span class="line">307</span><br><span class="line">308</span><br><span class="line">309</span><br><span class="line">310</span><br><span class="line">311</span><br><span class="line">312</span><br><span class="line">313</span><br><span class="line">314</span><br><span class="line">315</span><br><span class="line">316</span><br><span class="line">317</span><br><span class="line">318</span><br><span class="line">319</span><br><span class="line">320</span><br><span class="line">321</span><br><span class="line">322</span><br><span class="line">323</span><br><span class="line">324</span><br><span class="line">325</span><br><span class="line">326</span><br><span class="line">327</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;my_header.h&gt;</span><br><span class="line">#include &lt;sys/socket.h&gt;</span><br><span class="line">#include &lt;sys/types.h&gt;</span><br><span class="line">#include &lt;netinet/in.h&gt;</span><br><span class="line">#include &lt;arpa/inet.h&gt;</span><br><span class="line">#include &lt;unistd.h&gt;</span><br><span class="line">#include &lt;arpa/inet.h&gt;</span><br><span class="line">/* Usage:</span><br><span class="line"> * 第一步实现双人通信</span><br><span class="line"> * 第二步实现通过服务器的双人通信</span><br><span class="line"> * 第三步实现通过服务器的多人聊天</span><br><span class="line"> * 第四步实现30秒不通讯退出</span><br><span class="line"> * 第五步实现私聊</span><br><span class="line"> */</span><br><span class="line"></span><br><span class="line">//存储accept信息的链表，头尾节点，</span><br><span class="line">typedef struct Node&#123;</span><br><span class="line">    int client_fd;</span><br><span class="line">    uint32_t addr; //客户的网址</span><br><span class="line">    int port; //客户的端口</span><br><span class="line">    int chat_fd; //私聊</span><br><span class="line">    int sec;</span><br><span class="line">    struct Node *next;</span><br><span class="line">&#125;Node;</span><br><span class="line">typedef struct List&#123;</span><br><span class="line">    Node *head;</span><br><span class="line">    Node *tail;</span><br><span class="line">    int size;</span><br><span class="line">&#125;List;</span><br><span class="line">void CreateClientFd(List *list,int cli_sockfd,struct sockaddr_in client_addr,fd_set *monitorset)&#123;</span><br><span class="line">    Node* newNode = (Node*)malloc(sizeof(Node));</span><br><span class="line">    ERROR_CHECK(newNode, NULL, &quot;malloc error&quot;);</span><br><span class="line"></span><br><span class="line">    newNode-&gt;client_fd = cli_sockfd;</span><br><span class="line">    newNode-&gt;addr = client_addr.sin_addr.s_addr;</span><br><span class="line">    newNode-&gt;port = ntohs(client_addr.sin_port);</span><br><span class="line">    newNode-&gt;chat_fd = -1;</span><br><span class="line">    newNode-&gt;sec=time(NULL);</span><br><span class="line">    newNode-&gt;next = NULL;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    if(list-&gt;head == NULL)&#123;</span><br><span class="line">        list-&gt;head = newNode;</span><br><span class="line">        list-&gt;tail = newNode;</span><br><span class="line">    &#125;else&#123;</span><br><span class="line">        list-&gt;tail-&gt;next = newNode;</span><br><span class="line">        list-&gt;tail = newNode;</span><br><span class="line">    &#125;</span><br><span class="line">    list-&gt;size++;</span><br><span class="line">    FD_SET(cli_sockfd,monitorset);</span><br><span class="line">&#125;</span><br><span class="line">void DelectClientFd(List *list, int cli_sockfd, fd_set *monitorset) &#123;</span><br><span class="line">    if (list-&gt;head == NULL) return;</span><br><span class="line"></span><br><span class="line">    Node *prev = NULL;</span><br><span class="line">    Node *curr = list-&gt;head;</span><br><span class="line">    FD_CLR(cli_sockfd, monitorset);</span><br><span class="line"></span><br><span class="line">    // 查找要删除的节点</span><br><span class="line">    while (curr != NULL &amp;&amp; curr-&gt;client_fd != cli_sockfd) &#123;</span><br><span class="line">        prev = curr;</span><br><span class="line">        curr = curr-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 未找到节点</span><br><span class="line">    if (curr == NULL) &#123;</span><br><span class="line">        return;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 解除与该客户端相关的私聊关系</span><br><span class="line">    Node* temp = list-&gt;head;</span><br><span class="line">    while (temp != NULL) &#123;</span><br><span class="line">        if (temp-&gt;chat_fd == cli_sockfd) &#123;</span><br><span class="line">            temp-&gt;chat_fd = -1;</span><br><span class="line">            send(temp-&gt;client_fd, &quot;错误：私聊对象已下线，自动结束私聊\n&quot;, 34, 0);</span><br><span class="line">        &#125;</span><br><span class="line">        temp = temp-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 删除当前节点</span><br><span class="line">    if (prev == NULL) &#123;</span><br><span class="line">        list-&gt;head = curr-&gt;next;</span><br><span class="line">        if (list-&gt;head == NULL) list-&gt;tail = NULL;</span><br><span class="line">    &#125; else &#123;</span><br><span class="line">        prev-&gt;next = curr-&gt;next;</span><br><span class="line">        if (curr == list-&gt;tail) list-&gt;tail = prev;</span><br><span class="line">    &#125;</span><br><span class="line">    // 关键：彻底清理</span><br><span class="line">    FD_CLR(cli_sockfd, monitorset);  // 从监听集合中移除</span><br><span class="line">    close(cli_sockfd);               // 确保套接字关闭（双重保险）</span><br><span class="line">    free(curr);  // 释放当前节点（关键修复：在删除节点后释放，而非NULL）</span><br><span class="line">    list-&gt;size--;</span><br><span class="line">&#125;</span><br><span class="line">void TimeNow()&#123;</span><br><span class="line">    time_t now = time(NULL);</span><br><span class="line">    struct tm *time_now = localtime(&amp;now);</span><br><span class="line">    printf(&quot;[%02d:%02d:%02d]&quot;,time_now-&gt;tm_hour,time_now-&gt;tm_min,time_now-&gt;tm_sec);</span><br><span class="line">&#125;</span><br><span class="line">void PrintfList(List *list)&#123;</span><br><span class="line">    Node*p = list-&gt;head;</span><br><span class="line">    printf(&quot;当前在线客户端列表:\n\n&quot;);</span><br><span class="line">    while(p != NULL)&#123;</span><br><span class="line">        printf(&quot;客户端描述符:%d 端口号是:%d\n\n&quot;,p-&gt;client_fd,p-&gt;port);</span><br><span class="line">        p = p-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line">void AcceptClient(int sockfd,fd_set *monitorset,List* list)&#123;</span><br><span class="line">    //接收新连接</span><br><span class="line">    struct sockaddr_in client_addr;</span><br><span class="line">    socklen_t client_len = sizeof(client_addr);        </span><br><span class="line">    int cli_sockfd=accept(sockfd,(struct sockaddr*)&amp;client_addr,&amp;client_len);</span><br><span class="line">    ERROR_CHECK(cli_sockfd,-1,&quot;error accept&quot;);</span><br><span class="line"></span><br><span class="line">    printf(&quot;客户端%d已连接，端口号:%d\n\n&quot;, cli_sockfd, ntohs(client_addr.sin_port));</span><br><span class="line"></span><br><span class="line">    //发送客户自己的端口</span><br><span class="line">    send(cli_sockfd,&amp;client_addr.sin_port,sizeof(client_addr.sin_port),0);</span><br><span class="line">    //添加到客户列表</span><br><span class="line">    CreateClientFd(list,cli_sockfd,client_addr,monitorset);</span><br><span class="line">    //添加到监听集合</span><br><span class="line"></span><br><span class="line">    Node* p = list-&gt;head;</span><br><span class="line">    while(p != NULL)&#123;</span><br><span class="line">        if(p-&gt;client_fd != cli_sockfd)&#123;</span><br><span class="line">            char new_conn_msg[100];</span><br><span class="line">            sprintf(new_conn_msg, &quot;新客户端%d (端口号:%d)已连接,通过“*chat num”来私聊\n\n&quot;, cli_sockfd, ntohs(client_addr.sin_port));</span><br><span class="line">            send(p-&gt;client_fd, new_conn_msg, strlen(new_conn_msg), 0);</span><br><span class="line">        &#125;</span><br><span class="line">        p = p-&gt;next;</span><br><span class="line">    &#125;</span><br><span class="line">    PrintfList(list);</span><br><span class="line">&#125;</span><br><span class="line">//p发出给new_p的信息</span><br><span class="line">void SendMsg(int client_fd, Node* p, char* buf) &#123;</span><br><span class="line">    char msg[4096] = &#123;0&#125;;  // 扩大缓冲区，避免溢出</span><br><span class="line">    if (p == NULL) &#123;</span><br><span class="line">        // 服务器消息：拼接前缀和内容</span><br><span class="line">        snprintf(msg, sizeof(msg), &quot;服务器消息：%s&quot;, buf);</span><br><span class="line">    &#125; else &#123;</span><br><span class="line">        // 客户端消息：拼接客户端ID和内容</span><br><span class="line">        snprintf(msg, sizeof(msg), &quot;%d号客户端：%s&quot;, p-&gt;client_fd, buf);</span><br><span class="line">    &#125;</span><br><span class="line">    send(client_fd, msg, strlen(msg), 0);  // 一次发送完整消息</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">void SendClinetMes(List *list,char* buf,Node *p)&#123;</span><br><span class="line">    if(p != NULL &amp;&amp; p-&gt;chat_fd != -1)&#123;</span><br><span class="line">        SendMsg(p-&gt;chat_fd, p,buf);</span><br><span class="line">    &#125;else&#123;</span><br><span class="line">        // 广播消息给其他客户端</span><br><span class="line">        Node* new_p = list-&gt;head;</span><br><span class="line">        while(new_p != NULL)&#123;</span><br><span class="line">            if(new_p != p)&#123;</span><br><span class="line">                SendMsg(new_p-&gt;client_fd,p, buf);</span><br><span class="line">            &#125;</span><br><span class="line">            new_p = new_p-&gt;next;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    memset(buf,0,1024);</span><br><span class="line">&#125;</span><br><span class="line">void RecvAndSendClient(List* list,Node *p,char* buf,fd_set *monitorset)&#123; </span><br><span class="line">    ssize_t ret = recv(p-&gt;client_fd, buf,1024, 0);</span><br><span class="line">    if(ret &lt;= 0 || strcmp(buf, &quot;exit\n&quot;) == 0)&#123;</span><br><span class="line">        TimeNow();</span><br><span class="line">        printf(&quot;客户端%d下线了，端口号:%d\n&quot;, p-&gt;client_fd,p-&gt;port);</span><br><span class="line"></span><br><span class="line">        // 从监听集合中移除该客户端</span><br><span class="line">        FD_CLR(p-&gt;client_fd,monitorset);</span><br><span class="line"></span><br><span class="line">        // 通知其他客户端</span><br><span class="line">        char offline_msg[1024];</span><br><span class="line">        sprintf(offline_msg, &quot;端口号%d的客户端下线了\n&quot;, p-&gt;port);</span><br><span class="line">        SendClinetMes(list,offline_msg,p);</span><br><span class="line"></span><br><span class="line">        // 关闭客户端连接并从链表中删除</span><br><span class="line">        close(p-&gt;client_fd);</span><br><span class="line">        DelectClientFd(list, p-&gt;client_fd,monitorset);</span><br><span class="line">        memset(buf,0,1024);</span><br><span class="line">        return;</span><br><span class="line">    &#125;</span><br><span class="line">    TimeNow();</span><br><span class="line">    printf(&quot;客户端 %d:%s\n&quot;,p-&gt;client_fd,buf);</span><br><span class="line">    if(strncmp(buf,&quot;*chat &quot;,6) == 0)&#123; </span><br><span class="line">        //输入想聊天的客户端</span><br><span class="line">        int num_fd = atoi(buf+6);</span><br><span class="line">        Node *new_p = list-&gt;head;</span><br><span class="line">        while(new_p != NULL)&#123;</span><br><span class="line">            if(num_fd == new_p-&gt;client_fd)&#123;</span><br><span class="line">                if(new_p-&gt;chat_fd != -1)&#123;</span><br><span class="line">                    send(p-&gt;client_fd,&quot;BUSY&quot;,4,0);</span><br><span class="line">                    return;</span><br><span class="line">                &#125;else&#123;</span><br><span class="line">                    p-&gt;chat_fd = new_p-&gt;client_fd;</span><br><span class="line">                    new_p-&gt;chat_fd = p-&gt;client_fd;</span><br><span class="line">                    memset(buf,0,1024);</span><br><span class="line">                    printf(&quot;客户端%d想跟客户端%d私聊\n&quot;,p-&gt;client_fd,p-&gt;chat_fd);</span><br><span class="line">                    char server_msg[1024];</span><br><span class="line">                    sprintf(server_msg,&quot;有客户端%d私聊短消息,输入 “*endchat“ 断开连接\n&quot;,p-&gt;client_fd);</span><br><span class="line">                    send(p-&gt;chat_fd,server_msg,strlen(server_msg),0);</span><br><span class="line">                    return;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            new_p = new_p-&gt;next;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    // 处理结束私聊指令：&quot;*endchat&quot;</span><br><span class="line">    if (strcmp(buf, &quot;*endchat\n&quot;) == 0) &#123;</span><br><span class="line">        if (p-&gt;chat_fd == -1) &#123;</span><br><span class="line">            send(p-&gt;client_fd, &quot;你未在私聊中\n&quot;, 14, 0);</span><br><span class="line">            memset(buf, 0, 1024);</span><br><span class="line">            return;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        // 查找私聊对象并解除关系</span><br><span class="line">        Node* target = list-&gt;head;</span><br><span class="line">        while (target != NULL &amp;&amp; target-&gt;client_fd != p-&gt;chat_fd) &#123;</span><br><span class="line">            target = target-&gt;next;</span><br><span class="line">        &#125;</span><br><span class="line">        if (target != NULL) &#123;</span><br><span class="line">            target-&gt;chat_fd = -1;</span><br><span class="line">            send(target-&gt;client_fd, &quot;对方已结束私聊\n&quot;, 30, 0);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        p-&gt;chat_fd = -1;</span><br><span class="line">        send(p-&gt;client_fd, &quot;已结束私聊\n&quot;, 30, 0);</span><br><span class="line">        memset(buf, 0, 1024);</span><br><span class="line">        return;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    if(p-&gt;chat_fd != -1)&#123;</span><br><span class="line">        char chat_msg[1024];</span><br><span class="line">        sprintf(chat_msg,&quot;[私聊%d]%s\n&quot;,p-&gt;client_fd,buf);</span><br><span class="line">        send(p-&gt;chat_fd,chat_msg,strlen(chat_msg),0);</span><br><span class="line">        memset(buf,0,1024);</span><br><span class="line">        return;</span><br><span class="line">    &#125;</span><br><span class="line">    SendClinetMes(list,buf,p);</span><br><span class="line">    memset(buf,0,1024);</span><br><span class="line">&#125;</span><br><span class="line">int main(int argc, char *argv[])&#123;                                  </span><br><span class="line">    ARGS_CHECK(argc,3);</span><br><span class="line">    int sockfd = socket(AF_INET,SOCK_STREAM,0);</span><br><span class="line">    ERROR_CHECK(sockfd,-1,&quot;error socket&quot;);</span><br><span class="line">    struct sockaddr_in server_addr;</span><br><span class="line">    server_addr.sin_family = AF_INET;</span><br><span class="line">    server_addr.sin_port = htons(atoi(argv[2]));</span><br><span class="line">    server_addr.sin_addr.s_addr = inet_addr(argv[1]);</span><br><span class="line">    //n十进制转二进制</span><br><span class="line">    int res_addr = 1;</span><br><span class="line">    setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&amp;res_addr,sizeof(int));</span><br><span class="line">    //可以随时重连</span><br><span class="line"></span><br><span class="line">    int b_ret = bind(sockfd,(struct sockaddr*)&amp;server_addr,sizeof(server_addr));</span><br><span class="line">    ERROR_CHECK(b_ret,-1,&quot;bind error&quot;);</span><br><span class="line"></span><br><span class="line">    int lis = listen(sockfd,50);</span><br><span class="line">    ERROR_CHECK(lis,-1,&quot;listen error&quot;);</span><br><span class="line">    TimeNow();</span><br><span class="line">    printf(&quot;服务器开机，正在监听网络:%s:%d\n&quot;,inet_ntoa(server_addr.sin_addr),ntohs(server_addr.sin_port));</span><br><span class="line"></span><br><span class="line">    List *list = (List*)calloc(1,sizeof(List));</span><br><span class="line">    //存储客户端信息的表</span><br><span class="line">    fd_set monitorset; //监听集合</span><br><span class="line">    fd_set readyset; //就绪集合</span><br><span class="line">    FD_ZERO(&amp;monitorset);</span><br><span class="line">    FD_SET(sockfd,&amp;monitorset);</span><br><span class="line">    char buf[4068] = &#123;0&#125;;</span><br><span class="line">    struct timeval timeout;</span><br><span class="line">    timeout.tv_sec=1;</span><br><span class="line">    timeout.tv_usec=0;</span><br><span class="line">    while(1)&#123;</span><br><span class="line">        memcpy(&amp;readyset,&amp;monitorset,sizeof(fd_set));</span><br><span class="line">        FD_SET(STDIN_FILENO,&amp;readyset);</span><br><span class="line">        select(1024,&amp;readyset,NULL,NULL,&amp;timeout);</span><br><span class="line">        if(FD_ISSET(sockfd,&amp;readyset))&#123;</span><br><span class="line">            AcceptClient(sockfd,&amp;monitorset,list);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        if(FD_ISSET(STDIN_FILENO,&amp;readyset))&#123;</span><br><span class="line">            // 服务器向所有客户端广播消息</span><br><span class="line">            memset(buf,0,1024);</span><br><span class="line">            Node *p = list-&gt;head;</span><br><span class="line">            int ret = read(STDIN_FILENO,buf,sizeof(buf));</span><br><span class="line">            ERROR_CHECK(ret,-1, &quot;error read&quot;);</span><br><span class="line"></span><br><span class="line">            if(ret == 0 || strcmp(buf, &quot;exit\n&quot;) == 0)&#123;</span><br><span class="line">                TimeNow();</span><br><span class="line">                printf(&quot;服务器准备关闭\n&quot;);</span><br><span class="line"></span><br><span class="line">                // 通知所有客户端服务器即将关闭</span><br><span class="line">                while(p != NULL)&#123;</span><br><span class="line">                    send(p-&gt;client_fd, &quot;serverexit\n&quot;, 11, 0);</span><br><span class="line">                    close(p-&gt;client_fd);</span><br><span class="line">                    p = p-&gt;next;</span><br><span class="line">                &#125;</span><br><span class="line"></span><br><span class="line">                free(list);</span><br><span class="line">                close(sockfd);</span><br><span class="line">                return 0;</span><br><span class="line">            &#125;</span><br><span class="line">            SendClinetMes(list,buf,NULL);</span><br><span class="line">            memset(buf, 0, sizeof(buf));</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        Node *list_p = list-&gt;head;</span><br><span class="line">        while(list_p != NULL)&#123;</span><br><span class="line">            Node *p=list_p-&gt;next;</span><br><span class="line">            if((time(NULL)-list_p-&gt;sec)&gt;100)&#123;</span><br><span class="line">                char server_msg[1024];</span><br><span class="line">                sprintf(server_msg,&quot;客户端%d潜水太久，强制退出&quot;,list_p-&gt;port);</span><br><span class="line">                SendClinetMes(list,server_msg,NULL);</span><br><span class="line">                close(list_p-&gt;client_fd);</span><br><span class="line">                DelectClientFd(list, list_p-&gt;client_fd,&amp;monitorset);</span><br><span class="line">                list_p=p;</span><br><span class="line">                continue;</span><br><span class="line">            &#125;</span><br><span class="line">            if(FD_ISSET(list_p-&gt;client_fd,&amp;readyset))&#123;</span><br><span class="line">                list_p-&gt;sec=(time(NULL));</span><br><span class="line">                RecvAndSendClient(list,list_p,buf,&amp;monitorset);</span><br><span class="line">            &#125;</span><br><span class="line">            list_p=p;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    free(list);</span><br><span class="line">    close(sockfd);</span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/f26b2da3/">https://hespethorn.github.io/posts/f26b2da3/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C/">计算机网络</a><a class="post-meta__tags" href="/tags/%E5%A4%9A%E4%BA%BA%E8%81%8A%E5%A4%A9/">多人聊天</a><a class="post-meta__tags" href="/tags/%E5%8F%8A%E6%97%B6%E9%80%80%E5%87%BA/">及时退出</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/64148787/" title="TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践">TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践</a><time datetime="2023-06-28T13:06:21.000Z" title="Created 2023-06-28 21:06:21">2023-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d568c8d6/" title="进程间通信：pipe 与 socketpair 对比">进程间通信：pipe 与 socketpair 对比</a><time datetime="2023-06-21T10:50:11.000Z" title="Created 2023-06-21 18:50:11">2023-06-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3d48b2b/" title="多进程文件传输服务器与客户端实现">多进程文件传输服务器与客户端实现</a><time datetime="2023-06-16T12:55:11.000Z" title="Created 2023-06-16 20:55:11">2023-06-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/449dee1e/" title="网络编程中的系统调用与信号处理机制">网络编程中的系统调用与信号处理机制</a><time datetime="2023-06-10T11:55:51.000Z" title="Created 2023-06-10 19:55:51">2023-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9df713de/" title="多进程并发服务器的选择与放弃">多进程并发服务器的选择与放弃</a><time datetime="2023-05-28T14:00:55.000Z" title="Created 2023-05-28 22:00:55">2023-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c6e7059/" title="Linux 进程间文件描述符传输技术详解">Linux 进程间文件描述符传输技术详解</a><time datetime="2023-05-22T14:00:55.000Z" title="Created 2023-05-22 22:00:55">2023-05-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3a91ba7/" title="多进程编程：早期服务器实现逻辑">多进程编程：早期服务器实现逻辑</a><time datetime="2023-05-16T11:50:22.000Z" title="Created 2023-05-16 19:50:22">2023-05-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b71210bb/" title="聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现">聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现</a><time datetime="2023-05-12T12:10:55.000Z" title="Created 2023-05-12 20:10:55">2023-05-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4667e6/" title="select 与 epoll 的核心区别整理">select 与 epoll 的核心区别整理</a><time datetime="2023-05-11T13:20:00.000Z" title="Created 2023-05-11 21:20:00">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a898a0c/" title="基于多人聊天室系统的实现，详细学习 epoll 函数基础">基于多人聊天室系统的实现，详细学习 epoll 函数基础</a><time datetime="2023-05-11T12:28:55.000Z" title="Created 2023-05-11 20:28:55">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f26b2da3/" title="Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</a><time datetime="2023-05-06T14:55:14.000Z" title="Created 2023-05-06 22:55:14">2023-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9c7e901d/" title="基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践">基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践</a><time datetime="2023-04-30T12:22:10.000Z" title="Created 2023-04-30 20:22:10">2023-04-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/800c7140/" title="基于多人聊天室系统的实现，详细学习select 函数基础">基于多人聊天室系统的实现，详细学习select 函数基础</a><time datetime="2023-04-26T15:42:10.000Z" title="Created 2023-04-26 23:42:10">2023-04-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bb924032/" title="Linux：基于 select 多路复用的 C 语言多人聊天室实现">Linux：基于 select 多路复用的 C 语言多人聊天室实现</a><time datetime="2023-04-21T14:12:40.000Z" title="Created 2023-04-21 22:12:40">2023-04-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6841069c/" title="基于 TCP 协议的双向通信程序实现与解析">基于 TCP 协议的双向通信程序实现与解析</a><time datetime="2023-04-15T13:10:43.000Z" title="Created 2023-04-15 21:10:43">2023-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cb884869/" title="基于 UDP 协议的双向通信程序实现与解析">基于 UDP 协议的双向通信程序实现与解析</a><time datetime="2023-04-08T12:50:13.000Z" title="Created 2023-04-08 20:50:13">2023-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/266e4756/" title="TCP 泛洪攻击">TCP 泛洪攻击</a><time datetime="2023-03-30T14:16:08.000Z" title="Created 2023-03-30 22:16:08">2023-03-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/29e62ba/" title="《Linux C 语言 TCP Socket 编程详解》学习笔记">《Linux C 语言 TCP Socket 编程详解》学习笔记</a><time datetime="2023-03-24T14:11:13.000Z" title="Created 2023-03-24 22:11:13">2023-03-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a30c1e5/" title="基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究">基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究</a><time datetime="2023-03-19T09:36:28.000Z" title="Created 2023-03-19 17:36:28">2023-03-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/634cd8cb/" title="URL：网络资源的精准定位机制">URL：网络资源的精准定位机制</a><time datetime="2023-03-12T09:36:28.000Z" title="Created 2023-03-12 17:36:28">2023-03-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/84e78701/" title="网络理论核心知识整理">网络理论核心知识整理</a><time datetime="2023-03-06T14:14:09.000Z" title="Created 2023-03-06 22:14:09">2023-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</a><time datetime="2023-02-28T13:25:25.000Z" title="Created 2023-02-28 21:25:25">2023-02-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="HTTP 无状态性相关概念详解">HTTP 无状态性相关概念详解</a><time datetime="2023-02-20T11:44:27.000Z" title="Created 2023-02-20 19:44:27">2023-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）">从Socket编程到QUIC协议（Computer-Networking）</a><time datetime="2022-05-26T15:40:56.000Z" title="Created 2022-05-26 23:40:56">2022-05-26</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

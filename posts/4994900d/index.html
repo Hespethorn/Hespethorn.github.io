@@ -1,0 +1,549 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>C 语言红黑树：原理剖析与深度解析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言 在 C 语言程序设计的庞大体系中，数据结构作为算法实现的根基，其设计与选择直接决定了软件系统的时间复杂度和空间复杂度。红黑树作为自平衡二叉搜索树中的经典代表，凭借独特的结构特性与精妙的算法机制，在动态数据集合的高效管理领域占据着举足轻重的地位。然而，在与同行朋友的交流中，我发现大家对红黑树往往存在畏惧心理，甚至谈之色变。诚然，红黑树规则之复杂、调整逻辑之精妙，确实让人望而生畏，但拨开层层迷">
+<meta property="og:type" content="article">
+<meta property="og:title" content="C 语言红黑树：原理剖析与深度解析">
+<meta property="og:url" content="https://hespethorn.github.io/posts/4994900d/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言 在 C 语言程序设计的庞大体系中，数据结构作为算法实现的根基，其设计与选择直接决定了软件系统的时间复杂度和空间复杂度。红黑树作为自平衡二叉搜索树中的经典代表，凭借独特的结构特性与精妙的算法机制，在动态数据集合的高效管理领域占据着举足轻重的地位。然而，在与同行朋友的交流中，我发现大家对红黑树往往存在畏惧心理，甚至谈之色变。诚然，红黑树规则之复杂、调整逻辑之精妙，确实让人望而生畏，但拨开层层迷">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2022-08-08T13:32:57.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:43:37.636Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="数据结构">
+<meta property="article:tag" content="红黑树">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "C 语言红黑树：原理剖析与深度解析",
+  "url": "https://hespethorn.github.io/posts/4994900d/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2022-08-08T13:32:57.000Z",
+  "dateModified": "2025-07-12T15:43:37.636Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/4994900d/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'C 语言红黑树：原理剖析与深度解析',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">C 语言红黑树：原理剖析与深度解析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">C 语言红黑树：原理剖析与深度解析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2022-08-08T13:32:57.000Z" title="Created 2022-08-08 21:32:57">2022-08-08</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Data-Structures/">Data-Structures</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>7mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><hr>
+<h1 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h1><hr>
+<p>在 C 语言程序设计的庞大体系中，数据结构作为算法实现的根基，其设计与选择直接决定了软件系统的时间复杂度和空间复杂度。红黑树作为自平衡二叉搜索树中的经典代表，凭借独特的结构特性与精妙的算法机制，在动态数据集合的高效管理领域占据着举足轻重的地位。然而，在与同行朋友的交流中，我发现大家对红黑树往往存在畏惧心理，甚至谈之色变。诚然，红黑树规则之复杂、调整逻辑之精妙，确实让人望而生畏，但拨开层层迷雾就会发现，它本质上不过是为了让计算简便而精心设计的工具。</p>
+<p>这种畏惧感并非空穴来风。红黑树的五条规则看似简单，实则暗藏玄机；插入删除时的旋转与染色操作，组合出多种复杂场景，让不少开发者在学习时如坠云里雾里。但如果我们转换视角，从它诞生的背景和目标出发，就能理解它的设计逻辑 —— 红黑树诞生于对普通二叉搜索树性能缺陷的弥补。普通二叉搜索树在极端情况下会退化为链表，导致操作效率从理想的对数级骤降至线性级，而红黑树通过引入颜色标记和局部调整策略，将树的高度差控制在可接受范围内，始终保证操作的高效性。这就好比给数据管理打造了一套智能调节系统，让计算机在处理海量动态数据时，无需反复遍历庞大结构，大大简化了计算过程。</p>
+<h2 id="一、红黑树的约束条件"><a href="#一、红黑树的约束条件" class="headerlink" title="一、红黑树的约束条件"></a>一、红黑树的约束条件</h2><hr>
+<p>红黑树能够保持平衡，得益于五条严格的约束条件，这些条件是理解和掌握红黑树的关键：</p>
+<ol>
+<li><p><strong>颜色二元性</strong>：树中每个节点的颜色，只能是红色或者黑色，不存在其他颜色选项，这构成了红黑树独特的色彩体系。</p>
+</li>
+<li><p><strong>根节点属性</strong>：红黑树的根节点必须为黑色。根节点作为整棵树的 “根基”，黑色属性为树的平衡奠定了基础。</p>
+</li>
+<li><p><strong>叶节点特性</strong>：这里的叶节点指的是虚拟的 NIL 节点，所有 NIL 节点均被定义为黑色。将 NIL 节点设为黑色，能够有效简化边界处理逻辑，让树的操作更加顺畅。</p>
+</li>
+<li><p><strong>红色节点约束</strong>：如果一个节点是红色，那么它的左子节点和右子节点都必须是黑色。这条规则避免了连续红色节点链的出现，防止树结构因颜色分布不合理而失衡。</p>
+</li>
+<li><p><strong>黑高一致性</strong>：从树中任意一个节点出发，到它所有后代叶节点的路径上，黑色节点的数量始终保持相同。这一特性确保了树的高度差不会过大，维持了树的平衡性，使得红黑树在数据操作时能保持高效性能。</p>
+</li>
+</ol>
+<h2 id="二、插入操作的算法实现与调整策略"><a href="#二、插入操作的算法实现与调整策略" class="headerlink" title="二、插入操作的算法实现与调整策略"></a>二、插入操作的算法实现与调整策略</h2><hr>
+<p>红黑树的插入操作遵循 “先插入后调整” 的策略，在将新节点按二叉搜索树规则插入后，若破坏了红黑树的性质，就需要通过调整来恢复平衡，主要涉及以下三个典型场景：</p>
+<ol>
+<li><p><strong>场景一：父叔双红</strong>：当插入节点的父节点与叔叔节点都是红色时，执行 “颜色翻转” 操作。具体步骤为：把父节点与叔叔节点染成黑色，将祖父节点染成红色，然后以祖父节点为新的起点，递归向上检查并调整，就像把平衡问题逐步往树的上层传递，直至满足红黑树规则。</p>
+</li>
+<li><p><strong>场景二：父红叔黑（外侧插入）</strong>：若叔叔节点为黑色，且插入位置属于外侧情况（即新节点是父节点的左子节点，父节点又是祖父节点的左子节点；或者新节点是父节点的右子节点，父节点又是祖父节点的右子节点），此时以父节点为支点进行旋转（左子树情况右旋，右子树情况左旋），旋转后将父节点染黑，原祖父节点染红，以此恢复树的平衡。</p>
+</li>
+<li><p><strong>场景三：父红叔黑（内侧插入）</strong>：当叔叔节点为黑色，且插入位置是内侧（即新节点是父节点的左子节点，父节点是祖父节点的右子节点；或者新节点是父节点的右子节点，父节点是祖父节点的左子节点），首先以插入节点为支点进行旋转（左内侧情况先左旋再右旋，右内侧情况先右旋再左旋），调整后按照场景二的方式继续处理，直至树恢复平衡状态。</p>
+</li>
+</ol>
+<h2 id="三、删除操作的处理流程与平衡恢复"><a href="#三、删除操作的处理流程与平衡恢复" class="headerlink" title="三、删除操作的处理流程与平衡恢复"></a>三、删除操作的处理流程与平衡恢复</h2><hr>
+<p>红黑树的删除操作相对复杂，主要分为节点替换与平衡恢复两个阶段。在完成节点替换后，树的结构发生变化，可能破坏红黑树的性质，此时就需要进行平衡恢复，这一过程以被删除节点的兄弟节点为核心，通过以下四个典型场景进行调整：</p>
+<ol>
+<li><p><strong>场景一：兄弟节点为红</strong>：若兄弟节点是红色，先执行旋转操作，将兄弟节点转为黑色，然后对相关节点进行重新着色，以此维持树中黑色节点高度的平衡。</p>
+</li>
+<li><p><strong>场景二：兄弟为黑且远侄为红</strong>：当兄弟节点为黑色，且兄弟节点距离较远的那个侄子节点（对于左子树，是兄弟节点的右子节点；对于右子树，是兄弟节点的左子节点）为红色时，执行单旋转操作，并对相关节点重新着色，使树恢复平衡。</p>
+</li>
+<li><p><strong>场景三：兄弟为黑且近侄为红</strong>：若兄弟节点为黑色，且兄弟节点距离较近的那个侄子节点（对于左子树，是兄弟节点的左子节点；对于右子树，是兄弟节点的右子节点）为红色，此时需要执行双旋转操作，再对相关节点重新着色，调整树的结构和颜色分布以达到平衡。</p>
+</li>
+<li><p><strong>场景四：兄弟为黑且侄全黑</strong>：当兄弟节点为黑色，且兄弟节点的两个子节点（侄子节点）也都是黑色时，将兄弟节点染为红色，然后递归向上调整父节点，逐步恢复树的平衡状态。</p>
+</li>
+</ol>
+<h2 id="四、红黑树在-C-语言工程中的典型应用"><a href="#四、红黑树在-C-语言工程中的典型应用" class="headerlink" title="四、红黑树在 C 语言工程中的典型应用"></a>四、红黑树在 C 语言工程中的典型应用</h2><hr>
+<p>红黑树在 C 语言系统级编程中有着广泛且不可或缺的应用：</p>
+<ol>
+<li><p><strong>Linux 内核进程调度</strong>：Linux 内核的完全公平调度器（CFS）采用红黑树来管理进程运行时间。通过红黑树，CFS 能够高效地对进程进行排序和调度，确保每个进程都能得到公平的运行机会，提升了系统整体的运行效率和稳定性。</p>
+</li>
+<li><p><strong>文件系统索引管理</strong>：在 ext4 文件系统中，红黑树被用于优化 inode 节点的存储与检索。inode 节点记录了文件的关键信息，利用红黑树快速查找和插入的特性，大大提升了文件创建、删除、读取等操作的性能，让文件系统能够更高效地管理海量文件。</p>
+</li>
+<li><p><strong>内存管理器实现</strong>：高级内存分配器，如 ptmalloc，借助红黑树来管理内存块。红黑树能够快速定位可用内存块，实现内存的快速分配与回收，有效减少内存碎片的产生，提高内存使用效率，保障程序对内存的高效利用。</p>
+</li>
+<li><p><strong>嵌入式系统实时调度</strong>：在资源受限的嵌入式系统中，实时任务调度至关重要。红黑树凭借其稳定的对数级时间复杂度，为任务调度提供了确定性保障，确保关键任务能够在规定时间内完成，满足嵌入式系统对实时性和可靠性的严格要求。</p>
+</li>
+</ol>
+<h2 id="五、红黑树与其他平衡树的对比分析"><a href="#五、红黑树与其他平衡树的对比分析" class="headerlink" title="五、红黑树与其他平衡树的对比分析"></a>五、红黑树与其他平衡树的对比分析</h2><hr>
+<p>为了更清晰地认识红黑树的特点，我们将其与其他常见的平衡树进行对比：</p>
+<table>
+<thead>
+<tr>
+<th>数据结构</th>
+<th>平衡机制</th>
+<th>插入时间</th>
+<th>删除时间</th>
+<th>查询时间</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>红黑树</td>
+<td>通过颜色标记维持近似平衡</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>动态数据频繁插入、删除和查询的场景</td>
+</tr>
+<tr>
+<td>AVL 树</td>
+<td>严格保持左右子树高度差不超过 1</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>查询操作频繁，对插入删除操作性能要求相对较低的场景</td>
+</tr>
+<tr>
+<td>B 树 &#x2F; B + 树</td>
+<td>采用多路平衡结构</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>适合存储大量数据，常用于数据库索引等场景</td>
+</tr>
+<tr>
+<td>伸展树</td>
+<td>根据访问频率调整树结构</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>O(logn)</td>
+<td>局部性访问明显，数据访问具有一定重复性的场景</td>
+</tr>
+</tbody></table>
+<h2 id="六、红黑树实现的-C-语言关键技术"><a href="#六、红黑树实现的-C-语言关键技术" class="headerlink" title="六、红黑树实现的 C 语言关键技术"></a>六、红黑树实现的 C 语言关键技术</h2><hr>
+<p>在 C 语言中实现红黑树，需要重点掌握以下关键技术：</p>
+<ol>
+<li><p><strong>内存管理策略</strong>：可以使用malloc和free函数进行节点的动态分配和释放，这种方式灵活但可能产生内存碎片。也可以采用内存池技术，预先分配一大块内存，按需分配和回收节点，减少内存碎片的产生，提高内存使用效率。</p>
+</li>
+<li><p><strong>指针操作技巧</strong>：利用双重指针（指针的指针）能够简化插入和删除操作时父节点指针的更新过程。通过双重指针，在调整树结构时可以更方便地修改指针指向，降低代码的复杂性，使操作更加直观和高效。</p>
+</li>
+<li><p><strong>调试技术</strong>：为了确保红黑树始终满足其五条约束条件，可以实现节点颜色验证、黑高检查等辅助函数。在程序运行过程中，定期调用这些函数检查树的状态，一旦发现违反规则的情况，及时定位问题并进行修复，保证红黑树的正确性和稳定性。</p>
+</li>
+<li><p><strong>泛型实现方法</strong>：通过函数指针或宏定义，可以实现数据类型无关的红黑树。这样一来，红黑树可以存储不同类型的数据，提高了代码的复用性，减少了重复开发工作，使红黑树在不同项目和场景中都能灵活应用。、</p>
+</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/4994900d/">https://hespethorn.github.io/posts/4994900d/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/">数据结构</a><a class="post-meta__tags" href="/tags/%E7%BA%A2%E9%BB%91%E6%A0%91/">红黑树</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d0fd2c0/" title="从趣味到深度：《大话数据结构》进阶学习指南">从趣味到深度：《大话数据结构》进阶学习指南</a><time datetime="2022-09-03T05:01:20.000Z" title="Created 2022-09-03 13:01:20">2022-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/4994900d/" title="C 语言红黑树：原理剖析与深度解析">C 语言红黑树：原理剖析与深度解析</a><time datetime="2022-08-08T13:32:57.000Z" title="Created 2022-08-08 21:32:57">2022-08-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8ca7f13c/" title="从线性表到分布式（Data-Structures）">从线性表到分布式（Data-Structures）</a><time datetime="2022-05-15T15:40:31.000Z" title="Created 2022-05-15 23:40:31">2022-05-15</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

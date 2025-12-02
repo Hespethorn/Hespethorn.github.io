@@ -1,0 +1,603 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>规范化 Git 提交 -- commitlint + husky | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言在团队开发或开源项目协作中，Git 提交信息如同代码的 “说明书”，直接影响代码可维护性与问题追溯效率。然而实际开发中，提交信息往往存在格式混乱、描述模糊等问题，例如 “fix bug”“update code” 这类无意义的表述。本文将通过 commitlint（提交信息验证工具）与 husky（Git 钩子管理工具）的组合，带你实现提交信息规范化与自动化校验，彻底解决这一痛点。 一、提交信">
+<meta property="og:type" content="article">
+<meta property="og:title" content="规范化 Git 提交 -- commitlint + husky">
+<meta property="og:url" content="https://hespethorn.github.io/posts/1f0b0ac5/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言在团队开发或开源项目协作中，Git 提交信息如同代码的 “说明书”，直接影响代码可维护性与问题追溯效率。然而实际开发中，提交信息往往存在格式混乱、描述模糊等问题，例如 “fix bug”“update code” 这类无意义的表述。本文将通过 commitlint（提交信息验证工具）与 husky（Git 钩子管理工具）的组合，带你实现提交信息规范化与自动化校验，彻底解决这一痛点。 一、提交信">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-12-17T13:20:39.000Z">
+<meta property="article:modified_time" content="2025-08-27T09:02:11.570Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Git">
+<meta property="article:tag" content="commitlint">
+<meta property="article:tag" content="husky">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "规范化 Git 提交 -- commitlint + husky",
+  "url": "https://hespethorn.github.io/posts/1f0b0ac5/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-12-17T13:20:39.000Z",
+  "dateModified": "2025-08-27T09:02:11.570Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/1f0b0ac5/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '规范化 Git 提交 -- commitlint + husky',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">规范化 Git 提交 -- commitlint + husky</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">规范化 Git 提交 -- commitlint + husky</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-12-17T13:20:39.000Z" title="Created 2024-12-17 21:20:39">2024-12-17</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Git/">Git</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h2><p>在团队开发或开源项目协作中，Git 提交信息如同代码的 “说明书”，直接影响代码可维护性与问题追溯效率。然而实际开发中，提交信息往往存在格式混乱、描述模糊等问题，例如 “fix bug”“update code” 这类无意义的表述。本文将通过 <strong>commitlint</strong>（提交信息验证工具）与 <strong>husky</strong>（Git 钩子管理工具）的组合，带你实现提交信息规范化与自动化校验，彻底解决这一痛点。</p>
+<h2 id="一、提交信息的常见问题与规范需求"><a href="#一、提交信息的常见问题与规范需求" class="headerlink" title="一、提交信息的常见问题与规范需求"></a>一、提交信息的常见问题与规范需求</h2><h3 id="1-1-典型问题分析"><a href="#1-1-典型问题分析" class="headerlink" title="1.1 典型问题分析"></a>1.1 典型问题分析</h3><p>在未实施规范的项目中，提交信息通常存在以下问题：</p>
+<ul>
+<li><p><strong>格式混乱</strong>：无固定结构，有的包含类型，有的仅描述内容</p>
+</li>
+<li><p><strong>描述模糊</strong>：如 “修改样式”“优化代码”，无法快速理解变更目的</p>
+</li>
+<li><p><strong>信息不全</strong>：未关联需求编号或 Bug ID，问题追溯困难</p>
+</li>
+<li><p><strong>语义缺失</strong>：无法通过提交信息判断变更类型（如功能新增、Bug 修复、文档更新）</p>
+</li>
+</ul>
+<h3 id="1-2-规范标准选择：Conventional-Commits"><a href="#1-2-规范标准选择：Conventional-Commits" class="headerlink" title="1.2 规范标准选择：Conventional Commits"></a>1.2 规范标准选择：Conventional Commits</h3><p>目前行业广泛采用的 <strong>Conventional Commits（约定式提交）</strong> 标准，定义了结构化的提交信息格式：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&lt;type&gt;[optional scope]: &lt;description&gt;</span><br><span class="line"></span><br><span class="line">[optional body]</span><br><span class="line"></span><br><span class="line">[optional footer(s)]</span><br></pre></td></tr></table></figure>
+
+<p>各部分含义如下：</p>
+<ul>
+<li><p><strong>type</strong>：提交类型（必填），常见值包括：</p>
+</li>
+<li><ul>
+<li>feat：新功能</li>
+</ul>
+</li>
+<li><ul>
+<li>fix：Bug 修复</li>
+</ul>
+</li>
+<li><ul>
+<li>docs：文档更新</li>
+</ul>
+</li>
+<li><ul>
+<li>style：代码格式调整（不影响代码逻辑）</li>
+</ul>
+</li>
+<li><ul>
+<li>refactor：代码重构（既非新功能也非 Bug 修复）</li>
+</ul>
+</li>
+<li><ul>
+<li>test：添加或修改测试代码</li>
+</ul>
+</li>
+<li><ul>
+<li>chore：构建流程、依赖管理等辅助操作</li>
+</ul>
+</li>
+<li><p><strong>scope</strong>：提交范围（可选），指定变更影响的模块（如auth、user）</p>
+</li>
+<li><p><strong>description</strong>：简短描述（必填），不超过 50 字符，首字母小写，结尾不加句号</p>
+</li>
+<li><p><strong>body</strong>：详细描述（可选），用于补充说明变更细节</p>
+</li>
+<li><p><strong>footer</strong>：底部信息（可选），常用于关联 Issue（如Closes #123）</p>
+</li>
+</ul>
+<p>示例：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">feat(auth): 实现短信验证码登录功能</span><br><span class="line"></span><br><span class="line">- 添加短信发送接口调用逻辑</span><br><span class="line">- 完善登录状态校验流程</span><br><span class="line"></span><br><span class="line">Closes #456</span><br></pre></td></tr></table></figure>
+
+<h2 id="二、基础配置流程：从环境准备到核心配置"><a href="#二、基础配置流程：从环境准备到核心配置" class="headerlink" title="二、基础配置流程：从环境准备到核心配置"></a>二、基础配置流程：从环境准备到核心配置</h2><h3 id="2-1-环境要求与版本兼容性"><a href="#2-1-环境要求与版本兼容性" class="headerlink" title="2.1 环境要求与版本兼容性"></a>2.1 环境要求与版本兼容性</h3><ul>
+<li><p><strong>Node.js</strong>：v14.13.0+（建议 v16+，确保与最新版 husky 兼容）</p>
+</li>
+<li><p><strong>husky</strong>：v8+（当前稳定版，与 commitlint@17 + 完全兼容）</p>
+</li>
+<li><p><strong>commitlint</strong>：v17+（需与 husky 版本匹配，避免钩子触发异常）</p>
+</li>
+</ul>
+<h3 id="2-2-步骤-1：初始化项目与安装依赖"><a href="#2-2-步骤-1：初始化项目与安装依赖" class="headerlink" title="2.2 步骤 1：初始化项目与安装依赖"></a>2.2 步骤 1：初始化项目与安装依赖</h3><p>首先在项目根目录执行以下命令（已初始化 Git 的项目可跳过git init）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"># 1. 初始化Git仓库（若未初始化）</span><br><span class="line">git init</span><br><span class="line"></span><br><span class="line"># 2. 初始化package.json（若未初始化）</span><br><span class="line">npm init -y</span><br><span class="line"></span><br><span class="line"># 3. 安装核心依赖</span><br><span class="line">npm install --save-dev @commitlint/cli @commitlint/config-conventional husky</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p>@commitlint&#x2F;cli：commitlint 核心命令行工具</p>
+</li>
+<li><p>@commitlint&#x2F;config-conventional：基于 Conventional Commits 的预设配置</p>
+</li>
+<li><p>husky：Git 钩子管理工具，用于触发 commitlint 验证</p>
+</li>
+</ul>
+<h3 id="2-3-步骤-2：配置-commitlint-规则"><a href="#2-3-步骤-2：配置-commitlint-规则" class="headerlink" title="2.3 步骤 2：配置 commitlint 规则"></a>2.3 步骤 2：配置 commitlint 规则</h3><p>创建 commitlint 配置文件，有两种常见方式：</p>
+<h4 id="方式-1：创建单独配置文件（推荐）"><a href="#方式-1：创建单独配置文件（推荐）" class="headerlink" title="方式 1：创建单独配置文件（推荐）"></a>方式 1：创建单独配置文件（推荐）</h4><p>在项目根目录创建 .commitlintrc.js 文件，内容如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">module.exports = &#123;</span><br><span class="line">  // 继承Conventional Commits预设规则</span><br><span class="line">  extends: [&#x27;@commitlint/config-conventional&#x27;],</span><br><span class="line">  // 自定义规则（覆盖预设）</span><br><span class="line">  rules: &#123;</span><br><span class="line">    // type必须为指定值，且不能为空</span><br><span class="line">    &#x27;type-enum&#x27;: [</span><br><span class="line">      2, // 错误级别：2=必须符合（报错），1=警告，0=忽略</span><br><span class="line">      &#x27;always&#x27;, // 应用时机：always=始终，never=从不</span><br><span class="line">      [</span><br><span class="line">        &#x27;feat&#x27;, &#x27;fix&#x27;, &#x27;docs&#x27;, &#x27;style&#x27;, &#x27;refactor&#x27;, </span><br><span class="line">        &#x27;test&#x27;, &#x27;chore&#x27;, &#x27;perf&#x27;, &#x27;revert&#x27; // 允许的type值</span><br><span class="line">      ]</span><br><span class="line">    ],</span><br><span class="line">    // subject（description）长度限制：1-100字符</span><br><span class="line">    &#x27;subject-min-length&#x27;: [2, &#x27;always&#x27;, 1],</span><br><span class="line">    &#x27;subject-max-length&#x27;: [2, &#x27;always&#x27;, 100],</span><br><span class="line">    // 不允许使用句号结尾</span><br><span class="line">    &#x27;subject-full-stop&#x27;: [2, &#x27;never&#x27;, &#x27;.&#x27;],</span><br><span class="line">    // scope可选（错误级别设为0）</span><br><span class="line">    &#x27;scope-empty&#x27;: [0, &#x27;always&#x27;]</span><br><span class="line">  &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h4 id="方式-2：在-package-json-中配置"><a href="#方式-2：在-package-json-中配置" class="headerlink" title="方式 2：在 package.json 中配置"></a>方式 2：在 package.json 中配置</h4><p>若需减少配置文件数量，可在 package.json 中添加 commitlint 字段：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  &quot;commitlint&quot;: &#123;</span><br><span class="line">    &quot;extends&quot;: [&quot;@commitlint/config-conventional&quot;],</span><br><span class="line">    &quot;rules&quot;: &#123;</span><br><span class="line">      &quot;type-enum&quot;: [2, &quot;always&quot;, [&quot;feat&quot;, &quot;fix&quot;, &quot;docs&quot;, &quot;chore&quot;]]</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-4-步骤-3：配置-husky-钩子"><a href="#2-4-步骤-3：配置-husky-钩子" class="headerlink" title="2.4 步骤 3：配置 husky 钩子"></a>2.4 步骤 3：配置 husky 钩子</h3><p>husky 通过管理 Git 钩子（如commit-msg、pre-commit），在提交代码时自动触发 commitlint 验证。</p>
+<h4 id="步骤-3-1-启用-husky"><a href="#步骤-3-1-启用-husky" class="headerlink" title="步骤 3.1 启用 husky"></a>步骤 3.1 启用 husky</h4><p>执行以下命令初始化 husky，并启用 Git 钩子：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"># 初始化husky（创建.husky目录）</span><br><span class="line">npx husky install</span><br><span class="line"></span><br><span class="line"># 设置husky自动启用（在package.json中添加prepare脚本）</span><br><span class="line">npm set-script prepare &quot;husky install&quot;</span><br></pre></td></tr></table></figure>
+
+<p>执行 npm run prepare 后，husky 会自动在项目中启用 Git 钩子管理。</p>
+<h4 id="步骤-3-2-创建-commit-msg-钩子"><a href="#步骤-3-2-创建-commit-msg-钩子" class="headerlink" title="步骤 3.2 创建 commit-msg 钩子"></a>步骤 3.2 创建 commit-msg 钩子</h4><p>commit-msg 钩子会在提交信息写入 commit 文件后、提交完成前触发，用于验证提交信息格式：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"># 创建commit-msg钩子</span><br><span class="line">npx husky add .husky/commit-msg &#x27;npx --no -- commitlint --edit $1&#x27;</span><br></pre></td></tr></table></figure>
+
+<p>执行后会在 .husky 目录下生成 commit-msg 文件，内容如下（无需手动修改）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">#!/usr/bin/env sh</span><br><span class="line">. &quot;$(dirname -- &quot;$0&quot;)/_/husky.sh&quot;</span><br><span class="line"></span><br><span class="line">npx --no -- commitlint --edit $1</span><br></pre></td></tr></table></figure>
+
+<h4 id="步骤-3-3-（可选）创建-pre-commit-钩子"><a href="#步骤-3-3-（可选）创建-pre-commit-钩子" class="headerlink" title="步骤 3.3 （可选）创建 pre-commit 钩子"></a>步骤 3.3 （可选）创建 pre-commit 钩子</h4><p>若需在提交前执行代码校验（如 ESLint、Prettier），可添加 pre-commit 钩子：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"># 创建pre-commit钩子</span><br><span class="line">npx husky add .husky/pre-commit &#x27;npx eslint . --ext .js,.vue&#x27;</span><br></pre></td></tr></table></figure>
+
+<p>上述命令会在提交前自动执行 ESLint 校验，若校验失败则阻止提交。</p>
+<h2 id="三、钩子配置与验证逻辑深度解析"><a href="#三、钩子配置与验证逻辑深度解析" class="headerlink" title="三、钩子配置与验证逻辑深度解析"></a>三、钩子配置与验证逻辑深度解析</h2><h3 id="3-1-commit-msg-钩子工作流程"><a href="#3-1-commit-msg-钩子工作流程" class="headerlink" title="3.1 commit-msg 钩子工作流程"></a>3.1 commit-msg 钩子工作流程</h3><ol>
+<li>开发者执行 git commit -m &quot;提交信息&quot;</li>
+<li>Git 触发 commit-msg 钩子，将提交信息写入临时文件（路径通过 $1 传递）</li>
+<li>husky 调用 commitlint --edit $1，读取临时文件内容并执行规则校验</li>
+<li>若校验通过：继续执行提交流程</li>
+<li>若校验失败：终止提交，输出错误信息（如 “type 必须为 feat、fix 等指定值”）</li>
+</ol>
+<h3 id="3-2-错误示例与解决方案"><a href="#3-2-错误示例与解决方案" class="headerlink" title="3.2 错误示例与解决方案"></a>3.2 错误示例与解决方案</h3><h4 id="示例-1：type-错误"><a href="#示例-1：type-错误" class="headerlink" title="示例 1：type 错误"></a>示例 1：type 错误</h4><p>提交命令：git commit -m &quot;new: 添加用户列表页面&quot;</p>
+<p>错误信息：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">⧗   input: new: 添加用户列表页面</span><br><span class="line">✖   type must be one of [feat, fix, docs, style, refactor, test, chore] [type-enum]</span><br><span class="line"></span><br><span class="line">✖   found 1 problems, 0 warnings</span><br><span class="line">ⓘ   Get help: https://commitlint.js.org/#/concepts-shareable-config</span><br></pre></td></tr></table></figure>
+
+<p>解决方案：将 new 改为合法 type（如 feat），正确命令：git commit -m &quot;feat(user): 添加用户列表页面&quot;</p>
+<h4 id="示例-2：subject-过长"><a href="#示例-2：subject-过长" class="headerlink" title="示例 2：subject 过长"></a>示例 2：subject 过长</h4><p>提交命令：git commit -m &quot;fix: 修复在用户未登录状态下点击个人中心按钮导致页面白屏的问题&quot;</p>
+<p>错误信息：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">⧗   input: fix: 修复在用户未登录状态下点击个人中心按钮导致页面白屏的问题</span><br><span class="line">✖   subject must not be longer than 100 characters [subject-max-length]</span><br><span class="line"></span><br><span class="line">✖   found 1 problems, 0 warnings</span><br></pre></td></tr></table></figure>
+
+<p>解决方案：简化 subject，详细描述放入 body：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">git commit -m &quot;fix: 修复未登录点击个人中心导致白屏问题</span><br><span class="line"></span><br><span class="line">详细说明：用户未登录时点击个人中心按钮，因未处理token为空场景，导致Vue渲染异常。</span><br><span class="line">解决方案：添加token存在性校验，跳转至登录页。&quot;</span><br></pre></td></tr></table></figure>
+
+<h2 id="四、进阶使用技巧与场景适配"><a href="#四、进阶使用技巧与场景适配" class="headerlink" title="四、进阶使用技巧与场景适配"></a>四、进阶使用技巧与场景适配</h2><h3 id="4-1-自定义提交模板"><a href="#4-1-自定义提交模板" class="headerlink" title="4.1 自定义提交模板"></a>4.1 自定义提交模板</h3><p>为减少开发者记忆成本，可创建提交模板，自动生成规范格式：</p>
+<h4 id="步骤-1：创建模板文件"><a href="#步骤-1：创建模板文件" class="headerlink" title="步骤 1：创建模板文件"></a>步骤 1：创建模板文件</h4><p>在项目根目录创建 .gitmessage 文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"># &lt;type&gt;[optional scope]: &lt;description&gt;</span><br><span class="line"># |&lt;---- 最好不超过50字符 ----&gt;|</span><br><span class="line"></span><br><span class="line"># [optional body]</span><br><span class="line"># |&lt;---- 每行不超过72字符 ------------------------------&gt;|</span><br><span class="line"></span><br><span class="line"># [optional footer(s)]</span><br><span class="line"># Closes #123, #456（关联Issue）</span><br><span class="line"></span><br><span class="line"># 提交类型（type）：</span><br><span class="line"># feat: 新功能</span><br><span class="line"># fix: Bug修复</span><br><span class="line"># docs: 文档更新</span><br><span class="line"># style: 代码格式调整</span><br><span class="line"># refactor: 代码重构</span><br><span class="line"># test: 测试相关</span><br><span class="line"># chore: 构建/依赖等辅助操作</span><br></pre></td></tr></table></figure>
+
+<h4 id="步骤-2：配置-Git-使用模板"><a href="#步骤-2：配置-Git-使用模板" class="headerlink" title="步骤 2：配置 Git 使用模板"></a>步骤 2：配置 Git 使用模板</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git config --local commit.template .gitmessage</span><br></pre></td></tr></table></figure>
+
+<p>此后执行 git commit 会自动打开模板文件，按提示填写即可。</p>
+<h3 id="4-2-与-CI-CD-集成（以-GitHub-Actions-为例）"><a href="#4-2-与-CI-CD-集成（以-GitHub-Actions-为例）" class="headerlink" title="4.2 与 CI&#x2F;CD 集成（以 GitHub Actions 为例）"></a>4.2 与 CI&#x2F;CD 集成（以 GitHub Actions 为例）</h3><p>在 CI 流程中添加 commitlint 验证，确保所有提交都符合规范：</p>
+<p>在项目根目录创建 .github&#x2F;workflows&#x2F;commitlint.yml 文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">name: Commitlint Check</span><br><span class="line">on: [pull_request, push]</span><br><span class="line"></span><br><span class="line">jobs:</span><br><span class="line">  lint:</span><br><span class="line">    runs-on: ubuntu-latest</span><br><span class="line">    steps:</span><br><span class="line">      - name: 拉取代码</span><br><span class="line">        uses: actions/checkout@v3</span><br><span class="line">        with:</span><br><span class="line">          fetch-depth: 0 # 拉取所有历史提交，确保能验证所有变更</span><br><span class="line"></span><br><span class="line">      - name: 设置Node.js</span><br><span class="line">        uses: actions/setup-node@v3</span><br><span class="line">        with:</span><br><span class="line">          node-version: 18</span><br><span class="line"></span><br><span class="line">      - name: 安装依赖</span><br><span class="line">        run: npm install</span><br><span class="line"></span><br><span class="line">      - name: 执行commitlint验证</span><br><span class="line">        run: npx commitlint --from HEAD~$&#123;&#123; github.event.pull_request.commits &#125;&#125; --to HEAD</span><br></pre></td></tr></table></figure>
+
+<p>提交配置文件后，GitHub Actions 会在 PR 或 Push 时自动执行 commitlint 验证，若失败则阻断流程。</p>
+<h3 id="4-3-团队协作场景优化"><a href="#4-3-团队协作场景优化" class="headerlink" title="4.3 团队协作场景优化"></a>4.3 团队协作场景优化</h3><h4 id="场景-1：新成员上手引导"><a href="#场景-1：新成员上手引导" class="headerlink" title="场景 1：新成员上手引导"></a>场景 1：新成员上手引导</h4><ul>
+<li><p>在项目 README 中添加提交规范说明，附正确 &#x2F; 错误示例</p>
+</li>
+<li><p>配置 husky 自动安装：在 package.json 中添加 postinstall 脚本，新成员安装依赖后自动启用 husky：</p>
+</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  &quot;scripts&quot;: &#123;</span><br><span class="line">    &quot;prepare&quot;: &quot;husky install&quot;,</span><br><span class="line">    &quot;postinstall&quot;: &quot;npm run prepare&quot;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="场景-2：特殊提交豁免规则"><a href="#场景-2：特殊提交豁免规则" class="headerlink" title="场景 2：特殊提交豁免规则"></a>场景 2：特殊提交豁免规则</h4><p>若需允许某些特殊提交（如紧急修复）跳过验证，可在 commitlint 配置中添加例外：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">module.exports = &#123;</span><br><span class="line">  extends: [&#x27;@commitlint/config-conventional&#x27;],</span><br><span class="line">  rules: &#123;</span><br><span class="line">    // 允许type为&quot;hotfix&quot;（预设中无此类型）</span><br><span class="line">    &#x27;type-enum&#x27;: [2, &#x27;always&#x27;, [&#x27;feat&#x27;, &#x27;fix&#x27;, &#x27;docs&#x27;, &#x27;hotfix&#x27;]],</span><br><span class="line">    // 若subject包含&quot;紧急修复&quot;，允许长度超过100字符</span><br><span class="line">    &#x27;subject-max-length&#x27;: [</span><br><span class="line">      2, </span><br><span class="line">      &#x27;always&#x27;, </span><br><span class="line">      100,</span><br><span class="line">      &#123; ignore: [&#x27;subject&#x27;, &#x27;紧急修复&#x27;] &#125;</span><br><span class="line">    ]</span><br><span class="line">  &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="五、常见问题与解决方案"><a href="#五、常见问题与解决方案" class="headerlink" title="五、常见问题与解决方案"></a>五、常见问题与解决方案</h2><h3 id="5-1-husky-钩子不触发"><a href="#5-1-husky-钩子不触发" class="headerlink" title="5.1 husky 钩子不触发"></a>5.1 husky 钩子不触发</h3><p><strong>问题现象</strong>：执行git commit时，未触发 commitlint 验证。</p>
+<p><strong>可能原因与解决</strong>：</p>
+<ol>
+<li>husky 未启用：执行 npm run prepare 重新启用。</li>
+<li>Git 钩子路径错误：检查 .git&#x2F;hooks 目录下是否有 husky 的软链接（正常情况下应为软链接指向.husky目录）。</li>
+<li>Node.js 环境问题：确保终端使用的 Node.js 版本与项目依赖兼容（可通过nvm use切换版本）。</li>
+</ol>
+<h3 id="5-2-commitlint-规则不生效"><a href="#5-2-commitlint-规则不生效" class="headerlink" title="5.2 commitlint 规则不生效"></a>5.2 commitlint 规则不生效</h3><p><strong>问题现象</strong>：提交不符合规则的信息时，未报错。</p>
+<p><strong>可能原因与解决</strong>：</p>
+<ol>
+<li>配置文件路径错误：commitlint 配置文件需放在项目根目录，且文件名正确（如.commitlintrc.js）。</li>
+<li>规则错误级别设置为 0：检查规则数组第一个参数是否为 2（如&#39;type-enum&#39;: [2, &#39;always&#39;, [...]]）。</li>
+<li>依赖版本不兼容：确保@commitlint&#x2F;cli与@commitlint&#x2F;config-conventional版本一致（建议同时升级到最新版）。</li>
+</ol>
+<h3 id="5-3-特殊场景需要跳过验证"><a href="#5-3-特殊场景需要跳过验证" class="headerlink" title="5.3 特殊场景需要跳过验证"></a>5.3 特殊场景需要跳过验证</h3><p><strong>问题现象</strong>：紧急修复时需快速提交，暂时跳过验证。</p>
+<p><strong>解决方案</strong>：使用 Git 的--no-verify参数跳过所有钩子：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git commit -m &quot;fix: 紧急修复生产环境白屏问题&quot; --no-verify</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>注意：仅在紧急情况下使用，后续需补充规范的提交信息。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/1f0b0ac5/">https://hespethorn.github.io/posts/1f0b0ac5/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Git/">Git</a><a class="post-meta__tags" href="/tags/commitlint/">commitlint</a><a class="post-meta__tags" href="/tags/husky/">husky</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/404951c0/" title="Git 冲突规避">Git 冲突规避</a><time datetime="2025-04-11T15:50:34.000Z" title="Created 2025-04-11 23:50:34">2025-04-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1f0b0ac5/" title="规范化 Git 提交 -- commitlint + husky">规范化 Git 提交 -- commitlint + husky</a><time datetime="2024-12-17T13:20:39.000Z" title="Created 2024-12-17 21:20:39">2024-12-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a4954b69/" title="团队 Git 协作规范整理">团队 Git 协作规范整理</a><time datetime="2024-12-11T11:38:21.000Z" title="Created 2024-12-11 19:38:21">2024-12-11</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

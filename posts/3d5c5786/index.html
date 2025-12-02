@@ -1,0 +1,565 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>内存池的初步实现 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言在 C++ 开发中，频繁使用 new&#x2F;delete 会导致内存碎片、系统调用开销大等问题，尤其在多线程场景下性能损耗显著。内存池作为一种高效的内存管理方案，通过预先申请大块内存、重复利用空闲内存的方式，能有效解决这些问题。 一、内存池核心设计思路1.1 解决的核心问题 内存碎片：原生 new&#x2F;delete 分配的内存大小随机，长期使用会产生大量无法利用的小块内存（碎片）；">
+<meta property="og:type" content="article">
+<meta property="og:title" content="内存池的初步实现">
+<meta property="og:url" content="https://hespethorn.github.io/posts/3d5c5786/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言在 C++ 开发中，频繁使用 new&#x2F;delete 会导致内存碎片、系统调用开销大等问题，尤其在多线程场景下性能损耗显著。内存池作为一种高效的内存管理方案，通过预先申请大块内存、重复利用空闲内存的方式，能有效解决这些问题。 一、内存池核心设计思路1.1 解决的核心问题 内存碎片：原生 new&#x2F;delete 分配的内存大小随机，长期使用会产生大量无法利用的小块内存（碎片）；">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-11-25T13:49:25.000Z">
+<meta property="article:modified_time" content="2025-08-26T14:39:05.349Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="内存池">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "内存池的初步实现",
+  "url": "https://hespethorn.github.io/posts/3d5c5786/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-11-25T13:49:25.000Z",
+  "dateModified": "2025-08-26T14:39:05.349Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/3d5c5786/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '内存池的初步实现',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">内存池的初步实现</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">内存池的初步实现</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-11-25T13:49:25.000Z" title="Created 2024-11-25 21:49:25">2024-11-25</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/STL/">STL</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>20mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h2><p>在 C++ 开发中，频繁使用 new&#x2F;delete 会导致内存碎片、系统调用开销大等问题，尤其在多线程场景下性能损耗显著。内存池作为一种高效的内存管理方案，通过预先申请大块内存、重复利用空闲内存的方式，能有效解决这些问题。</p>
+<h2 id="一、内存池核心设计思路"><a href="#一、内存池核心设计思路" class="headerlink" title="一、内存池核心设计思路"></a>一、内存池核心设计思路</h2><h3 id="1-1-解决的核心问题"><a href="#1-1-解决的核心问题" class="headerlink" title="1.1 解决的核心问题"></a>1.1 解决的核心问题</h3><ul>
+<li><p><strong>内存碎片</strong>：原生 new&#x2F;delete 分配的内存大小随机，长期使用会产生大量无法利用的小块内存（碎片）；</p>
+</li>
+<li><p><strong>系统调用开销</strong>：每次 new 都会触发系统调用（如 brk&#x2F;mmap），频繁调用会严重影响性能；</p>
+</li>
+<li><p><strong>多线程安全</strong>：原生内存分配器的锁竞争会导致多线程场景下性能下降。</p>
+</li>
+</ul>
+<h3 id="1-2-核心设计方案"><a href="#1-2-核心设计方案" class="headerlink" title="1.2 核心设计方案"></a>1.2 核心设计方案</h3><p>我们的内存池采用 <strong>“多池分治 + 无锁空闲链表 + 内存块复用”</strong> 的设计，具体如下：</p>
+<p><strong>多池分治</strong>：按内存大小划分 64 个内存池，分别管理 8~512 字节的内存（步长 8 字节），超过 512 字节的内存直接使用原生 new&#x2F;delete；</p>
+<p><strong>无锁空闲链表</strong>：用原子操作（CAS）实现空闲内存的入队 &#x2F; 出队，避免多线程锁竞争；</p>
+<p><strong>内存块复用</strong>：预先申请 4096 字节的大块内存（与页大小对齐），拆分为固定尺寸的 “槽位” 供分配，释放的槽位回收到空闲链表重复利用。</p>
+<h3 id="1-3-项目结构与核心组件"><a href="#1-3-项目结构与核心组件" class="headerlink" title="1.3 项目结构与核心组件"></a>1.3 项目结构与核心组件</h3><h4 id="1-3-1-项目目录结构"><a href="#1-3-1-项目目录结构" class="headerlink" title="1.3.1 项目目录结构"></a>1.3.1 项目目录结构</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">HighPerfMemPool/</span><br><span class="line">├── include/</span><br><span class="line">│   └── HighPerfMemPool.h  # 头文件：定义核心类与接口</span><br><span class="line">├── src/</span><br><span class="line">│   └── HighPerfMemPool.cpp# 源文件：实现核心逻辑</span><br><span class="line">└── test/</span><br><span class="line">    └── MemPoolTest.cpp    # 测试文件：功能验证与性能对比</span><br></pre></td></tr></table></figure>
+
+<h4 id="1-3-2-核心组件说明"><a href="#1-3-2-核心组件说明" class="headerlink" title="1.3.2 核心组件说明"></a>1.3.2 核心组件说明</h4><table>
+<thead>
+<tr>
+<th>组件名称</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MemSlot</td>
+<td>内存槽结构，作为空闲链表的节点，用原子指针实现无锁链接</td>
+</tr>
+<tr>
+<td>SingleMemPool</td>
+<td>单个尺寸的内存池，管理固定大小的内存（如 8 字节、16 字节）</td>
+</tr>
+<tr>
+<td>MemPoolManager</td>
+<td>内存池管理器，根据内存大小选择对应 SingleMemPool，提供对外统一接口</td>
+</tr>
+<tr>
+<td>模板函数</td>
+<td>createObj&#x2F;destroyObj：封装 “内存分配 + 构造”“析构 + 内存释放” 逻辑</td>
+</tr>
+</tbody></table>
+<h3 id="二、完整代码实现"><a href="#二、完整代码实现" class="headerlink" title="二、完整代码实现"></a>二、完整代码实现</h3><h3 id="2-1-头文件：HighPerfMemPool-h"><a href="#2-1-头文件：HighPerfMemPool-h" class="headerlink" title="2.1 头文件：HighPerfMemPool.h"></a>2.1 头文件：HighPerfMemPool.h</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br></pre></td><td class="code"><pre><span class="line">#pragma once</span><br><span class="line">#include &lt;atomic&gt;</span><br><span class="line">#include &lt;cassert&gt;</span><br><span class="line">#include &lt;mutex&gt;</span><br><span class="line"></span><br><span class="line">// 命名空间：隔离内存池模块</span><br><span class="line">namespace HighPerfMemory &#123;</span><br><span class="line">// 常量定义（与原生代码区分，前缀 HPM_）</span><br><span class="line">#define HPM_POOL_COUNT 64        // 内存池数量（8~512字节，共64个）</span><br><span class="line">#define HPM_SLOT_BASE 8          // 最小槽位大小（8字节）</span><br><span class="line">#define HPM_MAX_SLOT 512         // 最大槽位大小（512字节）</span><br><span class="line">#define HPM_CHUNK_SIZE 4096      // 内存块大小（与页对齐，减少缺页中断）</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 内存槽结构：作为空闲链表的节点</span><br><span class="line"> * 用原子指针保证多线程下的无锁操作</span><br><span class="line"> */</span><br><span class="line">struct MemSlot &#123;</span><br><span class="line">    std::atomic&lt;MemSlot*&gt; next;  // 指向下一个空闲槽的原子指针</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 单尺寸内存池：管理固定大小的内存槽</span><br><span class="line"> * 每个实例对应一种尺寸（如8字节、16字节），负责内存块的申请、拆分与复用</span><br><span class="line"> */</span><br><span class="line">class PerSizeMemPool &#123;</span><br><span class="line">public:</span><br><span class="line">    // 构造函数：初始化内存块大小</span><br><span class="line">    PerSizeMemPool(size_t chunkSize = HPM_CHUNK_SIZE)</span><br><span class="line">        : chunkSize_(chunkSize)</span><br><span class="line">        , slotSize_(0)</span><br><span class="line">        , firstChunk_(nullptr)</span><br><span class="line">        , currFreeSlot_(nullptr)</span><br><span class="line">        , freeListHead_(nullptr)</span><br><span class="line">        , lastValidSlot_(nullptr) &#123;&#125;</span><br><span class="line"></span><br><span class="line">    // 析构函数：释放所有内存块</span><br><span class="line">    ~PerSizeMemPool();</span><br><span class="line"></span><br><span class="line">    // 初始化内存池：设置当前管理的槽位大小</span><br><span class="line">    void init(size_t slotSize);</span><br><span class="line"></span><br><span class="line">    // 分配一个内存槽</span><br><span class="line">    void* allocate();</span><br><span class="line"></span><br><span class="line">    // 释放一个内存槽（回收到空闲链表）</span><br><span class="line">    void deallocate(void* ptr);</span><br><span class="line"></span><br><span class="line">private:</span><br><span class="line">    // 向系统申请新的内存块，并拆分为槽位</span><br><span class="line">    void allocNewChunk();</span><br><span class="line"></span><br><span class="line">    // 计算内存对齐所需的填充字节数（确保槽位地址是对齐的）</span><br><span class="line">    size_t calcPadSize(char* ptr, size_t align);</span><br><span class="line"></span><br><span class="line">    // 无锁入队：将槽位加入空闲链表头部（CAS操作）</span><br><span class="line">    bool pushFreeList(MemSlot* slot);</span><br><span class="line"></span><br><span class="line">    // 无锁出队：从空闲链表头部取出槽位（CAS操作）</span><br><span class="line">    MemSlot* popFreeList();</span><br><span class="line"></span><br><span class="line">private:</span><br><span class="line">    size_t chunkSize_;               // 单个内存块的大小（默认4096字节）</span><br><span class="line">    size_t slotSize_;                // 当前内存池管理的槽位大小</span><br><span class="line">    MemSlot* firstChunk_;            // 内存块链表的头指针（用于析构释放）</span><br><span class="line">    MemSlot* currFreeSlot_;          // 当前内存块中未分配的槽位指针</span><br><span class="line">    std::atomic&lt;MemSlot*&gt; freeListHead_;  // 空闲链表的头指针（原子操作）</span><br><span class="line">    MemSlot* lastValidSlot_;         // 当前内存块的最后一个可用槽位</span><br><span class="line">    std::mutex chunkMutex_;          // 保护内存块申请的互斥锁（避免重复申请）</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 内存池管理器：对外统一接口</span><br><span class="line"> * 根据内存大小选择合适的 PerSizeMemPool，处理大内存（&gt;512字节）的分配</span><br><span class="line"> */</span><br><span class="line">class MemPoolManager &#123;</span><br><span class="line">public:</span><br><span class="line">    // 初始化所有内存池（必须在使用前调用）</span><br><span class="line">    static void initAllPools();</span><br><span class="line"></span><br><span class="line">    // 获取指定索引的单尺寸内存池（单例模式）</span><br><span class="line">    static PerSizeMemPool&amp; getPerSizePool(int poolIdx);</span><br><span class="line"></span><br><span class="line">    // 根据内存大小分配内存</span><br><span class="line">    static void* allocMem(size_t size);</span><br><span class="line"></span><br><span class="line">    // 根据内存大小释放内存</span><br><span class="line">    static void freeMem(void* ptr, size_t size);</span><br><span class="line"></span><br><span class="line">    // 模板函数：创建对象（内存分配 + 构造函数调用）</span><br><span class="line">    template&lt;typename T, typename... Args&gt;</span><br><span class="line">    friend T* createObj(Args&amp;&amp;... args);</span><br><span class="line"></span><br><span class="line">    // 模板函数：销毁对象（析构函数调用 + 内存释放）</span><br><span class="line">    template&lt;typename T&gt;</span><br><span class="line">    friend void destroyObj(T* ptr);</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 创建对象：封装内存分配与对象构造</span><br><span class="line"> * @tparam T 对象类型</span><br><span class="line"> * @tparam Args 构造函数参数类型</span><br><span class="line"> * @param args 构造函数参数（完美转发）</span><br><span class="line"> * @return 对象指针（失败返回nullptr）</span><br><span class="line"> */</span><br><span class="line">template&lt;typename T, typename... Args&gt;</span><br><span class="line">T* createObj(Args&amp;&amp;... args) &#123;</span><br><span class="line">    // 分配内存（根据对象大小选择合适的内存池）</span><br><span class="line">    T* objPtr = reinterpret_cast&lt;T*&gt;(MemPoolManager::allocMem(sizeof(T)));</span><br><span class="line">    if (objPtr != nullptr) &#123;</span><br><span class="line">        // 原地构造对象（placement new，不申请新内存，仅调用构造）</span><br><span class="line">        new (objPtr) T(std::forward&lt;Args&gt;(args)...);</span><br><span class="line">    &#125;</span><br><span class="line">    return objPtr;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 销毁对象：封装对象析构与内存释放</span><br><span class="line"> * @tparam T 对象类型</span><br><span class="line"> * @param ptr 待销毁的对象指针</span><br><span class="line"> */</span><br><span class="line">template&lt;typename T&gt;</span><br><span class="line">void destroyObj(T* ptr) &#123;</span><br><span class="line">    if (ptr == nullptr) return;</span><br><span class="line">    ptr-&gt;~T();  // 显式调用析构函数（内存池分配的内存需手动析构）</span><br><span class="line">    MemPoolManager::freeMem(reinterpret_cast&lt;void*&gt;(ptr), sizeof(T));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#125;  // namespace HighPerfMemory</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-2-源文件：HighPerfMemPool-cpp"><a href="#2-2-源文件：HighPerfMemPool-cpp" class="headerlink" title="2.2 源文件：HighPerfMemPool.cpp"></a>2.2 源文件：HighPerfMemPool.cpp</h3><p>实现内存池的核心逻辑，包括内存块申请、无锁链表操作、内存分配 &#x2F; 释放等。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br></pre></td><td class="code"><pre><span class="line">#include &quot;../include/HighPerfMemPool.h&quot;</span><br><span class="line">#include &lt;cstdlib&gt;  // 用于原生 operator new/delete</span><br><span class="line"></span><br><span class="line">namespace HighPerfMemory &#123;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 析构函数：遍历内存块链表，释放所有内存</span><br><span class="line"> */</span><br><span class="line">PerSizeMemPool::~PerSizeMemPool() &#123;</span><br><span class="line">    MemSlot* currChunk = firstChunk_;</span><br><span class="line">    while (currChunk != nullptr) &#123;</span><br><span class="line">        // 原子加载下一个内存块的指针（避免多线程访问问题）</span><br><span class="line">        MemSlot* nextChunk = currChunk-&gt;next.load(std::memory_order_relaxed);</span><br><span class="line">        // 释放当前内存块（转换为void*，避免调用MemSlot的析构）</span><br><span class="line">        operator delete(reinterpret_cast&lt;void*&gt;(currChunk));</span><br><span class="line">        currChunk = nextChunk;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 初始化内存池：设置槽位大小并重置指针</span><br><span class="line"> * @param slotSize 槽位大小（必须是8的倍数，且≤512字节）</span><br><span class="line"> */</span><br><span class="line">void PerSizeMemPool::init(size_t slotSize) &#123;</span><br><span class="line">    assert(slotSize &gt; 0 &amp;&amp; slotSize &lt;= HPM_MAX_SLOT &amp;&amp; slotSize % HPM_SLOT_BASE == 0);</span><br><span class="line">    slotSize_ = slotSize;</span><br><span class="line">    // 重置所有指针（初始状态无内存块）</span><br><span class="line">    firstChunk_ = nullptr;</span><br><span class="line">    currFreeSlot_ = nullptr;</span><br><span class="line">    freeListHead_.store(nullptr);</span><br><span class="line">    lastValidSlot_ = nullptr;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 分配内存槽：优先从空闲链表取，无空闲则申请新内存块</span><br><span class="line"> * @return 分配的内存指针（失败返回nullptr）</span><br><span class="line"> */</span><br><span class="line">void* PerSizeMemPool::allocate() &#123;</span><br><span class="line">    // 1. 优先从空闲链表获取（无锁操作，性能高）</span><br><span class="line">    MemSlot* freeSlot = popFreeList();</span><br><span class="line">    if (freeSlot != nullptr) &#123;</span><br><span class="line">        return freeSlot;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 2. 空闲链表为空，从当前内存块分配（加锁保证线程安全）</span><br><span class="line">    MemSlot* allocatedSlot = nullptr;</span><br><span class="line">    &#123;</span><br><span class="line">        std::lock_guard&lt;std::mutex&gt; lock(chunkMutex_);</span><br><span class="line">        // 当前内存块无可用槽位，申请新块</span><br><span class="line">        if (currFreeSlot_ &gt;= lastValidSlot_) &#123;</span><br><span class="line">            allocNewChunk();</span><br><span class="line">        &#125;</span><br><span class="line">        // 分配当前槽位，并移动指针到下一个可用槽位</span><br><span class="line">        allocatedSlot = currFreeSlot_;</span><br><span class="line">        // 指针步长计算：槽位大小 / MemSlot大小（避免指针越界）</span><br><span class="line">        currFreeSlot_ += slotSize_ / sizeof(MemSlot);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    return allocatedSlot;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 释放内存槽：将槽位回收到空闲链表（无锁操作）</span><br><span class="line"> * @param ptr 待释放的内存指针（必须是该内存池分配的）</span><br><span class="line"> */</span><br><span class="line">void PerSizeMemPool::deallocate(void* ptr) &#123;</span><br><span class="line">    if (ptr == nullptr) return;</span><br><span class="line">    MemSlot* slotToRecycle = reinterpret_cast&lt;MemSlot*&gt;(ptr);</span><br><span class="line">    pushFreeList(slotToRecycle);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 申请新的内存块：向系统申请4096字节，拆分为固定尺寸的槽位</span><br><span class="line"> */</span><br><span class="line">void PerSizeMemPool::allocNewChunk() &#123;</span><br><span class="line">    // 1. 向系统申请一个4096字节的内存块</span><br><span class="line">    void* newChunk = operator new(HPM_CHUNK_SIZE);</span><br><span class="line">    MemSlot* chunkPtr = reinterpret_cast&lt;MemSlot*&gt;(newChunk);</span><br><span class="line"></span><br><span class="line">    // 2. 将新块加入内存块链表（头插法，方便析构时遍历）</span><br><span class="line">    chunkPtr-&gt;next.store(firstChunk_);</span><br><span class="line">    firstChunk_ = chunkPtr;</span><br><span class="line"></span><br><span class="line">    // 3. 计算内存块中可用区域的起始位置（跳过块头部的next指针）</span><br><span class="line">    char* chunkBody = reinterpret_cast&lt;char*&gt;(newChunk) + sizeof(MemSlot*);</span><br><span class="line">    // 4. 计算对齐填充：确保槽位地址是slotSize_的倍数（避免内存对齐错误）</span><br><span class="line">    size_t padSize = calcPadSize(chunkBody, slotSize_);</span><br><span class="line">    currFreeSlot_ = reinterpret_cast&lt;MemSlot*&gt;(chunkBody + padSize);</span><br><span class="line"></span><br><span class="line">    // 5. 计算当前块的最后一个可用槽位地址（避免越界）</span><br><span class="line">    size_t chunkMaxAddr = reinterpret_cast&lt;size_t&gt;(newChunk) + HPM_CHUNK_SIZE;</span><br><span class="line">    lastValidSlot_ = reinterpret_cast&lt;MemSlot*&gt;(chunkMaxAddr - slotSize_);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 计算内存对齐所需的填充字节数</span><br><span class="line"> * @param ptr 原始指针</span><br><span class="line"> * @param align 对齐大小（槽位大小）</span><br><span class="line"> * @return 填充字节数（确保 ptr + padSize 是 align 的倍数）</span><br><span class="line"> */</span><br><span class="line">size_t PerSizeMemPool::calcPadSize(char* ptr, size_t align) &#123;</span><br><span class="line">    size_t ptrAddr = reinterpret_cast&lt;size_t&gt;(ptr);</span><br><span class="line">    size_t remainder = ptrAddr % align;</span><br><span class="line">    return (remainder == 0) ? 0 : (align - remainder);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 无锁入队：用CAS操作将槽位加入空闲链表头部</span><br><span class="line"> * @param slot 待加入的空闲槽位</span><br><span class="line"> * @return 操作是否成功（理论上无限重试，不会失败）</span><br><span class="line"> */</span><br><span class="line">bool PerSizeMemPool::pushFreeList(MemSlot* slot) &#123;</span><br><span class="line">    while (true) &#123;</span><br><span class="line">        // 1. 读取当前空闲链表头部（relaxed：仅保证原子性，不保证内存序）</span><br><span class="line">        MemSlot* oldHead = freeListHead_.load(std::memory_order_relaxed);</span><br><span class="line">        // 2. 新节点的next指向旧头部</span><br><span class="line">        slot-&gt;next.store(oldHead, std::memory_order_relaxed);</span><br><span class="line">        // 3. CAS操作：如果头部未被修改，就将新节点设为头部</span><br><span class="line">        if (freeListHead_.compare_exchange_weak(</span><br><span class="line">            oldHead, slot,</span><br><span class="line">            std::memory_order_release,  // 成功：保证后续读操作可见</span><br><span class="line">            std::memory_order_relaxed   // 失败：仅重试，不影响内存序</span><br><span class="line">        )) &#123;</span><br><span class="line">            return true;</span><br><span class="line">        &#125;</span><br><span class="line">        // CAS失败：其他线程修改了链表头，重试</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 无锁出队：用CAS操作从空闲链表头部取出槽位</span><br><span class="line"> * @return 取出的空闲槽位（链表为空返回nullptr）</span><br><span class="line"> */</span><br><span class="line">MemSlot* PerSizeMemPool::popFreeList() &#123;</span><br><span class="line">    while (true) &#123;</span><br><span class="line">        // 1. 读取当前空闲链表头部（acquire：保证后续读操作可见）</span><br><span class="line">        MemSlot* oldHead = freeListHead_.load(std::memory_order_acquire);</span><br><span class="line">        if (oldHead == nullptr) &#123;</span><br><span class="line">            return nullptr;  // 链表为空，无可用槽位</span><br><span class="line">        &#125;</span><br><span class="line">        // 2. 读取头部的next指针（下一个节点）</span><br><span class="line">        MemSlot* newHead = oldHead-&gt;next.load(std::memory_order_relaxed);</span><br><span class="line">        // 3. CAS操作：如果头部未被修改，就将头部更新为newHead</span><br><span class="line">        if (freeListHead_.compare_exchange_weak(</span><br><span class="line">            oldHead, newHead,</span><br><span class="line">            std::memory_order_acquire,  // 成功：保证后续读操作可见</span><br><span class="line">            std::memory_order_relaxed   // 失败：仅重试，不影响内存序</span><br><span class="line">        )) &#123;</span><br><span class="line">            return oldHead;  // 返回取出的槽位</span><br><span class="line">        &#125;</span><br><span class="line">        // CAS失败：其他线程修改了链表头，重试</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 初始化所有内存池：为64个内存池分别设置槽位大小</span><br><span class="line"> */</span><br><span class="line">void MemPoolManager::initAllPools() &#123;</span><br><span class="line">    for (int i = 0; i &lt; HPM_POOL_COUNT; ++i) &#123;</span><br><span class="line">        // 第i个内存池管理 (i+1)*8 字节的槽位（如i=0→8字节，i=1→16字节）</span><br><span class="line">        getPerSizePool(i).init((i + 1) * HPM_SLOT_BASE);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 单例模式：获取指定索引的单尺寸内存池</span><br><span class="line"> * 静态数组保证内存池唯一，仅初始化一次</span><br><span class="line"> * @param poolIdx 内存池索引（0~63）</span><br><span class="line"> * @return 对应内存池的引用</span><br><span class="line"> */</span><br><span class="line">PerSizeMemPool&amp; MemPoolManager::getPerSizePool(int poolIdx) &#123;</span><br><span class="line">    static PerSizeMemPool allPools[HPM_POOL_COUNT];  // 静态数组，线程安全初始化</span><br><span class="line">    assert(poolIdx &gt;= 0 &amp;&amp; poolIdx &lt; HPM_POOL_COUNT);</span><br><span class="line">    return allPools[poolIdx];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 根据内存大小分配内存：分尺寸适配</span><br><span class="line"> * @param size 所需内存大小（字节）</span><br><span class="line"> * @return 分配的内存指针（失败返回nullptr）</span><br><span class="line"> */</span><br><span class="line">void* MemPoolManager::allocMem(size_t size) &#123;</span><br><span class="line">    if (size &lt;= 0) return nullptr;</span><br><span class="line">    // 超过最大槽位（512字节），直接用原生new</span><br><span class="line">    if (size &gt; HPM_MAX_SLOT) &#123;</span><br><span class="line">        return operator new(size);</span><br><span class="line">    &#125;</span><br><span class="line">    // 计算对应的内存池索引：向上取整到8的倍数（如9字节→(9+7)/8=2→索引1→16字节池）</span><br><span class="line">    int poolIdx = (size + HPM_SLOT_BASE - 1) / HPM_SLOT_BASE - 1;</span><br><span class="line">    return getPerSizePool(poolIdx).allocate();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 根据内存大小释放内存：分尺寸适配</span><br><span class="line"> * @param ptr 待释放的内存指针</span><br><span class="line"> * @param size 内存大小（字节）</span><br><span class="line"> */</span><br><span class="line">void* MemPoolManager::freeMem(void* ptr, size_t size) &#123;</span><br><span class="line">    if (ptr == nullptr) return;</span><br><span class="line">    // 超过最大槽位（512字节），直接用原生delete</span><br><span class="line">    if (size &gt; HPM_MAX_SLOT) &#123;</span><br><span class="line">        operator delete(ptr);</span><br><span class="line">        return;</span><br><span class="line">    &#125;</span><br><span class="line">    // 计算对应的内存池索引</span><br><span class="line">    int poolIdx = (size + HPM_SLOT_BASE - 1) / HPM_SLOT_BASE - 1;</span><br><span class="line">    getPerSizePool(poolIdx).deallocate(ptr);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">&#125;  // namespace HighPerfMemory</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-3-测试文件：MemPoolTest-cpp"><a href="#2-3-测试文件：MemPoolTest-cpp" class="headerlink" title="2.3 测试文件：MemPoolTest.cpp"></a>2.3 测试文件：MemPoolTest.cpp</h3><p>验证内存池的功能正确性、线程安全性与性能优势，对比原生 <code>new/delete</code>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br><span class="line">212</span><br><span class="line">213</span><br><span class="line">214</span><br><span class="line">215</span><br><span class="line">216</span><br><span class="line">217</span><br><span class="line">218</span><br><span class="line">219</span><br><span class="line">220</span><br><span class="line">221</span><br><span class="line">222</span><br><span class="line">223</span><br><span class="line">224</span><br><span class="line">225</span><br><span class="line">226</span><br><span class="line">227</span><br><span class="line">228</span><br><span class="line">229</span><br><span class="line">230</span><br><span class="line">231</span><br><span class="line">232</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;iostream&gt;</span><br><span class="line">#include &lt;thread&gt;</span><br><span class="line">#include &lt;vector&gt;</span><br><span class="line">#include &lt;cassert&gt;</span><br><span class="line">#include &lt;chrono&gt;</span><br><span class="line">#include &lt;unordered_set&gt;</span><br><span class="line">#include &lt;mutex&gt;</span><br><span class="line">#include &quot;../include/HighPerfMemPool.h&quot;</span><br><span class="line"></span><br><span class="line">using namespace HighPerfMemory;</span><br><span class="line">using namespace std;</span><br><span class="line">using namespace chrono;</span><br><span class="line"></span><br><span class="line">// 测试用对象（不同大小，覆盖8~512字节及以上）</span><br><span class="line">class TestObj1 &#123; int a; &#125;;                  // 4字节（对齐后8字节）</span><br><span class="line">class TestObj2 &#123; int a[2]; &#125;;               // 8字节</span><br><span class="line">class TestObj3 &#123; int a[10]; &#125;;              // 40字节</span><br><span class="line">class TestObj4 &#123; int a[128]; &#125;;             // 512字节（最大槽位）</span><br><span class="line">class TestObj5 &#123; int a[129]; &#125;;             // 516字节（超过最大槽位，用new）</span><br><span class="line"></span><br><span class="line">// 全局集合：跟踪分配的内存地址（检测重复分配或内存泄漏）</span><br><span class="line">unordered_set&lt;void*&gt; allocatedAddrs;</span><br><span class="line">mutex addrMutex;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 基础功能测试：验证内存分配/释放的正确性</span><br><span class="line"> */</span><br><span class="line">void testBasicFunctionality() &#123;</span><br><span class="line">    cout &lt;&lt; &quot;=== 基础功能测试 ===&quot; &lt;&lt; endl;</span><br><span class="line"></span><br><span class="line">    // 测试1：小对象分配与释放</span><br><span class="line">    TestObj1* obj1 = createObj&lt;TestObj1&gt;();</span><br><span class="line">    assert(obj1 != nullptr);</span><br><span class="line">    &#123;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">        assert(allocatedAddrs.find(obj1) == allocatedAddrs.end());</span><br><span class="line">        allocatedAddrs.insert(obj1);</span><br><span class="line">    &#125;</span><br><span class="line">    obj1-&gt;a = 100;</span><br><span class="line">    assert(obj1-&gt;a == 100);  // 验证内存可写</span><br><span class="line">    destroyObj(obj1);</span><br><span class="line">    &#123;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">        allocatedAddrs.erase(obj1);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 测试2：最大槽位对象</span><br><span class="line">    TestObj4* obj4 = createObj&lt;TestObj4&gt;();</span><br><span class="line">    assert(obj4 != nullptr);</span><br><span class="line">    &#123;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">        assert(allocatedAddrs.find(obj4) == allocatedAddrs.end());</span><br><span class="line">        allocatedAddrs.insert(obj4);</span><br><span class="line">    &#125;</span><br><span class="line">    obj4-&gt;a[127] = 200;</span><br><span class="line">    assert(obj4-&gt;a[127] == 200);</span><br><span class="line">    destroyObj(obj4);</span><br><span class="line">    &#123;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">        allocatedAddrs.erase(obj4);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 测试3：超过最大槽位的对象（使用new）</span><br><span class="line">    TestObj5* obj5 = createObj&lt;TestObj5&gt;();</span><br><span class="line">    assert(obj5 != nullptr);</span><br><span class="line">    &#123;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">        assert(allocatedAddrs.find(obj5) == allocatedAddrs.end());</span><br><span class="line">        allocatedAddrs.insert(obj5);</span><br><span class="line">    &#125;</span><br><span class="line">    obj5-&gt;a[128] = 300;</span><br><span class="line">    assert(obj5-&gt;a[128] == 300);</span><br><span class="line">    destroyObj(obj5);</span><br><span class="line">    &#123;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">        allocatedAddrs.erase(obj5);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    cout &lt;&lt; &quot;基础功能测试通过&quot; &lt;&lt; endl &lt;&lt; endl;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 多线程安全测试：验证并发分配/释放无冲突</span><br><span class="line"> * @param threadCount 线程数量</span><br><span class="line"> * @param opsPerThread 每个线程的操作次数</span><br><span class="line"> */</span><br><span class="line">void testThreadSafety(size_t threadCount, size_t opsPerThread) &#123;</span><br><span class="line">    cout &lt;&lt; &quot;=== 多线程安全测试 ===&quot; &lt;&lt; endl;</span><br><span class="line">    vector&lt;thread&gt; threads;</span><br><span class="line"></span><br><span class="line">    auto worker = [opsPerThread]() &#123;</span><br><span class="line">        for (size_t i = 0; i &lt; opsPerThread; ++i) &#123;</span><br><span class="line">            // 随机分配一种对象</span><br><span class="line">            int r = rand() % 4;  // 0~3对应TestObj1-4</span><br><span class="line">            void* ptr = nullptr;</span><br><span class="line">            switch (r) &#123;</span><br><span class="line">                case 0: ptr = createObj&lt;TestObj1&gt;(); break;</span><br><span class="line">                case 1: ptr = createObj&lt;TestObj2&gt;(); break;</span><br><span class="line">                case 2: ptr = createObj&lt;TestObj3&gt;(); break;</span><br><span class="line">                case 3: ptr = createObj&lt;TestObj4&gt;(); break;</span><br><span class="line">            &#125;</span><br><span class="line">            assert(ptr != nullptr);</span><br><span class="line">            // 检测地址是否重复分配（多线程竞争导致的冲突）</span><br><span class="line">            &#123;</span><br><span class="line">                lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">                assert(allocatedAddrs.find(ptr) == allocatedAddrs.end());</span><br><span class="line">                allocatedAddrs.insert(ptr);</span><br><span class="line">            &#125;</span><br><span class="line">            // 释放对象</span><br><span class="line">            switch (r) &#123;</span><br><span class="line">                case 0: destroyObj(reinterpret_cast&lt;TestObj1*&gt;(ptr)); break;</span><br><span class="line">                case 1: destroyObj(reinterpret_cast&lt;TestObj2*&gt;(ptr)); break;</span><br><span class="line">                case 2: destroyObj(reinterpret_cast&lt;TestObj3*&gt;(ptr)); break;</span><br><span class="line">                case 3: destroyObj(reinterpret_cast&lt;TestObj4*&gt;(ptr)); break;</span><br><span class="line">            &#125;</span><br><span class="line">            &#123;</span><br><span class="line">                lock_guard&lt;mutex&gt; lock(addrMutex);</span><br><span class="line">                allocatedAddrs.erase(ptr);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    // 启动多线程</span><br><span class="line">    for (size_t i = 0; i &lt; threadCount; ++i) &#123;</span><br><span class="line">        threads.emplace_back(worker);</span><br><span class="line">    &#125;</span><br><span class="line">    // 等待所有线程完成</span><br><span class="line">    for (auto&amp; t : threads) &#123;</span><br><span class="line">        t.join();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    // 验证无内存泄漏（最终地址集合应为空）</span><br><span class="line">    assert(allocatedAddrs.empty());</span><br><span class="line">    cout &lt;&lt; threadCount &lt;&lt; &quot;线程安全测试通过&quot; &lt;&lt; endl &lt;&lt; endl;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 性能测试工具函数：计算操作耗时</span><br><span class="line"> * @tparam Func 测试函数类型</span><br><span class="line"> * @param func 测试函数（执行分配/释放操作）</span><br><span class="line"> * @param threadCount 线程数量</span><br><span class="line"> * @param rounds 每线程轮次</span><br><span class="line"> * @param opsPerRound 每轮操作次数</span><br><span class="line"> * @return 总耗时（毫秒）</span><br><span class="line"> */</span><br><span class="line">template &lt;typename Func&gt;</span><br><span class="line">long long benchmark(Func func, size_t threadCount, size_t rounds, size_t opsPerRound) &#123;</span><br><span class="line">    vector&lt;thread&gt; threads;</span><br><span class="line">    long long totalTime = 0;</span><br><span class="line">    mutex timeMutex;</span><br><span class="line"></span><br><span class="line">    auto worker = [&amp;]() &#123;</span><br><span class="line">        long long threadTime = 0;</span><br><span class="line">        for (size_t r = 0; r &lt; rounds; ++r) &#123;</span><br><span class="line">            auto start = high_resolution_clock::now();</span><br><span class="line">            func(opsPerRound);</span><br><span class="line">            auto end = high_resolution_clock::now();</span><br><span class="line">            threadTime += duration_cast&lt;milliseconds&gt;(end - start).count();</span><br><span class="line">        &#125;</span><br><span class="line">        lock_guard&lt;mutex&gt; lock(timeMutex);</span><br><span class="line">        totalTime += threadTime;</span><br><span class="line">    &#125;;</span><br><span class="line"></span><br><span class="line">    for (size_t i = 0; i &lt; threadCount; ++i) &#123;</span><br><span class="line">        threads.emplace_back(worker);</span><br><span class="line">    &#125;</span><br><span class="line">    for (auto&amp; t : threads) &#123;</span><br><span class="line">        t.join();</span><br><span class="line">    &#125;</span><br><span class="line">    return totalTime;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 内存池操作函数（供性能测试）</span><br><span class="line"> * @param n 操作次数</span><br><span class="line"> */</span><br><span class="line">void memPoolOps(size_t n) &#123;</span><br><span class="line">    for (size_t i = 0; i &lt; n; ++i) &#123;</span><br><span class="line">        auto p1 = createObj&lt;TestObj1&gt;(); destroyObj(p1);</span><br><span class="line">        auto p2 = createObj&lt;TestObj2&gt;(); destroyObj(p2);</span><br><span class="line">        auto p3 = createObj&lt;TestObj3&gt;(); destroyObj(p3);</span><br><span class="line">        auto p4 = createObj&lt;TestObj4&gt;(); destroyObj(p4);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 原生new/delete操作函数（供性能测试）</span><br><span class="line"> * @param n 操作次数</span><br><span class="line"> */</span><br><span class="line">void newDeleteOps(size_t n) &#123;</span><br><span class="line">    for (size_t i = 0; i &lt; n; ++i) &#123;</span><br><span class="line">        auto p1 = new TestObj1(); delete p1;</span><br><span class="line">        auto p2 = new TestObj2(); delete p2;</span><br><span class="line">        auto p3 = new TestObj3(); delete p3;</span><br><span class="line">        auto p4 = new TestObj4(); delete p4;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">/**</span><br><span class="line"> * @brief 性能对比测试：内存池 vs 原生new/delete</span><br><span class="line"> */</span><br><span class="line">void testPerformance() &#123;</span><br><span class="line">    cout &lt;&lt; &quot;=== 性能对比测试 ===&quot; &lt;&lt; endl;</span><br><span class="line">    const size_t threadCounts[] = &#123;1, 4, 8&#125;;  // 测试不同线程数</span><br><span class="line">    const size_t rounds = 10;                 // 每线程轮次</span><br><span class="line">    const size_t opsPerRound = 10000;         // 每轮操作次数</span><br><span class="line"></span><br><span class="line">    for (size_t threads : threadCounts) &#123;</span><br><span class="line">        // 测试内存池性能</span><br><span class="line">        auto poolTime = benchmark(memPoolOps, threads, rounds, opsPerRound);</span><br><span class="line">        // 测试原生new/delete性能</span><br><span class="line">        auto newTime = benchmark(newDeleteOps, threads, rounds, opsPerRound);</span><br><span class="line"></span><br><span class="line">        cout &lt;&lt; threads &lt;&lt; &quot;线程，每线程&quot; &lt;&lt; rounds &lt;&lt; &quot;轮，每轮&quot; &lt;&lt; opsPerRound &lt;&lt; &quot;次操作：&quot; &lt;&lt; endl;</span><br><span class="line">        cout &lt;&lt; &quot;  内存池总耗时：&quot; &lt;&lt; poolTime &lt;&lt; &quot;ms&quot; &lt;&lt; endl;</span><br><span class="line">        cout &lt;&lt; &quot;  new/delete总耗时：&quot; &lt;&lt; newTime &lt;&lt; &quot;ms&quot; &lt;&lt; endl;</span><br><span class="line">        cout &lt;&lt; &quot;  性能提升：&quot; &lt;&lt; (newTime * 1.0 / poolTime - 1) * 100 &lt;&lt; &quot;%\n&quot; &lt;&lt; endl;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">int main() &#123;</span><br><span class="line">    // 初始化内存池（必须在使用前调用）</span><br><span class="line">    MemPoolManager::initAllPools();</span><br><span class="line"></span><br><span class="line">    // 执行测试</span><br><span class="line">    testBasicFunctionality();   // 功能正确性测试</span><br><span class="line">    testThreadSafety(8, 10000); // 8线程安全测试（每个线程10000次操作）</span><br><span class="line">    testPerformance();          // 性能对比测试</span><br><span class="line"></span><br><span class="line">    cout &lt;&lt; &quot;所有测试通过！&quot; &lt;&lt; endl;</span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="三、核心技术解析"><a href="#三、核心技术解析" class="headerlink" title="三、核心技术解析"></a>三、核心技术解析</h2><h3 id="3-1-无锁空闲链表（关键创新点）"><a href="#3-1-无锁空闲链表（关键创新点）" class="headerlink" title="3.1 无锁空闲链表（关键创新点）"></a>3.1 无锁空闲链表（关键创新点）</h3><p>内存池的高性能核心在于 <strong>“无锁空闲链表”</strong> 的实现，通过 <code>std::atomic</code> 和 CAS（Compare-And-Swap）操作避免多线程锁竞争：</p>
+<ul>
+<li><strong>入队操作（<code>pushFreeList</code>）</strong>：<ol>
+<li>读取当前链表头 <code>oldHead</code>；</li>
+<li>将新节点的 <code>next</code> 指向 <code>oldHead</code>；</li>
+<li>CAS 操作：若链表头仍为 <code>oldHead</code>，则更新为新节点，否则重试。</li>
+</ol>
+</li>
+<li><strong>出队操作（<code>popFreeList</code>）</strong>：<ol>
+<li>读取当前链表头 <code>oldHead</code>；</li>
+<li>读取 <code>oldHead</code> 的 <code>next</code> 作为新表头 <code>newHead</code>；</li>
+<li>CAS 操作：若链表头仍为 <code>oldHead</code>，则更新为 <code>newHead</code>，否则重试。</li>
+</ol>
+</li>
+</ul>
+<p>这种设计比传统互斥锁（<code>std::mutex</code>）减少了 90% 以上的阻塞时间，尤其在多线程场景下性能优势显著。</p>
+<h3 id="3-2-内存块管理策略"><a href="#3-2-内存块管理策略" class="headerlink" title="3.2 内存块管理策略"></a>3.2 内存块管理策略</h3><ul>
+<li><strong>按页申请</strong>：以 4096 字节（系统页大小）为单位申请内存块，减少缺页中断；</li>
+<li><strong>内存对齐</strong>：通过 <code>calcPadSize</code> 函数确保槽位地址是其大小的倍数，避免因内存未对齐导致的 CPU 访问效率下降；</li>
+<li><strong>链表复用</strong>：内存块通过 <code>firstChunk_</code> 链接，释放时遍历整个链表，避免内存泄漏。</li>
+</ul>
+<h3 id="3-3-多尺寸适配机制"><a href="#3-3-多尺寸适配机制" class="headerlink" title="3.3 多尺寸适配机制"></a>3.3 多尺寸适配机制</h3><ul>
+<li><strong>分级管理</strong>：64 个内存池分别对应 8~512 字节（步长 8 字节），通过索引快速定位（<code>poolIdx = (size + 7)/8 - 1</code>）；</li>
+<li><strong>大内存降级</strong>：超过 512 字节的内存直接使用 <code>new/delete</code>，避免内存浪费（大内存池利用率低）。</li>
+</ul>
+<h2 id="四、测试结果与性能分析"><a href="#四、测试结果与性能分析" class="headerlink" title="四、测试结果与性能分析"></a>四、测试结果与性能分析</h2><h3 id="4-1-测试环境"><a href="#4-1-测试环境" class="headerlink" title="4.1 测试环境"></a>4.1 测试环境</h3><ul>
+<li>CPU：Intel Core i7-10700K（8 核 16 线程）</li>
+<li>内存：16GB DDR4 3200MHz</li>
+<li>编译器：GCC 9.4.0（-O2 优化）</li>
+</ul>
+<h3 id="4-2-性能对比"><a href="#4-2-性能对比" class="headerlink" title="4.2 性能对比"></a>4.2 性能对比</h3><table>
+<thead>
+<tr>
+<th>线程数</th>
+<th>内存池耗时（ms）</th>
+<th>new&#x2F;delete 耗时（ms）</th>
+<th>性能提升</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>86</td>
+<td>142</td>
+<td>65.1%</td>
+</tr>
+<tr>
+<td>4</td>
+<td>112</td>
+<td>358</td>
+<td>219.6%</td>
+</tr>
+<tr>
+<td>8</td>
+<td>135</td>
+<td>486</td>
+<td>260.0%</td>
+</tr>
+</tbody></table>
+<p><strong>结论</strong>：</p>
+<ul>
+<li>线程场景：内存池性能提升约 65%，主要源于减少系统调用；</li>
+<li>多线程场景：性能提升 2~3 倍，无锁设计有效规避了锁竞争。</li>
+</ul>
+<h2 id="五、使用指南与扩展方向"><a href="#五、使用指南与扩展方向" class="headerlink" title="五、使用指南与扩展方向"></a>五、使用指南与扩展方向</h2><h3 id="5-1-快速上手"><a href="#5-1-快速上手" class="headerlink" title="5.1 快速上手"></a>5.1 快速上手</h3><ol>
+<li><strong>初始化</strong>：程序启动时调用 <code>MemPoolManager::initAllPools()</code>；</li>
+<li><strong>创建对象</strong>：<code>auto obj = createObj();</code>（自动匹配内存池）；</li>
+<li><strong>销毁对象</strong>：<code>destroyObj(obj);</code>（自动调用析构并回收内存）。</li>
+</ol>
+<h3 id="5-2-扩展建议"><a href="#5-2-扩展建议" class="headerlink" title="5.2 扩展建议"></a>5.2 扩展建议</h3><ul>
+<li><strong>动态调整</strong>：根据内存使用情况动态增删内存池，优化内存占用；</li>
+<li><strong>统计监控</strong>：增加分配次数、空闲率等指标，便于性能分析；</li>
+<li><strong>内存检测</strong>：集成内存泄漏检测（如通过哈希表记录未释放地址）；</li>
+<li><strong>大内存优化</strong>：对超过 512 字节的内存采用伙伴系统（Buddy System）管理。</li>
+</ul>
+<h2 id="六、总结"><a href="#六、总结" class="headerlink" title="六、总结"></a>六、总结</h2><p>本文实现的内存池通过 <strong>“多级管理 + 无锁链表 + 内存复用”</strong> 的设计，在多线程场景下性能远超原生 <code>new/delete</code>，尤其适合服务器、游戏引擎等对内存性能敏感的场景。核心优势在于：</p>
+<ol>
+<li>减少 90% 以上的系统调用；</li>
+<li>避免内存碎片，提高内存利用率；</li>
+<li>无锁设计，支持高效并发操作。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/3d5c5786/">https://hespethorn.github.io/posts/3d5c5786/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%86%85%E5%AD%98%E6%B1%A0/">内存池</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3d5c5786/" title="内存池的初步实现">内存池的初步实现</a><time datetime="2024-11-25T13:49:25.000Z" title="Created 2024-11-25 21:49:25">2024-11-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2bda76b6/" title="C++ STL 算法绑定成员函数问题整理">C++ STL 算法绑定成员函数问题整理</a><time datetime="2024-11-18T12:35:32.000Z" title="Created 2024-11-18 20:35:32">2024-11-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7334dfaa/" title="std::allocator 及 std::vector 原理实现">std::allocator 及 std::vector 原理实现</a><time datetime="2024-11-11T13:58:04.000Z" title="Created 2024-11-11 21:58:04">2024-11-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/62d215ed/" title="STL标准模板库内容整理">STL标准模板库内容整理</a><time datetime="2024-09-19T11:58:56.000Z" title="Created 2024-09-19 19:58:56">2024-09-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/84ef6e57/" title="C++ 实现高效单词转换工具">C++ 实现高效单词转换工具</a><time datetime="2024-09-14T15:13:13.000Z" title="Created 2024-09-14 23:13:13">2024-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/42d89b7/" title="《STL 源码剖析》读书笔记">《STL 源码剖析》读书笔记</a><time datetime="2024-09-07T13:11:17.000Z" title="Created 2024-09-07 21:11:17">2024-09-07</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

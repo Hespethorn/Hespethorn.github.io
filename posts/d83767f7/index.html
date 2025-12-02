@@ -1,0 +1,565 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>TCP 与 UDP 协议对比：抓包视角下的特性与应用分析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="导言在 TCP&#x2F;IP 协议簇的传输层体系中，传输控制协议（Transmission Control Protocol, TCP）与用户数据报协议（User Datagram Protocol, UDP）作为两种核心通信协议，分别承担着差异化的网络传输任务。本研究基于 Wireshark 等专业网络抓包工具采集的实证数据，系统性探究两种协议的技术架构、运行机制及其典型应用场景。 一、传输层">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析">
+<meta property="og:url" content="https://hespethorn.github.io/posts/d83767f7/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="导言在 TCP&#x2F;IP 协议簇的传输层体系中，传输控制协议（Transmission Control Protocol, TCP）与用户数据报协议（User Datagram Protocol, UDP）作为两种核心通信协议，分别承担着差异化的网络传输任务。本研究基于 Wireshark 等专业网络抓包工具采集的实证数据，系统性探究两种协议的技术架构、运行机制及其典型应用场景。 一、传输层">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2023-02-28T13:25:25.000Z">
+<meta property="article:modified_time" content="2025-07-12T15:49:33.158Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Computer-Networking">
+<meta property="article:tag" content="udp">
+<meta property="article:tag" content="tcp">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "TCP 与 UDP 协议对比：抓包视角下的特性与应用分析",
+  "url": "https://hespethorn.github.io/posts/d83767f7/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2023-02-28T13:25:25.000Z",
+  "dateModified": "2025-07-12T15:49:33.158Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/d83767f7/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'TCP 与 UDP 协议对比：抓包视角下的特性与应用分析',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2023-02-28T13:25:25.000Z" title="Created 2023-02-28 21:25:25">2023-02-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Computer-Networking/">Computer-Networking</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="导言"><a href="#导言" class="headerlink" title="导言"></a>导言</h2><p>在 TCP&#x2F;IP 协议簇的传输层体系中，传输控制协议（Transmission Control Protocol, TCP）与用户数据报协议（User Datagram Protocol, UDP）作为两种核心通信协议，分别承担着差异化的网络传输任务。本研究基于 Wireshark 等专业网络抓包工具采集的实证数据，系统性探究两种协议的技术架构、运行机制及其典型应用场景。</p>
+<h2 id="一、传输层协议概述"><a href="#一、传输层协议概述" class="headerlink" title="一、传输层协议概述"></a>一、传输层协议概述</h2><p>作为 OSI 七层模型的关键层级，传输层承担着端到端数据传输管理的核心职能，涵盖数据分段重组、传输可靠性保障、流量控制等重要功能。TCP 与 UDP 作为传输层的核心协议，其设计理念存在本质差异，这种差异性直接影响其在不同网络环境中的适用性。</p>
+<p>TCP 协议采用面向连接的通信模式，通过三次握手机制建立连接，四次挥手过程释放连接，从而实现数据的可靠传输。与之相对，UDP 协议采用无连接设计，省略连接建立与释放流程，仅负责将应用层数据封装为数据报进行传输，不保证数据的有序性与完整性。</p>
+<h2 id="二、TCP-协议的技术特性与抓包分析"><a href="#二、TCP-协议的技术特性与抓包分析" class="headerlink" title="二、TCP 协议的技术特性与抓包分析"></a>二、TCP 协议的技术特性与抓包分析</h2><h3 id="2-1-核心技术机制"><a href="#2-1-核心技术机制" class="headerlink" title="2.1 核心技术机制"></a>2.1 核心技术机制</h3><p>TCP 协议的可靠性保障体系由一系列关键机制构成：</p>
+<p><strong>三次握手机制</strong>：三次握手是 TCP 建立连接的核心过程，通过 SYN（同步请求）、SYN-ACK（同步确认）、ACK（确认应答）三个数据包的交互，实现双向连接的建立并完成初始序列号的同步，整个过程可分为以下三个阶段：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">第一次握手：客户端向服务器发送一个带有 SYN 标志位的数据包（Flags: 0x002 (SYN)），该数据包包含客户端随机生成的初始序列号（Sequence Number，简称 ISN_c），表示客户端请求建立连接，此时客户端进入 SYN_SENT 状态。</span><br><span class="line"></span><br><span class="line">第二次握手：服务器收到客户端的 SYN 包后，返回一个带有 SYN 和 ACK 标志位的数据包（Flags: 0x012 (SYN, ACK)）。其中 ACK 确认号为客户端序列号加 1（ACK = ISN_c + 1），表示服务器已正确接收客户端的连接请求；同时，服务器也会发送自己的初始序列号（ISN_s），此时服务器进入 SYN_RCVD 状态。</span><br><span class="line"></span><br><span class="line">第三次握手：客户端收到服务器的 SYN-ACK 包后，向服务器发送一个带有 ACK 标志位的数据包（Flags: 0x010 (ACK)），确认号为服务器序列号加 1（ACK = ISN_s + 1），表示客户端已正确接收服务器的响应，至此连接建立完成，客户端和服务器均进入 ESTABLISHED 状态 。</span><br></pre></td></tr></table></figure>
+<p><strong>四次挥手机制</strong>：当数据传输结束后，TCP 通过四次挥手断开连接，具体过程如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">第一次挥手：主动关闭方（通常是客户端）发送一个带有 FIN 标志位的数据包，表示自己不再发送数据，但仍可以接收数据，此时主动关闭方进入 FIN_WAIT_1 状态。</span><br><span class="line"></span><br><span class="line">第二次挥手：被动关闭方（服务器）收到 FIN 包后，立即返回一个 ACK 确认包，确认号为收到的 FIN 包序列号加 1，此时被动关闭方进入 CLOSE_WAIT 状态，主动关闭方收到 ACK 包后进入 FIN_WAIT_2 状态。在此阶段，被动关闭方仍可以继续向主动关闭方发送数据。</span><br><span class="line"></span><br><span class="line">第三次挥手：当被动关闭方数据发送完毕后，也会发送一个 FIN 包给主动关闭方，请求关闭连接，此时被动关闭方进入 LAST_ACK 状态。</span><br><span class="line"></span><br><span class="line">第四次挥手：主动关闭方收到被动关闭方的 FIN 包后，返回一个 ACK 确认包，确认号为收到的 FIN 包序列号加 1，然后进入 TIME_WAIT 状态。被动关闭方收到 ACK 包后，连接正式关闭，进入 CLOSED 状态。主动关闭方在 TIME_WAIT 状态会等待 2 倍的 MSL（Maximum Segment Lifetime，报文最大生存时间），以确保最后一个 ACK 包能成功到达对方，同时防止旧连接的数据包干扰新连接，之后主动关闭方也进入 CLOSED 状态。</span><br></pre></td></tr></table></figure>
+<p><strong>序列号与确认机制</strong>：协议为每个字节分配唯一的序列号（Sequence Number），接收方通过确认号（Acknowledgment Number）反馈已接收的数据字节范围，以此确保数据的有序传输。</p>
+<p><strong>流量控制机制</strong>：基于滑动窗口协议（Window Size）动态调节数据发送速率，接收方通过通告接收缓冲区大小，实现对发送方数据流量的有效控制。抓包数据中常见的Window: 65535字段即代表接收窗口大小。</p>
+<p><strong>拥塞控制机制</strong>：通过慢启动、拥塞避免等算法动态感知网络状态，有效防止因数据过载导致的网络拥塞问题。</p>
+<h3 id="2-2-抓包实例解析"><a href="#2-2-抓包实例解析" class="headerlink" title="2.2 抓包实例解析"></a>2.2 抓包实例解析</h3><p>以某 HTTP 连接建立过程中的抓包数据为例，详细解析 TCP 协议的关键字段：</p>
+<img src="/img/PageCode/76.1.png" alt="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析" style="width: 90%;height: auto;margin: 0 auto;display: block;border: 3px solid #f0f0f0;border-radius: 12px;box-shadow: 0 4px 8px rgba(0,0,0,0.1);" loading='lazy'>
+
+<p><strong>协议</strong>：Transmission Control Protocol（TCP）</p>
+<p>TCP 是面向连接的可靠传输协议，通过三次握手建立连接，四次挥手断开连接，在数据传输过程中提供流量控制、拥塞控制和错误校验机制，确保数据准确无误地到达目的地。</p>
+<p><strong>Source Port</strong>：64833</p>
+<p>源端口号由客户端随机分配，取值范围在 1024-65535 之间，用于标识客户端应用进程。在本实例中，64833 端口作为客户端与服务器通信的标识，确保服务器返回的数据能够准确投递到发起请求的进程。</p>
+<p><strong>Destination Port</strong>：80</p>
+<p>目的端口号固定指向服务器端的服务端口，如 HTTP 默认使用 80 端口，HTTPS 使用 443 端口。通过目的端口，数据包能够被准确路由到服务器上对应的服务进程。</p>
+<p><strong>TCP 段长度（TCP Segment Len）</strong>：0</p>
+<p>该值表示 TCP 段中数据部分的长度（不包含头部）。此处为 0 说明该数据包仅包含 TCP 头部信息，通常出现在连接建立阶段的 SYN 包或连接关闭阶段的 FIN 包中。</p>
+<p><strong>序列号（Sequence Number）</strong></p>
+<ul>
+<li>**相对序列号：**0</li>
+</ul>
+<p>为便于分析和计算，抓包工具通常会将原始序列号进行相对化处理，以当前连接的初始序列号为基准，将后续序列号转换为相对值。</p>
+<ul>
+<li>**原始序列号：**1245470613</li>
+</ul>
+<p>真实的 32 位序列号，用于标识该 TCP 段在数据流中的位置。在数据传输过程中，接收方通过序列号重组分段的数据，发送方则根据确认号判断哪些数据已被成功接收。</p>
+<p><strong>确认号（Acknowledgment Number）</strong></p>
+<ul>
+<li><p>**相对确认号：**0</p>
+</li>
+<li><p>**原始确认号：**0</p>
+</li>
+</ul>
+<p>确认号用于向发送方告知已成功接收的数据序列号，表明期望接收的下一个字节的编号。初始连接阶段，由于尚未接收任何数据，确认号为 0 。</p>
+<p><strong>头部长度（Header Length）</strong>：40 bytes</p>
+<p>TCP 头部的最小长度为 20 字节，包含源端口、目的端口、序列号、确认号等基础字段。此处头部长度为 40 字节，表明该数据包启用了 TCP 选项字段（如窗口扩大因子、时间戳等），用于增强连接性能和实现更精细的控制。</p>
+<p><strong>标志位（Flags）</strong>：0x002（SYN）</p>
+<p>TCP 头部包含多个<strong>标志位</strong>，用于控制连接状态和数据传输行为：</p>
+<ul>
+<li><p><strong>SYN（同步位）</strong>：值为 1 时表示这是一个用于建立连接的同步包，客户端通过发送 SYN 包向服务器发起连接请求，并携带初始序列号。</p>
+</li>
+<li><p><strong>ACK（确认位）</strong>：用于确认收到的数据，通常与确认号配合使用。</p>
+</li>
+<li><p><strong>FIN（结束位）</strong>：用于关闭连接，发送方完成数据传输后发送 FIN 包请求断开连接。</p>
+</li>
+</ul>
+<p><strong>窗口大小（Window）</strong>：65535</p>
+<p>该字段表示接收方当前接收缓冲区的空闲空间大小（以字节为单位），用于实现流量控制。发送方根据该值调整发送数据的速率，避免接收方缓冲区溢出。此处窗口大小为最大值 65535 ，表明接收方当前具备充足的接收能力。</p>
+<p><strong>校验和（Checksum）</strong>：0xf099</p>
+<p>校验和用于检测数据包在传输过程中是否出现错误。发送方在构建数据包时，根据头部和数据部分计算校验和并填充该字段；接收方收到数据包后重新计算校验和，并与接收到的值进行对比，若不一致则丢弃该数据包，从而保证数据传输的准确性。</p>
+<h2 id="三、UDP-协议的技术特性与抓包分析"><a href="#三、UDP-协议的技术特性与抓包分析" class="headerlink" title="三、UDP 协议的技术特性与抓包分析"></a>三、UDP 协议的技术特性与抓包分析</h2><h3 id="3-1-协议设计特点"><a href="#3-1-协议设计特点" class="headerlink" title="3.1 协议设计特点"></a>3.1 协议设计特点</h3><p>UDP 协议的极简设计赋予其独特的技术优势：</p>
+<ul>
+<li><p><strong>无连接特性</strong>：无需建立连接即可直接发送数据，有效减少握手开销。其协议首部仅包含源端口、目的端口、长度和校验和四个字段，固定长度为 8 字节，显著低于 TCP 协议的头部开销。</p>
+</li>
+<li><p><strong>实时性优先策略</strong>：由于不执行数据重传、流量控制等操作，UDP 协议的数据传输延迟大幅降低，特别适用于语音、视频等实时数据流的传输场景。</p>
+</li>
+<li><p><strong>传输不可靠性</strong>：该协议不保证数据的有序到达，数据包存在丢失、重复或乱序的可能性，因此需要依赖应用层实现必要的错误纠正机制。</p>
+</li>
+</ul>
+<h3 id="3-2-QQ-通信中的-UDP-应用"><a href="#3-2-QQ-通信中的-UDP-应用" class="headerlink" title="3.2 QQ 通信中的 UDP 应用"></a>3.2 QQ 通信中的 UDP 应用</h3><p>通过对 QQ 实时通信场景的抓包分析，可以清晰观察到 UDP 协议的典型应用特征：</p>
+<ul>
+<li><strong>端口动态分配机制</strong>：QQ 语音 &#x2F; 视频通话使用的 UDP 端口通常在 16384-65535 的动态端口范围内分配。通过抓包工具筛选<code>udp</code>协议并关联 QQ 进程，可以获取具体的端口号信息（如<code>Src Port</code>: 49876, <code>Dst Port</code>: 23456）。</li>
+<li><strong>报文传输特征</strong>：在实时通信过程中，UDP 数据包呈现出高频率发送、单包长度较小的特点，常用于承载音频帧或视频分片数据。校验和（<code>Checksum</code>）字段用于基本的错误检测，但不强制进行校验验证。</li>
+<li><strong>加密传输策略</strong>：QQ 对 UDP 承载的媒体数据实施加密处理，因此抓包获取的原始字节流需经过解密处理，方可解析为实际内容，这一设计有效弥补了 UDP 协议在可靠性方面的固有缺陷。</li>
+</ul>
+<h3 id="3-3-抓包实例解析-信息加密了，仅案例讲解"><a href="#3-3-抓包实例解析-信息加密了，仅案例讲解" class="headerlink" title="3.3 抓包实例解析(信息加密了，仅案例讲解)"></a>3.3 抓包实例解析(信息加密了，仅案例讲解)</h3><p>以 QQ 语音通话过程中的抓包数据为例，详细解析 UDP 协议的关键字段：</p>
+<p><strong>协议</strong>：User Datagram Protocol（UDP）</p>
+<p>UDP 是无连接的不可靠传输协议，无需经过握手建立连接，直接将数据封装成报文进行传输，适用于对实时性要求高但允许少量数据丢失的场景。</p>
+<p><strong>Source Port</strong>：49876</p>
+<p>源端口号由客户端在动态端口范围（16384-65535）内随机分配，用于标识客户端应用进程。在 QQ 语音通话中，49876 端口作为客户端与服务器通信的标识，确保接收端返回的数据能准确投递到对应进程。</p>
+<p><strong>Destination Port</strong>：23456</p>
+<p>目的端口号指向服务器端或接收端的服务端口，通过该端口，数据包能够被准确路由到目标进程。</p>
+<p><strong>UDP 长度（Length）</strong>：148</p>
+<p>该值表示 UDP 报文的总长度（包含头部和数据部分），UDP 头部固定为 8 字节，因此实际数据部分长度为 140 字节。</p>
+<p><strong>校验和（Checksum）</strong>：0x1234</p>
+<p>校验和用于检测数据包在传输过程中的错误。不同于 TCP 强制校验，UDP 校验和为可选字段。发送方根据头部和数据计算校验和，接收方验证时若不一致，可选择丢弃数据包。由于 QQ 对媒体数据加密，抓包工具显示的原始校验和可能需解密后验证。</p>
+<p><strong>标志位（Flags）</strong>：无</p>
+<p>UDP 协议头部无类似 TCP 的标志位设计，其极简头部仅包含源端口、目的端口、长度和校验和四个字段，固定长度 8 字节，显著降低协议开销。</p>
+<h2 id="4-TCP-与-UDP-的对比分析及适用场景"><a href="#4-TCP-与-UDP-的对比分析及适用场景" class="headerlink" title="4. TCP 与 UDP 的对比分析及适用场景"></a>4. TCP 与 UDP 的对比分析及适用场景</h2><table>
+<thead>
+<tr>
+<th>技术维度</th>
+<th>TCP 协议</th>
+<th>UDP 协议</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>连接方式</td>
+<td>面向连接（三次握手）</td>
+<td>无连接</td>
+</tr>
+<tr>
+<td>可靠性</td>
+<td>确保数据有序、完整传输</td>
+<td>不保证传输可靠性</td>
+</tr>
+<tr>
+<td>传输效率</td>
+<td>较低（控制机制开销大）</td>
+<td>较高（头部简单、无重传机制）</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>网页浏览、文件传输等</td>
+<td>实时音视频、DNS 查询等</td>
+</tr>
+<tr>
+<td>头部开销</td>
+<td>20-60 字节</td>
+<td>8 字节</td>
+</tr>
+<tr>
+<td>流量控制</td>
+<td>支持（滑动窗口协议）</td>
+<td>不支持</td>
+</tr>
+</tbody></table>
+<p>在实际网络架构中，两种协议往往协同工作。以微信应用为例，文本消息传输采用 TCP 协议确保消息的可靠送达，而语音通话功能则选用 UDP 协议保障实时性。在浏览器应用中，通过 TCP 协议获取网页内容，同时利用 UDP 协议实现 WebSocket 实时通信。这种混合使用模式充分发挥了两种协议的技术优势，有效满足了复杂业务场景的多样化需求。</p>
+<h2 id="5-结论"><a href="#5-结论" class="headerlink" title="5. 结论"></a>5. 结论</h2><p>TCP 与 UDP 作为网络传输领域的两大核心协议，其独特的技术特性决定了各自不可替代的应用价值。TCP 协议通过复杂的控制机制实现数据的可靠传输，构成了互联网数据交互的基础保障体系；而 UDP 协议则以简洁高效的设计理念，满足了实时通信业务的特殊需求，在多媒体传输领域发挥着关键作用。</p>
+<p>基于网络抓包技术的实证分析表明，现代网络应用（如微信）通常不会单一依赖某种协议，而是根据具体业务场景动态选择最优传输策略。随着 5G、物联网等新兴技术的快速发展，尽管两种协议的应用边界可能出现一定程度的融合，但基于业务需求的协议选择逻辑仍将长期保持稳定，共同支撑构建更加高效、可靠的网络通信生态系统。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/d83767f7/">https://hespethorn.github.io/posts/d83767f7/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Computer-Networking/">Computer-Networking</a><a class="post-meta__tags" href="/tags/udp/">udp</a><a class="post-meta__tags" href="/tags/tcp/">tcp</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">405</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">277</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">65</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/64148787/" title="TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践">TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践</a><time datetime="2023-06-28T13:06:21.000Z" title="Created 2023-06-28 21:06:21">2023-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d568c8d6/" title="进程间通信：pipe 与 socketpair 对比">进程间通信：pipe 与 socketpair 对比</a><time datetime="2023-06-21T10:50:11.000Z" title="Created 2023-06-21 18:50:11">2023-06-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3d48b2b/" title="多进程文件传输服务器与客户端实现">多进程文件传输服务器与客户端实现</a><time datetime="2023-06-16T12:55:11.000Z" title="Created 2023-06-16 20:55:11">2023-06-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/449dee1e/" title="网络编程中的系统调用与信号处理机制">网络编程中的系统调用与信号处理机制</a><time datetime="2023-06-10T11:55:51.000Z" title="Created 2023-06-10 19:55:51">2023-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9df713de/" title="多进程并发服务器的选择与放弃">多进程并发服务器的选择与放弃</a><time datetime="2023-05-28T14:00:55.000Z" title="Created 2023-05-28 22:00:55">2023-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c6e7059/" title="Linux 进程间文件描述符传输技术详解">Linux 进程间文件描述符传输技术详解</a><time datetime="2023-05-22T14:00:55.000Z" title="Created 2023-05-22 22:00:55">2023-05-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3a91ba7/" title="多进程编程：早期服务器实现逻辑">多进程编程：早期服务器实现逻辑</a><time datetime="2023-05-16T11:50:22.000Z" title="Created 2023-05-16 19:50:22">2023-05-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b71210bb/" title="聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现">聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现</a><time datetime="2023-05-12T12:10:55.000Z" title="Created 2023-05-12 20:10:55">2023-05-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4667e6/" title="select 与 epoll 的核心区别整理">select 与 epoll 的核心区别整理</a><time datetime="2023-05-11T13:20:00.000Z" title="Created 2023-05-11 21:20:00">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a898a0c/" title="基于多人聊天室系统的实现，详细学习 epoll 函数基础">基于多人聊天室系统的实现，详细学习 epoll 函数基础</a><time datetime="2023-05-11T12:28:55.000Z" title="Created 2023-05-11 20:28:55">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f26b2da3/" title="Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</a><time datetime="2023-05-06T14:55:14.000Z" title="Created 2023-05-06 22:55:14">2023-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9c7e901d/" title="基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践">基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践</a><time datetime="2023-04-30T12:22:10.000Z" title="Created 2023-04-30 20:22:10">2023-04-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/800c7140/" title="基于多人聊天室系统的实现，详细学习select 函数基础">基于多人聊天室系统的实现，详细学习select 函数基础</a><time datetime="2023-04-26T15:42:10.000Z" title="Created 2023-04-26 23:42:10">2023-04-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bb924032/" title="Linux：基于 select 多路复用的 C 语言多人聊天室实现">Linux：基于 select 多路复用的 C 语言多人聊天室实现</a><time datetime="2023-04-21T14:12:40.000Z" title="Created 2023-04-21 22:12:40">2023-04-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6841069c/" title="基于 TCP 协议的双向通信程序实现与解析">基于 TCP 协议的双向通信程序实现与解析</a><time datetime="2023-04-15T13:10:43.000Z" title="Created 2023-04-15 21:10:43">2023-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cb884869/" title="基于 UDP 协议的双向通信程序实现与解析">基于 UDP 协议的双向通信程序实现与解析</a><time datetime="2023-04-08T12:50:13.000Z" title="Created 2023-04-08 20:50:13">2023-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/266e4756/" title="TCP 泛洪攻击">TCP 泛洪攻击</a><time datetime="2023-03-30T14:16:08.000Z" title="Created 2023-03-30 22:16:08">2023-03-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/29e62ba/" title="《Linux C 语言 TCP Socket 编程详解》学习笔记">《Linux C 语言 TCP Socket 编程详解》学习笔记</a><time datetime="2023-03-24T14:11:13.000Z" title="Created 2023-03-24 22:11:13">2023-03-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a30c1e5/" title="基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究">基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究</a><time datetime="2023-03-19T09:36:28.000Z" title="Created 2023-03-19 17:36:28">2023-03-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/634cd8cb/" title="URL：网络资源的精准定位机制">URL：网络资源的精准定位机制</a><time datetime="2023-03-12T09:36:28.000Z" title="Created 2023-03-12 17:36:28">2023-03-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/84e78701/" title="网络理论核心知识整理">网络理论核心知识整理</a><time datetime="2023-03-06T14:14:09.000Z" title="Created 2023-03-06 22:14:09">2023-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</a><time datetime="2023-02-28T13:25:25.000Z" title="Created 2023-02-28 21:25:25">2023-02-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="HTTP 无状态性相关概念详解">HTTP 无状态性相关概念详解</a><time datetime="2023-02-20T11:44:27.000Z" title="Created 2023-02-20 19:44:27">2023-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）">从Socket编程到QUIC协议（Computer-Networking）</a><time datetime="2022-05-26T15:40:56.000Z" title="Created 2022-05-26 23:40:56">2022-05-26</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/518799ed/" title="TCP与MQTT握手机制">TCP与MQTT握手机制</a><time datetime="2025-12-15T02:55:11.000Z" title="Created 2025-12-15 10:55:11">2025-12-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d5df5523/" title="MQTT QoS">MQTT QoS</a><time datetime="2025-12-12T10:44:21.000Z" title="Created 2025-12-12 18:44:21">2025-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c209e9c6/" title="MQTT 保留消息与遗嘱机制">MQTT 保留消息与遗嘱机制</a><time datetime="2025-12-09T10:33:21.000Z" title="Created 2025-12-09 18:33:21">2025-12-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
