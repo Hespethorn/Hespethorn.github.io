@@ -1,0 +1,573 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>std::async异步编程 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="在 C++11 之前，实现异步任务往往需要手动管理线程（std::thread）、同步原语（std::mutex、std::condition_variable），不仅代码繁琐，还容易出现线程泄漏、死锁等问题。C++11 引入的 std::async 彻底改变了这一现状——它是高层异步编程接口，能轻松创建异步任务并获取结果，无需手动管理线程生命周期，是异步编程的“瑞士军刀”。 本文将从 核心概念、">
+<meta property="og:type" content="article">
+<meta property="og:title" content="std::async异步编程">
+<meta property="og:url" content="https://hespethorn.github.io/posts/7241a200/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="在 C++11 之前，实现异步任务往往需要手动管理线程（std::thread）、同步原语（std::mutex、std::condition_variable），不仅代码繁琐，还容易出现线程泄漏、死锁等问题。C++11 引入的 std::async 彻底改变了这一现状——它是高层异步编程接口，能轻松创建异步任务并获取结果，无需手动管理线程生命周期，是异步编程的“瑞士军刀”。 本文将从 核心概念、">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-12-10T06:49:34.000Z">
+<meta property="article:modified_time" content="2025-12-10T06:52:35.838Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="std::async">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "std::async异步编程",
+  "url": "https://hespethorn.github.io/posts/7241a200/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-12-10T06:49:34.000Z",
+  "dateModified": "2025-12-10T06:52:35.838Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/7241a200/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":"ture"},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'std::async异步编程',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">409</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">284</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">66</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">std::async异步编程</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-house-chimney"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签云</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> categories</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏中心</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-hourglass-start"></i><span> 时间线</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">std::async异步编程</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-12-10T06:49:34.000Z" title="Created 2025-12-10 14:49:34">2025-12-10</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/C/">C++</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/C/Foundational-Syntax-and-Core-Concepts/">Foundational Syntax and Core Concepts</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>在 C++11 之前，实现异步任务往往需要手动管理线程（<code>std::thread</code>）、同步原语（<code>std::mutex</code>、<code>std::condition_variable</code>），不仅代码繁琐，还容易出现线程泄漏、死锁等问题。C++11 引入的 <code>std::async</code> 彻底改变了这一现状——它是高层异步编程接口，能轻松创建异步任务并获取结果，无需手动管理线程生命周期，是异步编程的“瑞士军刀”。</p>
+<p>本文将从 <strong>核心概念、使用场景、参数详解、返回值处理、常见陷阱</strong> 五个维度，带你彻底掌握 <code>std::async</code>。</p>
+<h2 id="一、核心概念：std-async-是什么？"><a href="#一、核心概念：std-async-是什么？" class="headerlink" title="一、核心概念：std::async 是什么？"></a>一、核心概念：<code>std::async</code> 是什么？</h2><p><code>std::async</code> 是 <code>&lt;future&gt;</code> 头文件中的函数模板，作用是 <strong>启动一个异步任务</strong>，并返回一个 <code>std::future</code> 对象。核心特点：</p>
+<ul>
+<li>异步执行：任务可能在新线程中执行，也可能在调用 <code>get()</code>&#x2F;<code>wait()</code> 时同步执行（取决于启动策略）；</li>
+<li>结果获取：通过返回的 <code>std::future</code> 对象获取任务执行结果（或异常）；</li>
+<li>线程管理：由标准库管理线程（如线程池复用），无需手动 <code>join()</code> 或 <code>detach()</code>，避免线程泄漏。</li>
+</ul>
+<h3 id="核心原理"><a href="#核心原理" class="headerlink" title="核心原理"></a>核心原理</h3><p><code>std::async</code> 将任务（函数&#x2F;函数对象）封装后，交给“执行器”（可能是新线程、线程池，或调用线程本身）执行。<code>std::future</code> 作为“结果占位符”，阻塞等待任务完成并获取结果。</p>
+<h2 id="二、基础用法：快速上手"><a href="#二、基础用法：快速上手" class="headerlink" title="二、基础用法：快速上手"></a>二、基础用法：快速上手</h2><p>先看一个最简单的例子，感受 <code>std::async</code> 的便捷性：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;future&gt;</span>   <span class="comment">// 包含 std::async 和 std::future</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;chrono&gt;</span>   <span class="comment">// 用于睡眠模拟耗时操作</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 耗时任务：计算 a + b，模拟 2 秒耗时</span></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">add</span><span class="params">(<span class="type">int</span> a, <span class="type">int</span> b)</span> </span>&#123;</span><br><span class="line">    std::this_thread::<span class="built_in">sleep_for</span>(std::chrono::<span class="built_in">seconds</span>(<span class="number">2</span>));</span><br><span class="line">    <span class="keyword">return</span> a + b;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 1. 启动异步任务，返回 future 对象</span></span><br><span class="line">    <span class="comment">// std::launch::async 强制创建新线程执行</span></span><br><span class="line">    std::future&lt;<span class="type">int</span>&gt; fut = std::<span class="built_in">async</span>(std::launch::async, add, <span class="number">3</span>, <span class="number">4</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 主线程可并行执行其他操作</span></span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;主线程执行其他任务...&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    std::this_thread::<span class="built_in">sleep_for</span>(std::chrono::<span class="built_in">seconds</span>(<span class="number">1</span>));  <span class="comment">// 模拟主线程工作</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 获取异步任务结果（若未完成，会阻塞等待）</span></span><br><span class="line">    <span class="type">int</span> result = fut.<span class="built_in">get</span>();  <span class="comment">// 阻塞到 add 执行完成，返回 7</span></span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;异步任务结果：3 + 4 = &quot;</span> &lt;&lt; result &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="输出结果"><a href="#输出结果" class="headerlink" title="输出结果"></a>输出结果</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">主线程执行其他任务...</span><br><span class="line">异步任务结果：3 + 4 = 7</span><br></pre></td></tr></table></figure>
+
+<h3 id="关键说明"><a href="#关键说明" class="headerlink" title="关键说明"></a>关键说明</h3><ul>
+<li>无需手动创建线程：<code>std::async</code> 自动管理线程，无需 <code>join()</code>；</li>
+<li><code>get()</code> 阻塞等待：若任务未完成，<code>fut.get()</code> 会阻塞主线程，直到任务返回；</li>
+<li>任务参数传递：<code>std::async</code> 支持变长参数，直接传递给任务函数（值传递，若需引用传递需用 <code>std::ref</code>&#x2F;<code>std::cref</code>）。</li>
+</ul>
+<h2 id="三、关键参数：启动策略（Launch-Policy）"><a href="#三、关键参数：启动策略（Launch-Policy）" class="headerlink" title="三、关键参数：启动策略（Launch Policy）"></a>三、关键参数：启动策略（Launch Policy）</h2><p><code>std::async</code> 的第一个参数是 <strong>启动策略</strong>（可选，默认由编译器决定），决定任务的执行方式。C++11 定义了两种策略，C++17 新增一种：</p>
+<table>
+<thead>
+<tr>
+<th>启动策略</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>std::launch::async</code></td>
+<td>强制异步：创建新线程，任务立即开始执行</td>
+</tr>
+<tr>
+<td><code>std::launch::deferred</code></td>
+<td>延迟同步：任务不立即执行，直到调用 <code>future::get()</code> 或 <code>future::wait()</code>，此时在调用线程中执行</td>
+</tr>
+<tr>
+<td>&#96;std::launch::async</td>
+<td>std::launch::deferred&#96;</td>
+</tr>
+</tbody></table>
+<h3 id="策略对比示例"><a href="#策略对比示例" class="headerlink" title="策略对比示例"></a>策略对比示例</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;future&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;chrono&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">task</span><span class="params">(<span class="type">const</span> std::string&amp; name)</span> </span>&#123;</span><br><span class="line">    std::cout &lt;&lt; name &lt;&lt; <span class="string">&quot; 执行线程 ID：&quot;</span> &lt;&lt; std::this_thread::<span class="built_in">get_id</span>() &lt;&lt; std::endl;</span><br><span class="line">    std::this_thread::<span class="built_in">sleep_for</span>(std::chrono::<span class="built_in">seconds</span>(<span class="number">1</span>));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;主线程 ID：&quot;</span> &lt;&lt; std::this_thread::<span class="built_in">get_id</span>() &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 1. 强制异步（新线程）</span></span><br><span class="line">    <span class="keyword">auto</span> fut1 = std::<span class="built_in">async</span>(std::launch::async, task, <span class="string">&quot;async 任务&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 延迟同步（主线程执行）</span></span><br><span class="line">    <span class="keyword">auto</span> fut2 = std::<span class="built_in">async</span>(std::launch::deferred, task, <span class="string">&quot;deferred 任务&quot;</span>);</span><br><span class="line"></span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;等待 async 任务...&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    fut<span class="number">1.</span><span class="built_in">wait</span>();  <span class="comment">// 等待异步任务完成</span></span><br><span class="line"></span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;触发 deferred 任务（调用 get()）...&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    fut<span class="number">2.</span><span class="built_in">get</span>();  <span class="comment">// 此时 deferred 任务才执行，线程 ID 与主线程一致</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="输出结果（示例）"><a href="#输出结果（示例）" class="headerlink" title="输出结果（示例）"></a>输出结果（示例）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">主线程 ID：140703353482048</span><br><span class="line">等待 async 任务...</span><br><span class="line">async 任务 执行线程 ID：140703353477888  // 新线程</span><br><span class="line">触发 deferred 任务（调用 get()）...</span><br><span class="line">deferred 任务 执行线程 ID：140703353482048  // 主线程</span><br></pre></td></tr></table></figure>
+
+<h3 id="策略选择建议"><a href="#策略选择建议" class="headerlink" title="策略选择建议"></a>策略选择建议</h3><ul>
+<li>若任务耗时较长（如 IO 操作、计算密集型），用 <code>std::launch::async</code> 并行执行，提升效率；</li>
+<li>若任务耗时极短，用 <code>std::launch::deferred</code> 避免线程创建开销；</li>
+<li>若不确定任务耗时，用默认策略（编译器自适应），但需注意默认策略可能导致“意外同步”（如任务被延迟到 <code>get()</code> 时执行）。</li>
+</ul>
+<h2 id="四、返回值与异常处理"><a href="#四、返回值与异常处理" class="headerlink" title="四、返回值与异常处理"></a>四、返回值与异常处理</h2><p><code>std::async</code> 的任务函数支持返回任意类型（包括自定义类型），结果通过 <code>std::future::get()</code> 获取；若任务执行中抛出异常，<code>get()</code> 会重新抛出该异常，便于统一处理。</p>
+<h3 id="1-返回自定义类型"><a href="#1-返回自定义类型" class="headerlink" title="1. 返回自定义类型"></a>1. 返回自定义类型</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;future&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Result</span> &#123;</span><br><span class="line">    <span class="type">int</span> code;</span><br><span class="line">    std::string msg;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="function">Result <span class="title">fetch_data</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::this_thread::<span class="built_in">sleep_for</span>(std::chrono::<span class="built_in">seconds</span>(<span class="number">1</span>));</span><br><span class="line">    <span class="keyword">return</span> &#123;<span class="number">200</span>, <span class="string">&quot;数据获取成功&quot;</span>&#125;;  <span class="comment">// 返回自定义结构体</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> fut = std::<span class="built_in">async</span>(std::launch::async, fetch_data);</span><br><span class="line">    Result res = fut.<span class="built_in">get</span>();  <span class="comment">// 获取自定义类型结果</span></span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;状态码：&quot;</span> &lt;&lt; res.code &lt;&lt; <span class="string">&quot;，信息：&quot;</span> &lt;&lt; res.msg &lt;&lt; std::endl;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-异常处理"><a href="#2-异常处理" class="headerlink" title="2. 异常处理"></a>2. 异常处理</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;future&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdexcept&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">divide</span><span class="params">(<span class="type">int</span> a, <span class="type">int</span> b)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (b == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">throw</span> std::<span class="built_in">runtime_error</span>(<span class="string">&quot;除零错误！&quot;</span>);  <span class="comment">// 任务中抛出异常</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> a / b;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> fut = std::<span class="built_in">async</span>(std::launch::async, divide, <span class="number">10</span>, <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="type">int</span> result = fut.<span class="built_in">get</span>();  <span class="comment">// 异常会在此处重新抛出</span></span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;结果：&quot;</span> &lt;&lt; result &lt;&lt; std::endl;</span><br><span class="line">    &#125; <span class="built_in">catch</span> (<span class="type">const</span> std::runtime_error&amp; e) &#123;</span><br><span class="line">        std::cerr &lt;&lt; <span class="string">&quot;捕获异常：&quot;</span> &lt;&lt; e.<span class="built_in">what</span>() &lt;&lt; std::endl;  <span class="comment">// 输出：除零错误！</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="关键注意"><a href="#关键注意" class="headerlink" title="关键注意"></a>关键注意</h3><ul>
+<li><code>future::get()</code> 只能调用一次：调用后 <code>future</code> 变为“无效状态”，再次调用会导致未定义行为（若需多次获取结果，用 <code>std::shared_future</code>）；</li>
+<li>异常必须通过 <code>get()</code> 捕获：若任务抛出异常但未调用 <code>get()</code>，<code>future</code> 析构时会调用 <code>std::terminate()</code> 终止程序。</li>
+</ul>
+<h2 id="五、高级用法：std-shared-future-多线程共享结果"><a href="#五、高级用法：std-shared-future-多线程共享结果" class="headerlink" title="五、高级用法：std::shared_future 多线程共享结果"></a>五、高级用法：<code>std::shared_future</code> 多线程共享结果</h2><p><code>std::future</code> 是“独占所有权”的——只能调用一次 <code>get()</code>。若多个线程需要获取同一个异步任务的结果，需用 <code>std::shared_future</code>（共享所有权，支持多次 <code>get()</code>）。</p>
+<h3 id="用法示例"><a href="#用法示例" class="headerlink" title="用法示例"></a>用法示例</h3><figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;future&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;thread&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;vector&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">calculate</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::this_thread::<span class="built_in">sleep_for</span>(std::chrono::<span class="built_in">seconds</span>(<span class="number">2</span>));</span><br><span class="line">    <span class="keyword">return</span> <span class="number">42</span>;  <span class="comment">// 唯一结果，多线程共享</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">print_result</span><span class="params">(std::shared_future&lt;<span class="type">int</span>&gt; fut, <span class="type">const</span> std::string&amp; thread_name)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="type">int</span> res = fut.<span class="built_in">get</span>();  <span class="comment">// 多个线程可多次调用 get()</span></span><br><span class="line">        std::cout &lt;&lt; thread_name &lt;&lt; <span class="string">&quot; 获取结果：&quot;</span> &lt;&lt; res &lt;&lt; std::endl;</span><br><span class="line">    &#125; <span class="built_in">catch</span> (<span class="type">const</span> std::exception&amp; e) &#123;</span><br><span class="line">        std::cerr &lt;&lt; thread_name &lt;&lt; <span class="string">&quot; 捕获异常：&quot;</span> &lt;&lt; e.<span class="built_in">what</span>() &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 1. 创建 async 任务，获取 future</span></span><br><span class="line">    std::future&lt;<span class="type">int</span>&gt; fut = std::<span class="built_in">async</span>(std::launch::async, calculate);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 转换为 shared_future（共享所有权）</span></span><br><span class="line">    std::shared_future&lt;<span class="type">int</span>&gt; shared_fut = fut.<span class="built_in">share</span>();</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 多个线程共享结果</span></span><br><span class="line">    std::vector&lt;std::thread&gt; threads;</span><br><span class="line">    threads.<span class="built_in">emplace_back</span>(print_result, shared_fut, <span class="string">&quot;线程1&quot;</span>);</span><br><span class="line">    threads.<span class="built_in">emplace_back</span>(print_result, shared_fut, <span class="string">&quot;线程2&quot;</span>);</span><br><span class="line">    threads.<span class="built_in">emplace_back</span>(print_result, shared_fut, <span class="string">&quot;线程3&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 等待所有线程完成</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="keyword">auto</span>&amp; t : threads) &#123;</span><br><span class="line">        t.<span class="built_in">join</span>();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="输出结果-1"><a href="#输出结果-1" class="headerlink" title="输出结果"></a>输出结果</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">线程1 获取结果：42</span><br><span class="line">线程2 获取结果：42</span><br><span class="line">线程3 获取结果：42</span><br></pre></td></tr></table></figure>
+
+<h2 id="六、常见陷阱与避坑指南"><a href="#六、常见陷阱与避坑指南" class="headerlink" title="六、常见陷阱与避坑指南"></a>六、常见陷阱与避坑指南</h2><p><code>std::async</code> 看似简单，但使用不当会导致隐藏问题，以下是高频陷阱：</p>
+<h3 id="陷阱-1：默认策略导致“意外同步”"><a href="#陷阱-1：默认策略导致“意外同步”" class="headerlink" title="陷阱 1：默认策略导致“意外同步”"></a>陷阱 1：默认策略导致“意外同步”</h3><p>默认策略（<code>async | deferred</code>）下，编译器可能选择 <code>deferred</code>，导致任务延迟到 <code>get()</code> 时执行，若 <code>get()</code> 在主线程调用，相当于同步执行，无法发挥异步优势。</p>
+<p><strong>避坑</strong>：明确指定 <code>std::launch::async</code> 强制异步，或确保 <code>get()</code>&#x2F;<code>wait()</code> 在合适的时机调用。</p>
+<h3 id="陷阱-2：future-析构阻塞"><a href="#陷阱-2：future-析构阻塞" class="headerlink" title="陷阱 2：future 析构阻塞"></a>陷阱 2：<code>future</code> 析构阻塞</h3><p><code>std::future</code> 的析构函数会阻塞，直到异步任务完成（仅针对 <code>std::launch::async</code> 策略）。若不小心在局部作用域创建 <code>future</code>，会导致当前作用域退出时阻塞。</p>
+<p><strong>反例（错误）</strong>：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">func</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 局部 future，作用域结束时析构，会阻塞等待任务完成</span></span><br><span class="line">    <span class="keyword">auto</span> fut = std::<span class="built_in">async</span>(std::launch::async, []() &#123;</span><br><span class="line">        std::this_thread::<span class="built_in">sleep_for</span>(std::chrono::<span class="built_in">seconds</span>(<span class="number">2</span>));</span><br><span class="line">    &#125;);</span><br><span class="line">    <span class="comment">// fut 析构，阻塞 2 秒</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>避坑</strong>：若无需获取结果，仍需保留 <code>future</code> 直到任务完成，或用 <code>std::ignore</code> 接收（不推荐，仍会阻塞），若确实无需等待结果，可改用 <code>std::thread</code> + <code>detach()</code>（需确保任务生命周期安全）。</p>
+<h3 id="陷阱-3：引用传递参数未用-std-ref"><a href="#陷阱-3：引用传递参数未用-std-ref" class="headerlink" title="陷阱 3：引用传递参数未用 std::ref"></a>陷阱 3：引用传递参数未用 <code>std::ref</code></h3><p><code>std::async</code> 的参数默认是 <strong>值传递</strong>，若任务函数需要修改外部变量（引用参数），必须用 <code>std::ref</code>（非 const 引用）或 <code>std::cref</code>（const 引用）包装，否则传递的是拷贝，修改无效。</p>
+<p><strong>反例（错误）</strong>：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">increment</span><span class="params">(<span class="type">int</span>&amp; x)</span> </span>&#123; x++; &#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">int</span> a = <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// 错误：传递的是 a 的拷贝，a 不会被修改</span></span><br><span class="line">    <span class="keyword">auto</span> fut = std::<span class="built_in">async</span>(std::launch::async, increment, a);</span><br><span class="line">    fut.<span class="built_in">get</span>();</span><br><span class="line">    std::cout &lt;&lt; a &lt;&lt; std::endl;  <span class="comment">// 输出 0，而非 1</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>正例</strong>：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">auto</span> fut = std::<span class="built_in">async</span>(std::launch::async, increment, std::<span class="built_in">ref</span>(a));</span><br><span class="line">fut.<span class="built_in">get</span>();</span><br><span class="line">std::cout &lt;&lt; a &lt;&lt; std::endl;  <span class="comment">// 输出 1</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="陷阱-4：任务未执行导致内存泄漏"><a href="#陷阱-4：任务未执行导致内存泄漏" class="headerlink" title="陷阱 4：任务未执行导致内存泄漏"></a>陷阱 4：任务未执行导致内存泄漏</h3><p>若使用 <code>std::launch::deferred</code> 策略，但未调用 <code>get()</code>&#x2F;<code>wait()</code>，任务永远不会执行，且 <code>future</code> 析构时不会释放相关资源（如任务捕获的堆内存），导致内存泄漏。</p>
+<p><strong>反例（错误）</strong>：</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">leak_task</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">int</span>* p = <span class="keyword">new</span> <span class="built_in">int</span>(<span class="number">10</span>);  <span class="comment">// 堆内存</span></span><br><span class="line">    std::cout &lt;&lt; *p &lt;&lt; std::endl;</span><br><span class="line">    <span class="keyword">delete</span> p;  <span class="comment">// 若任务未执行，delete 不会调用</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> fut = std::<span class="built_in">async</span>(std::launch::deferred, leak_task);</span><br><span class="line">    <span class="comment">// 未调用 get()/wait()，任务未执行，p 未释放，内存泄漏</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>避坑</strong>：使用 <code>deferred</code> 策略时，必须确保调用 <code>get()</code>&#x2F;<code>wait()</code>；若无需执行任务，避免创建 <code>deferred</code> 类型的 <code>async</code> 任务。</p>
+<h2 id="七、std-async-vs-std-thread：该如何选择？"><a href="#七、std-async-vs-std-thread：该如何选择？" class="headerlink" title="七、std::async vs std::thread：该如何选择？"></a>七、<code>std::async</code> vs <code>std::thread</code>：该如何选择？</h2><table>
+<thead>
+<tr>
+<th>特性</th>
+<th><code>std::async</code></th>
+<th><code>std::thread</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>线程管理</td>
+<td>自动管理（无需 <code>join()</code>&#x2F;<code>detach()</code>）</td>
+<td>手动管理（必须 <code>join()</code> 或 <code>detach()</code>）</td>
+</tr>
+<tr>
+<td>结果获取</td>
+<td>直接通过 <code>future</code> 获取（支持返回值&#x2F;异常）</td>
+<td>需手动用 <code>mutex</code>+<code>condition_variable</code> 传递</td>
+</tr>
+<tr>
+<td>灵活性</td>
+<td>支持异步&#x2F;同步策略，线程池复用（部分实现）</td>
+<td>强制创建新线程，灵活性低</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>可能有线程池复用开销（可忽略）</td>
+<td>线程创建&#x2F;销毁开销较高</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>简单异步任务、需要返回结果的任务</td>
+<td>长期运行的线程、需要精细控制线程的场景</td>
+</tr>
+</tbody></table>
+<h3 id="选择建议"><a href="#选择建议" class="headerlink" title="选择建议"></a>选择建议</h3><ul>
+<li>大多数场景优先用 <code>std::async</code>：代码简洁、无线程管理风险、支持结果和异常传递；</li>
+<li>若需要线程长期运行（如后台服务）、需要手动控制线程优先级&#x2F;亲和性，用 <code>std::thread</code>。</li>
+</ul>
+<h2 id="八、总结"><a href="#八、总结" class="headerlink" title="八、总结"></a>八、总结</h2><p><code>std::async</code> 是 C++11 异步编程的核心接口，核心优势是 <strong>简单、安全、高效</strong>：</p>
+<ol>
+<li>无需手动管理线程，避免线程泄漏；</li>
+<li>支持返回值和异常传递，简化结果处理；</li>
+<li>灵活的启动策略，适配不同场景；</li>
+<li>结合 <code>std::shared_future</code> 支持多线程共享结果。</li>
+</ol>
+<p>使用时需注意：</p>
+<ul>
+<li>明确启动策略，避免默认策略导致的意外同步；</li>
+<li>正确处理 <code>future</code> 析构阻塞问题；</li>
+<li>引用参数需用 <code>std::ref</code>&#x2F;<code>std::cref</code> 包装；</li>
+<li>确保 <code>deferred</code> 任务被执行，避免内存泄漏。</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/7241a200/">https://hespethorn.github.io/posts/7241a200/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/std-async/">std::async</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">409</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">284</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">66</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8b79adda/" title="C++多线程安全实践：原子操作">C++多线程安全实践：原子操作</a><time datetime="2026-01-06T06:47:04.000Z" title="Created 2026-01-06 14:47:04">2026-01-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/Foundational%20Syntax%20and%20Core%20Concepts/" title="静态成员函数如何使用类的数据成员">静态成员函数如何使用类的数据成员</a><time datetime="2026-01-03T13:09:21.000Z" title="Created 2026-01-03 21:09:21">2026-01-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7241a200/" title="std::async异步编程">std::async异步编程</a><time datetime="2025-12-10T06:49:34.000Z" title="Created 2025-12-10 14:49:34">2025-12-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/70d59293/" title="getaddrinfo 查找网络IP">getaddrinfo 查找网络IP</a><time datetime="2025-09-04T15:45:17.000Z" title="Created 2025-09-04 23:45:17">2025-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ebacb40b/" title="C++ 断言（assert）机制">C++ 断言（assert）机制</a><time datetime="2025-08-20T15:28:27.000Z" title="Created 2025-08-20 23:28:27">2025-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e34d474/" title="C/C++ 中两种结构体 typedef 定义的差异与实践">C/C++ 中两种结构体 typedef 定义的差异与实践</a><time datetime="2025-07-21T11:12:35.000Z" title="Created 2025-07-21 19:12:35">2025-07-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6e72f340/" title="C++/MySQL/Redis 锁机制 - 1">C++/MySQL/Redis 锁机制 - 1</a><time datetime="2025-05-06T15:53:25.000Z" title="Created 2025-05-06 23:53:25">2025-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/af951d26/" title="线程局部存储">线程局部存储</a><time datetime="2025-04-29T15:23:14.000Z" title="Created 2025-04-29 23:23:14">2025-04-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/Foundational%20Syntax%20and%20Core%20Concepts/" title="std::tuple 的使用">std::tuple 的使用</a><time datetime="2025-04-23T13:07:55.000Z" title="Created 2025-04-23 21:07:55">2025-04-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c423931e/" title="读写锁技术：原理、实现">读写锁技术：原理、实现</a><time datetime="2025-04-16T11:48:52.000Z" title="Created 2025-04-16 19:48:52">2025-04-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/81ad67c7/" title="单元测试在软件工程中的核心价值">单元测试在软件工程中的核心价值</a><time datetime="2025-04-07T11:56:42.000Z" title="Created 2025-04-07 19:56:42">2025-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6a5bb7d1/" title="Final/Override/Default/Delete 关键字整理">Final/Override/Default/Delete 关键字整理</a><time datetime="2025-03-08T11:52:50.000Z" title="Created 2025-03-08 19:52:50">2025-03-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/184c791a/" title="C++ 类间关系与功能复用">C++ 类间关系与功能复用</a><time datetime="2025-01-19T14:45:13.000Z" title="Created 2025-01-19 22:45:13">2025-01-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f175abb2/" title="func(int) &amp; func(int x)">func(int) &amp; func(int x)</a><time datetime="2024-09-23T13:17:04.000Z" title="Created 2024-09-23 21:17:04">2024-09-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b63aa210/" title="C语言文件流：从字符到二进制的三种高效实现">C语言文件流：从字符到二进制的三种高效实现</a><time datetime="2022-04-05T15:01:42.000Z" title="Created 2022-04-05 23:01:42">2022-04-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/379ff51b/" title="C语言单链表操作详解（含二级指针深度解析）">C语言单链表操作详解（含二级指针深度解析）</a><time datetime="2022-03-12T10:35:50.000Z" title="Created 2022-03-12 18:35:50">2022-03-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/87231a26/" title="C语言数组与指针深度解析">C语言数组与指针深度解析</a><time datetime="2022-03-05T15:00:49.000Z" title="Created 2022-03-05 23:00:49">2022-03-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/18c2def7/" title="Vector动态数组复现">Vector动态数组复现</a><time datetime="2022-02-13T15:43:42.000Z" title="Created 2022-02-13 23:43:42">2022-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8f9a0b1c/" title="C语言位运算">C语言位运算</a><time datetime="2022-02-09T13:17:01.000Z" title="Created 2022-02-09 21:17:01">2022-02-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/83143407/" title="C标准库字符串函数复现">C标准库字符串函数复现</a><time datetime="2022-01-23T04:33:32.000Z" title="Created 2022-01-23 12:33:32">2022-01-23</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8b79adda/" title="C++多线程安全实践：原子操作">C++多线程安全实践：原子操作</a><time datetime="2026-01-06T06:47:04.000Z" title="Created 2026-01-06 14:47:04">2026-01-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/Foundational%20Syntax%20and%20Core%20Concepts/" title="静态成员函数如何使用类的数据成员">静态成员函数如何使用类的数据成员</a><time datetime="2026-01-03T13:09:21.000Z" title="Created 2026-01-03 21:09:21">2026-01-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a795a26a/" title="C/C++ 构建系统与条件编译：#ifndef/#endif 的底层原理与典型工程用法">C/C++ 构建系统与条件编译：#ifndef/#endif 的底层原理与典型工程用法</a><time datetime="2025-12-30T12:11:21.000Z" title="Created 2025-12-30 20:11:21">2025-12-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/aaf4f01/" title="MQTT 发布功能实现">MQTT 发布功能实现</a><time datetime="2025-12-25T11:33:21.000Z" title="Created 2025-12-25 19:33:21">2025-12-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/917531b0/" title="MQTT安全性">MQTT安全性</a><time datetime="2025-12-19T00:10:21.000Z" title="Created 2025-12-19 08:10:21">2025-12-19</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/C++">C++</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Interview">面试相关</a><a href="/categories/Data-Structures">数据结构</a></li><li><a href="/categories/Computer-Organization">计算机组成</a><a href="/categories/Computer-Networking">计算机网络</a></li><li><a href="/categories/Operating-Systems">操作系统 </a><a href="/categories/Essays">随笔</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐友链</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.nowcoder.com/"><img src="https://www.nowcoder.com/favicon.ico" alt="牛客网" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://gitee.com/"><img src="https://gitee.com/favicon.ico" alt="Gitee" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hellogithub.com/"><img src="https://hellogithub.com/favicon.ico" alt="HelloGitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://stackexchange.com/"><img src="https://stackexchange.com/favicon.ico" alt="StackChange" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://sci-hub.se/"><img src="/img/Sci_Hub.png" alt="Sci-Hub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
