@@ -9,73 +9,180 @@
  * @LastEditTime: 2021-11-25 18:15:47
  */
 
-// TODO 获取窗口高度  11-19
-var b_h = $(window).height()
-var b_w = $(window).width()
+/**
+ * 气泡动画插件
+ */
+(function($) {
+  /**
+   * 气泡动画插件
+   * @param {Object} options - 配置选项
+   * @returns {jQuery} jQuery对象
+   */
+  $.fn.circleMagic = function(options) {
+    // 默认配置
+    const defaults = {
+      color: 'rgba(255, 0, 0, 0.5)',
+      radius: 10,
+      density: 0.3,
+      clearOffset: 0.2
+    };
 
-$(function() {
+    // 合并配置
+    const settings = $.extend({}, defaults, options);
+    const element = this[0];
+    
+    if (!element) {
+      console.warn('CircleMagic: No element provided');
+      return this;
+    }
 
-    // 气泡
-    function bubble() {
-        $('#page-header').circleMagic({
-            radius: 10,
-            density: .2,
-            color: 'rgba(255,255,255,.4)',
-            clearOffset: 0.99
-        });
-    }! function(p) {
-        p.fn.circleMagic = function(t) {
-            var o, a, n, r, e = !0,
-                i = [],
-                d = p.extend({ color: "rgba(255,0,0,.5)", radius: 10, density: .3, clearOffset: .2 }, t),
-                l = this[0];
+    let canvas, context, width, height, bubbles = [], isVisible = true;
 
-            function c() { e = !(document.body.scrollTop > a) }
+    /**
+     * 检查滚动状态
+     */
+    const checkScroll = () => {
+      isVisible = !(document.body.scrollTop > height);
+    };
 
-            function s() {
-                // TODO 获取窗口高度  ethan_tzy
-                var a_c = l.clientHeight
-                if ($('#index-video').length > 0 && b_w > 768) {
-                    a = b_h * 0.8
-                } else {
-                    a = a_c
-                }
-                // o = l.clientWidth, a = l.clientHeight, l.height = a + "px", n.width = o, n.height = a
-                o = l.clientWidth, l.height = a + "px", n.width = o, n.height = a
-            }
+    /**
+     * 更新画布尺寸
+     */
+    const updateSize = () => {
+      const clientHeight = element.clientHeight;
+      const windowHeight = $(window).height();
+      const windowWidth = $(window).width();
+      
+      // 检查是否存在视频元素
+      if ($('#index-video').length > 0 && windowWidth > 768) {
+        height = windowHeight * 0.8;
+      } else {
+        height = clientHeight;
+      }
+      
+      width = element.clientWidth;
+      element.style.height = `${height}px`;
+      
+      if (canvas) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    };
 
-            function h() {
-                if (e)
-                    for (var t in r.clearRect(0, 0, o, a), i) i[t].draw();
-                requestAnimationFrame(h)
-            }
+    /**
+     * 绘制气泡
+     */
+    const draw = () => {
+      if (isVisible && context) {
+        context.clearRect(0, 0, width, height);
+        bubbles.forEach(bubble => bubble.draw());
+      }
+      requestAnimationFrame(draw);
+    };
 
-            function f() {
-                var t = this;
+    /**
+     * 气泡类
+     */
+    class Bubble {
+      constructor() {
+        this.pos = {};
+        this.reset();
+      }
 
-                function e() { t.pos.x = Math.random() * o, t.pos.y = a + 100 * Math.random(), t.alpha = .1 + Math.random() * d.clearOffset, t.scale = .1 + .3 * Math.random(), t.speed = Math.random(), "random" === d.color ? t.color = "rgba(" + Math.floor(255 * Math.random()) + ", " + Math.floor(0 * Math.random()) + ", " + Math.floor(0 * Math.random()) + ", " + Math.random().toPrecision(2) + ")" : t.color = d.color }
-                t.pos = {}, e(), this.draw = function() { t.alpha <= 0 && e(), t.pos.y -= t.speed, t.alpha -= 5e-4, r.beginPath(), r.arc(t.pos.x, t.pos.y, t.scale * d.radius, 0, 2 * Math.PI, !1), r.fillStyle = t.color, r.fill(), r.closePath() }
-            }! function() {
-                // TODO 气泡的高度  11-19
-                var a_c = l.clientHeight
-                if ($('#index-video').length > 0 && b_w > 768) {
-                    a = b_h * 0.8
-                } else {
-                    a = a_c
-                }
-                o = l.offsetWidth,
-                    // o = l.offsetWidth, a = l.offsetHeight,
-                    function() {
-                        var t = document.createElement("canvas");
-                        t.id = "canvas", t.style.top = 0, t.style.zIndex = 0, t.style.position = "absolute", l.appendChild(t), t.parentElement.style.overflow = "hidden"
-                    }(), (n = document.getElementById("canvas")).width = o, n.height = a, r = n.getContext("2d");
-                for (var t = 0; t < o * d.density; t++) {
-                    var e = new f;
-                    i.push(e)
-                }
-                h()
-            }(), window.addEventListener("scroll", c, !1), window.addEventListener("resize", s, !1)
+      /**
+       * 重置气泡状态
+       */
+      reset() {
+        this.pos.x = Math.random() * width;
+        this.pos.y = height + 100 * Math.random();
+        this.alpha = 0.1 + Math.random() * settings.clearOffset;
+        this.scale = 0.1 + 0.3 * Math.random();
+        this.speed = Math.random();
+        
+        if (settings.color === 'random') {
+          this.color = `rgba(${Math.floor(255 * Math.random())}, ${Math.floor(0 * Math.random())}, ${Math.floor(0 * Math.random())}, ${Math.random().toPrecision(2)})`;
+        } else {
+          this.color = settings.color;
         }
-    }(jQuery);
-    bubble();
-})
+      }
+
+      /**
+       * 绘制气泡
+       */
+      draw() {
+        if (this.alpha <= 0) {
+          this.reset();
+        }
+        
+        this.pos.y -= this.speed;
+        this.alpha -= 0.0005;
+        
+        if (context) {
+          context.beginPath();
+          context.arc(this.pos.x, this.pos.y, this.scale * settings.radius, 0, 2 * Math.PI, false);
+          context.fillStyle = this.color;
+          context.fill();
+          context.closePath();
+        }
+      }
+    }
+
+    /**
+     * 初始化画布
+     */
+    const initCanvas = () => {
+      // 创建画布
+      const canvasElement = document.createElement('canvas');
+      canvasElement.id = 'canvas';
+      canvasElement.style.top = '0';
+      canvasElement.style.zIndex = '0';
+      canvasElement.style.position = 'absolute';
+      element.appendChild(canvasElement);
+      element.style.overflow = 'hidden';
+      
+      canvas = document.getElementById('canvas');
+      context = canvas.getContext('2d');
+      
+      updateSize();
+      
+      // 创建气泡
+      for (let i = 0; i < width * settings.density; i++) {
+        bubbles.push(new Bubble());
+      }
+      
+      // 开始绘制
+      draw();
+    };
+
+    // 初始化
+    try {
+      updateSize();
+      initCanvas();
+      
+      // 添加事件监听器
+      window.addEventListener('scroll', checkScroll, false);
+      window.addEventListener('resize', updateSize, false);
+    } catch (error) {
+      console.error('CircleMagic initialization error:', error);
+    }
+
+    return this;
+  };
+})(jQuery);
+
+/**
+ * 初始化气泡动画
+ */
+$(document).ready(function() {
+  try {
+    // 应用气泡动画到页面头部
+    $('#page-header').circleMagic({
+      radius: 10,
+      density: 0.2,
+      color: 'rgba(255, 255, 255, 0.4)',
+      clearOffset: 0.99
+    });
+  } catch (error) {
+    console.error('Bubble animation initialization error:', error);
+  }
+});
