@@ -1,0 +1,69 @@
+---
+title: Leetcode 0283. Move Zeroes
+tags:
+  - leetcode
+  - 双指针
+categories:
+  - Leetcode
+  - 双指针
+series: Leetcode
+abbrlink: 98f8579b
+date: 2023-01-05 23:40:31
+---
+
+# [283. Move Zeroes](https://leetcode.com/problems/move-zeroes/)
+
+## 题目
+
+Given an array nums, write a function to move all 0's to the end of it while maintaining the relative order of the non-zero elements.
+
+Example 1:
+
+```c
+Input: [0,1,0,3,12]
+Output: [1,3,12,0,0]
+```
+
+Note:
+
+- You must do this in-place without making a copy of the array.
+- Minimize the total number of operations.
+
+### 解法1：双指针
+
+```
+class Solution {
+public:
+ void moveZeroes(vector<int>& nums) {
+        int n = nums.size();
+        int i = 0;  // 慢指针，记录下一个非零元素应该存放的位置
+        
+        // 第一阶段：将所有非零元素移动到数组前端
+        for (int j = 0; j < n; ++j) {
+            if (nums[j] != 0) {
+                nums[i] = nums[j];
+                i++;
+            }
+        }
+        
+        // 第二阶段：填充剩余位置为0
+        for (int k = i; k < n; ++k) {
+            nums[k] = 0;
+        }
+    }
+};
+```
+
+### 解法2：库函数
+
+```
+class Solution {
+public:
+ void moveZeroes(vector<int>& nums) {
+        //std::sort(nums.begin(),nums.end());
+ 		auto it = std::remove(nums.begin(), nums.end(), 0);
+        std::fill(it, nums.end(), 0);
+    }
+};
+```
+

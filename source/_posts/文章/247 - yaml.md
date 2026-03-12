@@ -1,0 +1,500 @@
+---
+title: YAML 配置指南
+tags:
+  - YAML
+categories:
+  - Data Structures and Algorithms
+series: Data Structures and Algorithms
+abbrlink: c334b68c
+date: 2025-10-15 20:19:28
+---
+
+### 一、什么是 YAML？—— 不止于「另一种配置文件」
+
+YAML 全称 **YAML Ain't Markup Language**（YAML 不是标记语言），听着像绕口令，核心却是「反标记语言」的设计理念：用最简洁的语法描述数据结构，让人类一眼能看懂，机器也能轻松解析。
+
+它诞生于 2001 年，初衷是替代 XML 的繁琐标签和 JSON 的大括号，如今已成为配置文件的「首选格式」—— 你在 Kubernetes、Docker Compose、Spring Boot、GitHub Actions 等场景中，随处可见它的身影。
+
+> 核心定位：**人类可读、机器可解析的数据序列化语言**，专注于配置场景的简洁性和易用性。
+
+### 二、为什么选择 YAML？—— 三大核心优势
+
+对比 XML、JSON，YAML 的优势一目了然：
+
+| 特性         | XML（繁琐）               | JSON（简洁但局限）          | YAML（平衡之选）           |
+| ------------ | ------------------------- | --------------------------- | -------------------------- |
+| 语法简洁度   | 需闭合标签（<tag></tag>） | 需大括号 / 引号，无注释     | 无多余符号，支持注释       |
+| 可读性       | 低（标签冗余）            | 中（结构清晰但缺乏注释）    | 高（自然语言般的层级）     |
+| 数据类型支持 | 需定义 schema             | 基础类型（字符串 / 数字等） | 原生支持列表、字典、锚点等 |
+
+举个直观对比：
+
+**JSON 写法**（必须带引号和大括号）：
+
+```
+{
+  "name": "张三",
+  "age": 28,
+  "hobbies": ["编程", "爬山"],
+  "address": {
+    "city": "北京",
+    "street": "中关村大街"
+  }
+}
+```
+
+**YAML 写法**（无多余符号，更清爽）：
+
+```
+name: 张三
+age: 28
+hobbies:
+  - 编程
+  - 爬山
+address:
+  city: 北京
+  street: 中关村大街
+```
+
+除此之外，YAML 还支持 **注释**（# 这是注释）、**锚点复用**（避免重复代码）、**多文档合并**，这些都是配置场景中刚需的功能。
+
+### 三、YAML 核心语法：5 分钟上手
+
+语法原则：**缩进敏感、大小写敏感、无多余分隔符**，核心规则如下：
+
+#### 1. 基本键值对（字典 / 对象）
+
+用 键: 值 表示，冒号后必须加 **空格**（关键！），支持多种数据类型：
+
+```
+# 字符串（无需引号，特殊字符除外）
+username: admin
+nickname: "小杨"  # 含中文也可加引号（可选）
+email: user@example.com
+
+# 数字（整数/浮点数）
+port: 8080
+timeout: 3.5  # 浮点数
+count: 100    # 整数
+
+# 布尔值（true/false 或 yes/no，大小写敏感）
+enabled: true
+debug_mode: no
+
+# null 值（~ 或 直接留空）
+empty_value: ~
+unset_key:  # 等价于 null
+
+# 日期时间（原生支持 ISO 格式）
+create_time: 2024-05-20T14:30:00
+expire_date: 2024-12-31
+```
+
+#### 2. 列表（数组）
+
+用 - 元素 表示，短横线后加空格，支持单层、嵌套、混合类型：
+
+```
+# 1. 简单列表（同类型元素）
+fruits:
+  - 苹果
+  - 香蕉
+  - 橙子
+  - 葡萄
+
+# 2. 嵌套列表（多维数组）
+menu:
+  - 首页
+  - 产品中心:
+    - 手机
+    - 电脑
+    - 配件:
+      - 耳机
+      - 充电器
+  - 关于我们
+  - 联系客服
+
+# 3. 混合类型列表
+mixed_list:
+  - 张三
+  - 25
+  - true
+  - { city: 上海, district: 浦东 }  # 内嵌字典（紧凑写法）
+```
+
+#### 3. 复合结构（字典 + 列表）—— 实际配置高频场景
+
+这是 YAML 最核心的用法，以下是 3 个真实场景示例：
+
+##### 示例 1：Docker Compose 服务配置
+
+```
+version: "3.8"
+services:
+  # Web 服务（Nginx）
+  web:
+    image: nginx:1.25.1
+    container_name: my-nginx
+    ports:
+      - "80:80"  # 主机端口:容器端口
+      - "443:443"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d  # 配置文件挂载
+      - ./nginx/html:/usr/share/nginx/html  # 静态资源挂载
+    restart: always  # 容器退出后自动重启
+    environment:
+      - TZ=Asia/Shanghai  # 时区环境变量
+
+  # 数据库服务（MySQL）
+  db:
+    image: mysql:8.0.33
+    container_name: my-mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql  # 数据持久化
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=123456
+      - MYSQL_DATABASE=test_db
+      - MYSQL_USER=test_user
+      - MYSQL_PASSWORD=test_pass
+    networks:
+      - app-network
+
+# 自定义网络（隔离容器网络）
+networks:
+  app-network:
+    driver: bridge
+
+# 数据卷（独立于容器的存储）
+volumes:
+  mysql-data:
+```
+
+##### 示例 2：Spring Boot 应用配置（application.yml）
+
+```
+spring:
+  # 数据库配置
+  datasource:
+    url: jdbc:mysql://localhost:3306/test_db?useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  # Redis 配置
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 3000ms
+
+# 应用自定义配置
+app:
+  name: user-service
+  version: 1.0.0
+  # 白名单列表
+  allowlist:
+    - 192.168.1.0/24
+    - 10.0.0.0/8
+  # 接口限流配置
+  rate-limit:
+    enabled: true
+    limit: 100  # 每秒最大请求数
+    burst: 20   # 突发请求允许数
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.example.user: DEBUG  # 自定义包日志级别
+  file:
+    name: ./logs/user-service.log
+```
+
+##### 示例 3：GitHub Actions CI/CD 流水线配置
+
+```
+name: 构建并部署应用
+on:
+  # 触发条件：main 分支推送或 Pull Request
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # 构建任务
+  build:
+    runs-on: ubuntu-latest  # 运行环境
+    steps:
+      # 步骤 1：拉取代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 步骤 2：设置 JDK 17
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # 步骤 3：Maven 构建
+      - name: 构建应用
+        run: mvn -B package --file pom.xml
+
+      # 步骤 4：上传构建产物
+      - name: 上传 JAR 包
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+
+  # 部署任务（依赖 build 任务成功）
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+
+      # 步骤：部署到服务器（示例：通过 SSH 上传）
+      - name: 部署到生产服务器
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/app
+            mv ~/target/*.jar ./app.jar
+            systemctl restart app.service
+```
+
+#### 4. 特殊场景处理 —— 覆盖 90% 实操需求
+
+##### （1）字符串特殊处理
+
+```
+# 1. 含特殊字符（:、#、空格等）需用引号包裹
+special_str1: 'He said: "YAML is easy!"'  # 单引号：不解析转义字符
+special_str2: "Line1\nLine2\tTab"       # 双引号：解析转义字符（换行、制表符）
+special_str3: "路径：C:\\Program Files"  # 转义反斜杠
+
+# 2. 多行字符串（保留换行 vs 折叠换行）
+# 保留换行（| 符号，适合脚本、文本内容）
+shell_script: |
+  #!/bin/bash
+  echo "开始部署..."
+  cd /opt/app
+  java -jar app.jar --spring.profiles.active=prod
+  echo "部署完成！"
+
+# 折叠换行（> 符号，适合长文本描述，换行转为空格）
+product_desc: >
+  这是一款基于 Spring Boot + Vue 的前后端分离项目，
+  支持用户管理、权限控制、数据统计等核心功能，
+  适用于中小型企业快速搭建业务系统。
+
+# 3. 强制保留换行（|+）/ 强制删除末尾换行（|-）
+keep_newline: |+
+  第一行
+  第二行
+  （末尾会保留两个换行）
+
+trim_newline: |-
+  第一行
+  第二行
+  （末尾无换行）
+```
+
+##### （2）注释用法
+
+```
+# 单行注释（只能用 #，无多行注释）
+server:
+  port: 8080  # 应用端口（开发环境用 8080，生产用 80）
+  servlet:
+    context-path: /api  # 接口前缀，所有接口需加 /api
+  tomcat:
+    max-threads: 200  # 最大线程数（根据服务器配置调整）
+```
+
+#### 5. 高级功能：锚点复用与多文档合并
+
+##### （1）锚点复用 —— 避免重复配置
+
+用 & 定义锚点，* 引用锚点，<< 合并字典（适合通用配置复用）：
+
+```
+# 定义通用配置锚点（& 后面跟锚点名称）
+common_config: &common
+  timeout: 30s
+  retries: 3
+  connect_timeout: 5s
+  log_level: INFO
+
+# 服务 A：引用并继承通用配置
+service_a:
+  <<: *common  # 合并 common 配置
+  name: 用户服务
+  port: 8081
+  # 覆盖通用配置中的 timeout
+  timeout: 60s
+
+# 服务 B：引用通用配置，无覆盖
+service_b:
+  <<: *common
+  name: 订单服务
+  port: 8082
+
+# 服务 C：引用通用配置的部分字段（* 直接引用单个值）
+service_c:
+  name: 支付服务
+  port: 8083
+  timeout: *common.timeout  # 直接引用 common 的 timeout
+  log_level: WARN  # 覆盖日志级别
+```
+
+##### （2）多文档合并 —— 一个文件多个配置
+
+用 --- 分隔多个文档，适合环境区分（开发 / 测试 / 生产）：
+
+```
+# 开发环境配置（文档 1）
+---
+spring:
+  profiles: dev
+  datasource:
+    url: jdbc:mysql://localhost:3306/dev_db
+    username: root
+    password: 123456
+server:
+  port: 8080
+
+# 测试环境配置（文档 2）
+---
+spring:
+  profiles: test
+  datasource:
+    url: jdbc:mysql://test-db:3306/test_db
+    username: test_user
+    password: test_pass
+server:
+  port: 8081
+
+# 生产环境配置（文档 3）
+---
+spring:
+  profiles: prod
+  datasource:
+    url: jdbc:mysql://prod-db:3306/prod_db
+    username: prod_user
+    password: ${DB_PASSWORD}  # 引用环境变量
+server:
+  port: 80
+```
+
+### 四、C++ 库 yaml-cpp
+
+在 C++ 项目中处理 YAML 文件，yaml-cpp是开发者的首选库。它提供了直观的 API 接口，允许开发者以面向对象的方式解析、修改和生成 YAML 文档。通过yaml-cpp，你可以轻松地将 YAML 数据映射到 C++ 类对象，或反之将对象序列化为 YAML 格式。
+
+安装yaml-cpp非常便捷，在 Debian/Ubuntu 系统下，使用apt-get install libyaml-cpp-dev即可完成安装；在 CentOS/RHEL 系统中，可通过yum install yaml-cpp-devel进行安装。对于使用 CMake 构建的项目，只需在CMakeLists.txt中添加find_package(yaml-cpp REQUIRED)，即可将yaml-cpp集成到项目中。
+
+以下是一个简单的使用示例：
+
+```
+#include <iostream>
+#include <yaml-cpp/yaml.h>
+
+int main() {
+    try {
+        YAML::Node config = YAML::LoadFile("config.yaml");
+        std::string server = config["server"].as<std::string>();
+        int port = config["port"].as<int>();
+        std::cout << "Server: " << server << ", Port: " << port << std::endl;
+    } catch (const YAML::Exception& e) {
+        std::cerr << "Error parsing YAML: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}
+```
+
+上述代码展示了如何使用yaml-cpp从config.yaml文件中读取server和port字段的值。yaml-cpp还支持复杂数据结构的处理，如列表、嵌套映射等，能够满足各类项目对 YAML 配置解析的需求，是 C++ 开发者处理 YAML 文件不可或缺的工具。
+
+### 五、常见坑与避坑指南
+
+**缩进引发的血案**：YAML 严格依赖缩进表示层级关系，务必使用**两个或四个空格**缩进，**禁止使用 Tab 键**。例如，以下错误写法会导致解析失败：
+
+```
+# 错误示范
+parent:
+    - child1
+  - child2  # 缩进与上一行不一致
+```
+
+修正后：
+
+```
+parent:
+  - child1
+  - child2
+```
+
+**字符串的引号陷阱**：YAML 支持单引号、双引号和无引号字符串。无引号字符串会自动解析特殊字符（如\n转义），双引号支持变量插值（如${env.VAR}），单引号则按字面处理。例如：
+
+```
+# 无引号字符串自动解析转义
+unquoted: Hello\nWorld 
+# 双引号支持变量插值
+double_quoted: "当前时间: ${NOW}" 
+# 单引号保留原始内容
+single_quoted: 'Hello\nWorld' 
+```
+
+**列表与字典混用错误**：列表项只能是单一数据类型或结构，避免以下错误嵌套：
+
+```
+# 错误：列表项同时包含字符串和字典
+mixed_list:
+  - apple
+  {name: banana, price: 2}  # 此处应缩进并修正为字典格式
+```
+
+正确写法：
+
+```
+mixed_list:
+  - apple
+  - {name: banana, price: 2}
+```
+
+**注释穿透问题**：YAML 注释以#开头，但多行注释需格外注意。例如，注释掉字典键值对时，确保缩进对齐，否则可能影响后续解析：
+
+```
+# 错误：注释未对齐导致解析异常
+# user:
+#   name: John
+password: secret  # 此密码字段可能被误解析为user的子项
+```
+
+修正后：
+
+```
+user:
+  # name: John
+  password: secret
+```
+
+**版本兼容性风险**：不同语言的 YAML 解析器对规范支持存在差异，建议优先使用官方推荐库。例如，Python 的PyYAML库默认开启unsafe_load，存在安全隐患，推荐使用safe_load方法：
+
+```
+import yaml
+with open('config.yaml', 'r') as f:
+    data = yaml.safe_load(f)  # 避免执行恶意YAML内容
+```

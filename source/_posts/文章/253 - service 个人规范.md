@@ -1,0 +1,459 @@
+---
+title: Linux service 个人服务管理规范
+tags:
+  - Linux
+  - Service
+categories:
+  - Linux Internals
+series: Linux Internals
+abbrlink: 83343c10
+date: 2025-11-26 19:00:00
+---
+
+## 1. 文档目的
+
+用于 Linux 主机使用 **systemd** 管理服务的方式，包括：
+
+- 服务文件规范
+- 统一的日志与目录要求
+- 启停、上线、变更流程
+- 服务异常排查方法
+- 常见问题解决
+
+适用于：后端服务、守护进程、数据处理任务等所有 systemd 托管的服务。
+
+------
+
+# **2. 服务文件基本规范**
+
+## 2.1 服务文件位置与命名
+
+| 项目     | 规范                                               |
+| -------- | -------------------------------------------------- |
+| 存放路径 | `/etc/systemd/system/`                             |
+| 文件后缀 | `.service`                                         |
+| 命名方式 | `project-name.service`（全部小写，使用短横线连接） |
+
+**示例：**
+
+```
+myserver-api.service  
+job-dispatcher.service
+```
+
+### 禁止
+
+- 放在 `/usr/lib/systemd/system/`（避免被系统升级覆盖）
+- 使用大写或空格命名
+
+------
+
+## 2.2 文件权限与属主
+
+| 项目   | 要求        |
+| ------ | ----------- |
+| 权限   | `644`       |
+| 所有者 | `root:root` |
+
+命令：
+
+```
+sudo chown root:root /etc/systemd/system/myserver.service
+sudo chmod 644 /etc/systemd/system/myserver.service
+```
+
+------
+
+## 2.3 WorkingDirectory 规范
+
+**要求：必须显式指定 WorkingDirectory**，避免默认为 `/` 导致相对路径混乱。
+
+目录规则：
+
+- 工作目录统一放在 `/opt/<project>/`
+- 日志目录在 `/var/log/<project>/`
+
+示例：
+
+```
+WorkingDirectory=/opt/myserver
+```
+
+------
+
+## 2.4 日志要求（journald）
+
+systemd 使用 journald 管理日志：
+
+- 必须设置 `StandardOutput=append:/var/log/<project>/<service>.log`
+- 必须设置 `StandardError=append:/var/log/<project>/<service>.err.log`
+- 日志目录权限由服务用户拥有
+
+示例：
+
+```
+StandardOutput=append:/var/log/myserver/myserver.log
+StandardError=append:/var/log/myserver/myserver.err
+```
+
+> 若使用 stdout 结合 journalctl，也允许：
+>  `StandardOutput=journal` 但需满足公司日志采集方案与审计要求。
+
+------
+
+## 2.5 服务运行用户
+
+禁止以 root 身份运行服务。
+
+要求：
+
+- 必须使用独立用户，例如：`myserver`
+- 用户由运维/管理员创建：
+
+```
+sudo useradd -r -s /bin/false myserver
+sudo chown -R myserver:myserver /opt/myserver
+```
+
+服务文件中加入：
+
+```
+User=myserver
+Group=myserver
+```
+
+------
+
+# **3. 标准 Systemd Service 文件模板**
+
+以下为可直接复制使用的规范模板：
+
+```
+[Unit]
+Description=[项目说明]
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+
+# 工作目录
+WorkingDirectory=/opt/[project]
+
+# 主程序执行命令（绝对路径）
+ExecStart=/opt/[project]/bin/[binary] --config /opt/[project]/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+# 用户与权限
+User=[project]
+Group=[project]
+
+# 环境变量
+Environment="ENV=prod"
+EnvironmentFile=-/etc/[project]/env.conf
+
+# 日志输出
+StandardOutput=append:/var/log/[project]/[project].log
+StandardError=append:/var/log/[project]/[project].err.log
+
+# 自动拉起与重启策略
+Restart=on-failure
+RestartSec=5
+
+# 资源限制（可选）
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+------
+
+# **4. systemctl 命令规范**
+
+## 4.1 服务增删改查常用命令
+
+| 功能         | 命令                            |
+| ------------ | ------------------------------- |
+| 启动服务     | `systemctl start xxx.service`   |
+| 停止服务     | `systemctl stop xxx.service`    |
+| 重启服务     | `systemctl restart xxx.service` |
+| 重新加载配置 | `systemctl reload xxx.service`  |
+| 查看状态     | `systemctl status xxx.service`  |
+| 开机自启     | `systemctl enable xxx.service`  |
+| 取消自启     | `systemctl disable xxx.service` |
+| 重载 systemd | `systemctl daemon-reload`       |
+
+------
+
+# **5. 服务上线/变更流程（规范化）**
+
+## **5.1 新服务上线**
+
+1. **上传程序**
+
+   ```
+   /opt/<project>/bin/
+   /opt/<project>/config/
+   ```
+
+2. **添加服务用户**
+
+   ```
+   useradd -r -s /bin/false <project>
+   ```
+
+3. **创建日志目录**
+
+   ```
+   mkdir -p /var/log/<project> && chown <project>:<project> /var/log/<project>
+   ```
+
+4. **编写 service 文件**
+    放置至 `/etc/systemd/system/<project>.service`
+
+5. **设置权限**
+
+   ```
+   chown root:root ... ; chmod 644 ...
+   ```
+
+6. **systemd 重载**
+
+   ```
+   systemctl daemon-reload
+   ```
+
+7. **启动服务**
+
+   ```
+   systemctl start <project>
+   ```
+
+8. **设置自启动**
+
+   ```
+   systemctl enable <project>
+   ```
+
+------
+
+## **5.2 服务更新（程序变更）**
+
+1. 替换二进制或配置文件
+
+2. 检查权限是否仍正确
+
+3. 重新载入 systemd（如服务文件变更）：
+
+   ```
+   systemctl daemon-reload
+   ```
+
+4. 平滑重启
+
+   ```
+   systemctl restart <project>
+   ```
+
+5. 检查运行状态
+
+   ```
+   systemctl status <project>
+   ```
+
+------
+
+## **5.3 配置变更（无需重启程序）**
+
+如果服务支持 reload（在 service 中配置了 `ExecReload`）：
+
+```
+systemctl reload <project>
+```
+
+否则必须 restart。
+
+------
+
+# **6. 服务异常排查流程**
+
+## 6.1 首步：查看状态
+
+```
+systemctl status <project>
+```
+
+重点关注：
+
+- Active 状态
+- Main PID
+- 退出码 / 信号
+- 最后几行日志
+
+------
+
+## 6.2 查看日志
+
+```
+journalctl -u <project> -n 200
+journalctl -u <project> -f
+```
+
+------
+
+## 6.3 检查进程工作目录
+
+```
+ls -ld /opt/<project>
+ls -ld /var/log/<project>
+```
+
+常见错误：日志目录权限不正确。
+
+------
+
+## 6.4 检查 ExecStart 路径
+
+```
+file /opt/<project>/bin/binary
+ls -l /opt/<project>/bin/binary
+```
+
+------
+
+## 6.5 检查端口占用
+
+```
+ss -lntp | grep <port>
+```
+
+------
+
+## 6.6 检查环境变量
+
+```
+EnvironmentFile=
+Environment=...
+```
+
+错误示例：
+
+- 未加引号
+- 环境变量文件不可读
+
+------
+
+# **7. 常见错误与解决办法**
+
+## 7.1 权限问题
+
+| 错误信息                                       | 原因                        | 解决                        |
+| ---------------------------------------------- | --------------------------- | --------------------------- |
+| Permission denied                              | 用户无权限访问启动文件/目录 | 修正目录属主为 service 用户 |
+| Failed to start: “ExecStart permission denied” | 执行文件没有可执行权限      | `chmod +x`                  |
+
+------
+
+## 7.2 WorkingDirectory 相关
+
+错误：
+
+```
+Failed at step CHDIR
+```
+
+原因：工作目录不存在或无权限
+ 解决：创建目录并赋权。
+
+------
+
+## 7.3 ExecStart 相关
+
+错误：
+
+```
+Executable path is not absolute
+```
+
+原因：禁止使用相对路径
+ 解决：改为绝对路径。
+
+------
+
+## 7.4 依赖问题
+
+错误：
+
+```
+Failed to start: Dependency failed
+```
+
+检查 unit 中是否配置了：
+
+```
+After=
+Requires=
+Wants=
+```
+
+------
+
+## 7.5 环境变量问题
+
+错误：
+
+```
+EnvironmentFile=/xxx not found
+```
+
+解决：加 `-`（可选加载）：
+
+```
+EnvironmentFile=-/etc/myserver/env.conf
+```
+
+------
+
+## 7.6 服务未重载 systemd
+
+错误：
+
+```
+Unit not found / service changes not applied
+```
+
+解决：
+
+```
+systemctl daemon-reload
+```
+
+------
+
+# **8. 附录： Minimal Service 模板**
+
+适用于绝大多数后端服务：
+
+```
+[Unit]
+Description=MyServer API Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/myserver
+ExecStart=/opt/myserver/bin/myserver --config /opt/myserver/config.yaml
+User=myserver
+Group=myserver
+
+StandardOutput=append:/var/log/myserver/myserver.log
+StandardError=append:/var/log/myserver/myserver.err.log
+
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```

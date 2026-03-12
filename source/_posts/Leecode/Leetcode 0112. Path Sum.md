@@ -1,0 +1,116 @@
+---
+title: Leetcode 0112. Path Sum
+tags:
+  - leetcode
+categories:
+  - Leetcode
+  - tree
+series: Leetcode
+abbrlink: cc1ca76f
+date: 2024-10-07 20:21:33
+---
+
+## [112. Path Sum](https://leetcode.cn/problems/path-sum/)
+
+Given the `root` of a binary tree and an integer `targetSum`, return `true` if the tree has a **root-to-leaf** path such that adding up all the values along the path equals `targetSum`.
+
+A **leaf** is a node with no children.
+
+ **Example 1:**
+
+![img](https://assets.leetcode.com/uploads/2021/01/18/pathsum1.jpg)
+
+```
+Input: root = [5,4,8,11,null,13,4,7,2,null,null,null,1], targetSum = 22
+Output: true
+Explanation: The root-to-leaf path with the target sum is shown.
+```
+
+**Example 2:**
+
+![img](https://assets.leetcode.com/uploads/2021/01/18/pathsum2.jpg)
+
+```
+Input: root = [1,2,3], targetSum = 5
+Output: false
+Explanation: There are two root-to-leaf paths in the tree:
+(1 --> 2): The sum is 3.
+(1 --> 3): The sum is 4.
+There is no root-to-leaf path with sum = 5.
+```
+
+**Example 3:**
+
+```
+Input: root = [], targetSum = 0
+Output: false
+Explanation: Since the tree is empty, there are no root-to-leaf paths.
+```
+
+## 题目大意
+
+给定一棵二叉树的根节点 `root` 和一个整数 `targetSum`，判断该树是否存在一条从根节点到叶子节点的路径，使得路径上所有节点值之和和等于 `targetSum`。叶子节点是指没有子节点的节点。
+
+例如：
+
+- 输入二叉树 `[5,4,8,11,null,13,4,7,2,null,null,null,1]` 和 `targetSum = 22`，存在路径 `5->4->11->2`（和为 22），返回 `true`；
+- 输入二叉树 `[1,2,3]` 和 `targetSum = 5`，所有路径和分别为 3 和 4，无符合条件的路径，返回 `false`。
+
+## 解题思路
+
+判断路径总和是否存在，可通过**深度优先搜索（DFS）** 遍历二叉树，累计路径上的节点值，当到达叶子节点时检查累计和是否等于目标值。具体步骤：
+
+1. **递归参数**：当前节点、当前累计和。
+2. **递归终止条件**：若当前节点为空，返回 `false`。
+3. **累计和更新**：将当前节点值加入累计和。
+4. **叶子节点判断**：若当前节点是叶子节点，检查累计和是否等于 `targetSum`，是则返回 `true`。
+5. **递归逻辑**：递归检查左子树和右子树，只要有一条路径符合条件就返回 `true`。
+
+## 代码实现
+
+```
+#include <iostream>
+using namespace std;
+
+// 二叉树节点定义（题目隐含，补充完整）
+struct TreeNode {
+    int val;
+    TreeNode *left;
+    TreeNode *right;
+    TreeNode() : val(0), left(nullptr), right(nullptr) {}
+    TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+    TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+};
+
+class Solution {
+public:
+    bool hasPathSum(TreeNode* root, int targetSum) {
+        // 空树直接返回false
+        if (root == nullptr) {
+            return false;
+        }
+        // 启动DFS，初始累计和为0
+        return dfs(root, 0, targetSum);
+    }
+
+private:
+    // 辅助函数：DFS遍历，检查路径和
+    // 参数：当前节点、当前累计和、目标和
+    bool dfs(TreeNode* node, int currentSum, int targetSum) {
+        if (node == nullptr) {
+            return false;
+        }
+        
+        // 将当前节点值加入累计和
+        currentSum += node->val;
+        
+        // 若为叶子节点，检查累计和是否等于目标和
+        if (node->left == nullptr && node->right == nullptr) {
+            return currentSum == targetSum;
+        }
+        
+        // 递归检查左子树和右子树，只要有一条路径符合就返回true
+        return dfs(node->left, currentSum, targetSum) || dfs(node->right, currentSum, targetSum);
+    }
+};
+```

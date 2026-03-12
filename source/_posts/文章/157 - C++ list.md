@@ -1,0 +1,189 @@
+---
+tags:
+  - C++
+  - list
+  - function
+categories:
+  - C++
+  - Data Structures and Algorithms
+series: C++
+abbrlink: c6ac8af4
+title: C++ list
+date: 2024-06-02 23:34:33
+---
+
+### 一、内部实现机制
+
+- **vector**：基于**动态数组**实现，元素存储在连续的内存空间中，通过单一指针管理内存块
+- **list**：基于**双向链表**实现，每个元素包含数据域和两个指针域（前驱和后继），元素分散存储在内存中
+
+### 二、核心性能差异
+
+| 操作                   | vector                           | list                          |
+| ---------------------- | -------------------------------- | ----------------------------- |
+| 随机访问（按索引访问） | O (1)，高效支持                  | O (n)，不支持直接索引访问     |
+| 头部插入 / 删除        | O (n)，需移动所有元素            | O (1)，只需调整指针           |
+| 尾部插入 / 删除        | O (1)（平均）                    | O(1)                          |
+| 中间插入 / 删除        | O (n)，需移动插入点后的所有元素  | O (1)，只需调整附近元素的指针 |
+| 内存分配               | 可能需要整体扩容（复制所有元素） | 每次插入新元素单独分配内存    |
+| 迭代器类型             | 随机访问迭代器                   | 双向迭代器                    |
+| 缓存利用率             | 高（连续内存，缓存局部性好）     | 低（元素分散，容易缓存失效）  |
+
+### 三、功能差异
+
+- **vector**：
+  - 支持`[]`运算符和`at()`方法进行随机访问
+  - 提供`reserve()`方法预分配内存
+  - 元素在内存中连续存储，可直接获取数据指针（`data()`方法）
+  - 适合与 C API 交互（可直接传递数据指针）
+- **list**：
+  - 不支持随机访问，必须通过迭代器顺序访问
+  - 提供特殊操作：`sort()`、`reverse()`、`merge()`、`splice()`等
+  - 插入操作不会导致迭代器失效（除被删除元素的迭代器外）
+  - 内存占用略高（需存储指针信息）
+
+### 四、适用场景
+
+- **优先选择 vector 的场景**：
+  - 需要频繁按索引访问元素
+  - 主要在尾部进行插入删除操作
+  - 重视内存缓存效率
+  - 需要与 C 语言代码交互
+  - 元素数量相对稳定，扩容不频繁
+- **优先选择 list 的场景**：
+  - 需要频繁在任意位置（尤其是中间）插入删除元素
+  - 元素数量变化大且不确定，频繁扩容会影响性能
+  - 不需要随机访问元素
+  - 需要使用 list 特有的链表操作（如合并、拼接）
+
+### 五、代码展示常用操作
+
+```cpp
+#include <iostream>
+#include <list>
+#include <algorithm>
+
+int main() {
+    // 1. 多种构造方式
+    std::list<int> lst1;                          // 空list
+    std::list<int> lst2(3, 10);                   // 3个元素，均为10
+    std::list<int> lst3 = {1, 2, 3, 4, 5};        // 列表初始化
+    std::list<int> lst4(lst3.begin(), --lst3.end());  // 迭代器范围构造
+    std::list<int> lst5(lst3);                    // 拷贝构造
+
+    // 2. 元素添加操作
+    lst1.push_back(20);                  // 尾部添加
+    lst1.push_back(30);
+    lst1.emplace_back(40);               // 尾部直接构造
+    
+    lst1.push_front(10);                 // 头部添加
+    lst1.emplace_front(5);               // 头部直接构造
+
+    // 在指定位置插入（list的优势操作）
+    auto it = lst1.begin();
+    std::advance(it, 2);                 // 移动迭代器到位置2
+    lst1.insert(it, 15);                 // 在位置2插入15
+    lst1.emplace(it, 18);                // 在当前迭代器位置直接构造
+
+    // 3. 元素访问操作
+    std::cout << "lst3第一个元素: " << lst3.front() << std::endl;
+    std::cout << "lst3最后一个元素: " << lst3.back() << std::endl;
+
+    // 注意：list不支持[]和at()访问，必须通过迭代器访问元素
+
+    // 4. 迭代器遍历
+    std::cout << "lst1所有元素: ";
+    for (std::list<int>::iterator iter = lst1.begin(); iter != lst1.end(); ++iter) {
+        std::cout << *iter << " ";
+    }
+    std::cout << std::endl;
+
+    // 5. 反向遍历
+    std::cout << "lst3反向遍历: ";
+    for (auto iter = lst3.rbegin(); iter != lst3.rend(); ++iter) {
+        std::cout << *iter << " ";
+    }
+    std::cout << std::endl;
+
+    // 6. 范围for循环遍历
+    std::cout << "lst2所有元素: ";
+    for (const auto& elem : lst2) {
+        std::cout << elem << " ";
+    }
+    std::cout << std::endl;
+
+    // 7. 元素修改操作（必须通过迭代器）
+    it = lst3.begin();
+    std::advance(it, 2);
+    *it = 100;                           // 通过迭代器修改元素
+
+    // 8. 删除操作
+    lst3.pop_back();                     // 删除尾部元素
+    lst1.pop_front();                    // 删除头部元素
+    
+    // 删除指定位置元素
+    it = lst1.begin();
+    std::advance(it, 3);
+    lst1.erase(it);                      // 删除迭代器指向的元素
+    
+    // 范围删除
+    auto start = lst3.begin();
+    auto end = lst3.begin();
+    std::advance(end, 2);
+    lst3.erase(start, end);              // 删除范围元素
+    
+    // 条件删除
+    lst3.remove(100);                    // 删除所有值为100的元素
+    
+    // 条件删除（使用谓词）
+    lst1.remove_if([](int x) { return x > 25; });  // 删除所有大于25的元素
+
+    // 9. 容器属性与操作
+    std::cout << "lst1当前大小: " << lst1.size() << std::endl;
+    std::cout << "lst3是否为空: " << (lst3.empty() ? "是" : "否") << std::endl;
+    
+    // 排序（list自带的排序方法，而非std::sort）
+    lst1.sort();
+    std::cout << "排序后lst1: ";
+    for (const auto& elem : lst1) {
+        std::cout << elem << " ";
+    }
+    std::cout << std::endl;
+    
+    // 反转
+    lst1.reverse();
+    std::cout << "反转后lst1: ";
+    for (const auto& elem : lst1) {
+        std::cout << elem << " ";
+    }
+    std::cout << std::endl;
+
+    // 10. 合并两个已排序的list
+    std::list<int> a = {1, 3, 5};
+    std::list<int> b = {2, 4, 6};
+    a.merge(b);                          // 合并到a，b变为空
+    std::cout << "合并后a: ";
+    for (const auto& elem : a) {
+        std::cout << elem << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
+}
+```
+
+### 代码输出结果
+
+```
+lst3第一个元素: 1
+lst3最后一个元素: 5
+lst1所有元素: 5 10 15 18 20 30 40 
+lst3反向遍历: 5 4 3 2 1 
+lst2所有元素: 10 10 10 
+lst1当前大小: 4
+lst3是否为空: 否
+排序后lst1: 10 15 18 20 
+反转后lst1: 20 18 15 10 
+合并后a: 1 2 3 4 5 6 
+```
+

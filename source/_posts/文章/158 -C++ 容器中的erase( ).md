@@ -1,0 +1,244 @@
+---
+tags:
+  - C++
+  - vector
+  - erase
+categories:
+  - C++
+  - Data Structures and Algorithms
+series: C++
+abbrlink: '37146324'
+title: C++ 容器中の erase
+date: 2024-06-02 23:54:10
+---
+
+## 一、erase 方法的功能定位
+
+vector 的 erase 方法是 STL 中用于从容器中移除元素的核心函数，其主要功能是：
+
+- 从 vector 中删除单个元素或一段连续范围内的元素
+
+- 调整容器大小以反映元素数量的变化
+
+- 维护剩余元素的连续性和内存布局
+
+- 返回一个迭代器，指向被删除元素的下一个元素
+
+erase 方法是破坏性操作，会改变容器的状态和内部布局，同时可能影响现有迭代器的有效性。
+
+## 二、迭代器参数的语法特征与使用场景
+
+vector 的 erase 方法有两种重载形式，分别适用于不同的删除场景：
+
+### 2.1 单个元素删除
+
+```
+iterator erase(iterator position);
+```
+
+**参数**：指向要删除元素的迭代器
+
+**返回值**：指向被删除元素下一个元素的有效迭代器
+
+**使用场景**：已知要删除元素的确切位置时
+
+### 2.2 范围元素删除
+
+```
+iterator erase(iterator first, iterator last);
+```
+
+**参数**：
+
+- first：指向要删除范围中第一个元素的迭代器
+
+- last：指向要删除范围中最后一个元素之后位置的迭代器
+
+**返回值**：指向最后一个被删除元素下一个元素的有效迭代器
+
+**使用场景**：需要删除一段连续元素时，如删除满足特定条件的元素序列
+
+## 三、内存重组机制与性能影响
+
+### 3.1 底层实现原理
+
+当调用 erase 方法时，vector 会执行以下操作：
+
+1. 确定需要删除的元素范围
+2. 将删除位置之后的所有元素向前移动，覆盖被删除的元素
+3. 调整容器的 size（元素数量），但不改变 capacity（容量）
+4. 析构最后一个元素（已被移动的元素副本）
+
+### 3.2 性能分析
+
+- **单个元素删除**：时间复杂度为 O (n)，因为删除位置后的所有元素都需要向前移动一个位置
+
+- **范围删除**：时间复杂度为 O (n)，其中 n 是容器中剩余元素的数量
+
+- **空间复杂度**：O (1)，不需要额外的存储空间
+
+性能影响因素：
+
+- **删除位置**：删除靠前的元素比删除靠后的元素需要移动更多元素
+
+- **容器大小**：大型容器上的 erase 操作成本更高
+
+- **元素类型**：移动复杂类型元素比移动基本类型元素成本更高
+
+## 四、典型代码示例及执行结果
+
+### 4.1 单个元素删除示例
+
+```
+#include <vector>
+#include <iostream>
+
+int main() {
+    std::vector<int> numbers = {10, 20, 30, 40, 50};
+    
+    // 删除第三个元素(30)
+    auto it = numbers.begin() + 2;
+    auto result = numbers.erase(it);
+    
+    // 输出剩余元素
+    for (int num : numbers) {
+        std::cout << num << " ";
+    }
+    // 输出: 10 20 40 50
+    
+    std::cout << "\n返回的迭代器指向: " << *result;  // 输出: 40
+    
+    return 0;
+}
+```
+
+### 4.2 范围元素删除示例
+
+```
+#include <vector>
+#include <iostream>
+
+int main() {
+    std::vector<int> numbers = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    
+    // 删除从第二个到第五个元素(2,3,4,5)
+    auto first = numbers.begin() + 1;
+    auto last = numbers.begin() + 5;
+    auto result = numbers.erase(first, last);
+    
+    // 输出剩余元素
+    for (int num : numbers) {
+        std::cout << num << " ";
+    }
+    // 输出: 1 6 7 8 9
+    
+    std::cout << "\n返回的迭代器指向: " << *result;  // 输出: 6
+    
+    return 0;
+}
+```
+
+### 4.3 循环中删除元素的正确方式
+
+```
+#include <vector>
+#include <iostream>
+
+int main() {
+    std::vector<int> numbers = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    
+    // 删除所有偶数
+    for (auto it = numbers.begin(); it != numbers.end(); ) {
+        if (*it % 2 == 0) {
+            it = numbers.erase(it);  // 使用返回的迭代器更新
+        } else {
+            ++it;  // 只有不删除元素时才递增迭代器
+        }
+    }
+    
+    // 输出剩余元素
+    for (int num : numbers) {
+        std::cout << num << " ";
+    }
+    // 输出: 1 3 5 7 9
+    
+    return 0;
+}
+```
+
+## 五、迭代器失效问题及解决方案
+
+### 5.1 迭代器失效的原因
+
+erase 操作会导致以下迭代器失效：
+
+- 所有指向被删除元素的迭代器
+
+- 所有指向被删除元素之后位置的迭代器
+
+- 容器的 end () 迭代器
+
+原因是 erase 操作会移动元素，改变了这些迭代器所指向的内存位置的语义。
+
+### 5.2 解决方案
+
+**使用 erase 的返回值**：erase 返回的迭代器是唯一保证有效的迭代器，指向被删除元素的下一个元素
+
+```
+auto it = vec.begin();
+while (it != vec.end()) {
+    if (condition) {
+        it = vec.erase(it);  // 正确：使用返回的有效迭代器
+    } else {
+        ++it;
+    }
+}
+```
+
+**重新获取迭代器**：在批量删除后，如果需要继续使用迭代器，应重新获取
+
+**使用索引而非迭代器**：在某些场景下，使用索引操作可以避免迭代器失效问题
+
+## 六、常见错误及规避策略
+
+### 6.1 常见错误
+
+**删除后继续使用失效的迭代器**
+
+```
+auto it = vec.begin();
+vec.erase(it);
+*it = 10;  // 错误：it已失效
+```
+
+**循环中错误地递增迭代器**
+
+```
+for (auto it = vec.begin(); it != vec.end(); ++it) {
+    if (condition) {
+        vec.erase(it);  // 错误：此后it已失效，递增操作不安全
+    }
+}
+```
+
+**使用无效范围**
+
+```
+vec.erase(vec.begin() + 5, vec.begin() + 3);  // 错误：范围无效，first > last
+```
+
+**对空容器使用 erase**
+
+```
+vector<int> vec;
+vec.erase(vec.begin());  // 错误：容器为空
+```
+
+### 6.2 规避策略
+
+1. 始终使用 erase 的返回值更新迭代器
+2. 在删除操作前检查容器是否为空
+3. 确保范围删除时 [first, last) 是有效的半开区间
+4. 避免在循环中同时使用多个迭代器进行删除操作
+5. 对于复杂删除逻辑，考虑先标记再删除的方式
+

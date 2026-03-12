@@ -1,0 +1,216 @@
+---
+title: MYSQL 基础操作语句整理
+tags:
+  - 数据库操作
+  - MYSQL语法
+categories: MYSQL
+series: MYSQL
+abbrlink: 5d66eef
+date: 2023-07-03 21:02:28
+---
+
+## 一、查询数据操作 (SELECT)
+
+### 1.1 基础语法
+
+```
+SELECT [DISTINCT] 字段列表|*
+  FROM 表名
+  [WHERE 条件表达式]
+  [ORDER BY 字段 [ASC|DESC]]
+  [LIMIT 起始位置, 记录数量]
+```
+
+### 1.2 执行流程
+
+- 确定数据来源 (FROM 表名)；筛选符合条件的记录 (WHERE 子句)；选择需要显示的字段 (SELECT 子句)；对结果进行排序 (ORDER BY 子句)；限制返回记录数量 (LIMIT 子句)
+
+### 1.3 高级用法示例
+
+- **去重查询**：在 employees 表中查询所有员工不同的部门编号
+
+```
+SELECT DISTINCT department_id
+  FROM employees
+```
+
+- **条件组合查询**：在 orders 表中，查询 2023 年之后下单且订单状态为 "completed" 或 "shipped" 的前 10 条订单记录，并按订单金额降序排列
+
+```
+SELECT order_id, order_amount
+  FROM orders
+  WHERE order_date > '2023-01-01'
+  AND (order_status = 'completed' OR order_status = 'shipped')
+  ORDER BY order_amount DESC
+  LIMIT 10
+```
+
+## 二、插入数据操作 (INSERT)
+
+### 2.1 操作类型
+
+- 单条记录插入；批量数据插入；指定字段插入；完整记录插入
+
+### 2.2 基础语法
+
+```
+INSERT INTO 表名 (字段1, 字段2, ...)
+VALUES (值1, 值2, ...)
+```
+
+### 2.3 执行流程
+
+- 确定目标表 (INSERT INTO 表名)；指定需要赋值的字段 (字段列表)；提供对应字段的值 (VALUES 子句)；验证数据完整性 (约束检查)；执行插入操作 (写入数据)
+
+### 2.4 高级用法示例
+
+- **批量插入**：向 products 表中插入三条产品数据，只插入产品名称和价格字段
+
+```
+INSERT INTO products (product_name, product_price)
+VALUES 
+  ('笔记本电脑', 5999),
+  ('无线鼠标', 99),
+  ('机械键盘', 299)
+```
+
+- **全字段插入 (省略字段列表)**：假设 customers 表包含 customer_id、customer_name、customer_email 字段，插入一条完整的客户记录
+
+```
+INSERT INTO customers
+VALUES (1, '张三', 'zhangsan@example.com')
+```
+
+> 注意：需按表定义的字段顺序提供所有字段值
+
+## 三、更新数据操作 (UPDATE)
+
+### 3.1 操作类型
+
+- 单字段更新；多字段批量更新；条件更新；自增自减更新
+
+### 3.2 基础语法
+
+```
+UPDATE 表名
+  SET 字段1 = 值1,
+      字段2 = 值2 
+  WHERE 条件表达式
+```
+
+### 3.3 执行流程
+
+- 确定目标表 (UPDATE 表名)；设置新值 (SET 子句)；筛选需要更新的记录 (WHERE 子句)；验证更新合法性 (约束检查)；执行更新操作 (修改数据)
+
+### 3.4 高级用法示例
+
+- **条件更新**：在 orders 表中，将 2023 年之前且状态为 "未处理" 的订单状态更新为 "已处理"
+
+```
+UPDATE orders
+  SET order_status = '已处理' 
+  WHERE order_date < '2023-01-01' 
+  AND order_status = '未处理'
+```
+
+- **自增更新**：在 inventory 表中，将商品 ID 为 1001 的库存数量加 1，并更新更新时间
+
+```
+UPDATE inventory
+  SET quantity = quantity + 1,
+      update_time = NOW()
+  WHERE product_id = 1001
+```
+
+## 四、删除数据操作 (DELETE)
+
+### 4.1 操作类型
+
+- 条件删除；批量删除；全表删除；记录清空
+
+### 4.2 基础语法
+
+```
+DELETE FROM 表名
+  WHERE 条件表达式
+```
+
+### 4.3 执行流程
+
+- 确定目标表 (DELETE FROM 表名)；筛选需要删除的记录 (WHERE 子句)；验证删除合法性 (外键约束检查)；执行删除操作 (移除记录)；更新索引信息 (维护表结构)
+
+### 4.4 高级用法示例
+
+- **条件删除**：在 logs 表中，删除 30 天前且日志级别为 "error" 的记录
+
+```
+DELETE FROM logs
+  WHERE log_time < CURDATE() - INTERVAL 30 DAY 
+  AND log_level = 'error'
+```
+
+- **全表清空 (保留表结构)**：清空 temp_table 表的数据
+
+```
+TRUNCATE TABLE temp_table
+```
+
+> 注意: TRUNCATE 为 DDL 操作，会重置自增计数器且无法回滚
+
+- **关联条件删除**：在 orders 表中，删除与 deleted_customers 表中客户 ID 关联的订单记录
+
+```
+DELETE FROM orders
+  WHERE customer_id IN (
+    SELECT customer_id FROM deleted_customers
+  )
+```
+
+## 五、聚集函数操作 (AGGREGATE FUNCTIONS)
+
+### 5.1 常用函数
+
+- SUM()：计算字段的总和；AVG()：计算字段的平均值；COUNT()：统计记录数量；MAX()：获取字段的最大值；MIN()：获取字段的最小值
+
+### 5.2 基础语法
+
+```
+SELECT 聚集函数(字段)
+FROM 表名
+[WHERE 条件表达式]
+[GROUP BY 分组字段]
+[HAVING 分组过滤条件]
+[ORDER BY 字段 [ASC|DESC]]
+```
+
+### 5.3 执行流程
+
+- 确定数据来源 (FROM 表名)；筛选符合条件的记录 (WHERE 子句)；按指定字段分组 (GROUP BY 子句)；对分组后的数据应用聚集函数；对分组结果进行过滤 (HAVING 子句)；对最终结果排序 (ORDER BY 子句)
+
+### 5.4 高级用法示例
+
+- **统计订单总金额**：在 orders 表中，统计所有订单的总金额
+
+```
+SELECT SUM(order_amount) AS total_amount
+FROM orders
+```
+
+- **计算平均订单金额并分组**：在 orders 表中，按客户 ID 分组，计算每个客户的平均订单金额，并且只显示平均金额大于 1000 的分组
+
+```
+SELECT customer_id, AVG(order_amount) AS avg_amount
+FROM orders
+GROUP BY customer_id
+HAVING AVG(order_amount) > 1000
+ORDER BY avg_amount DESC
+```
+
+- **统计各部门员工数量**：在 employees 表中，统计每个部门的员工数量
+
+```
+SELECT department_id, COUNT(employee_id) AS employee_count
+FROM employees
+GROUP BY department_id
+ORDER BY employee_count DESC
+```

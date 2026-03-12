@@ -1,0 +1,277 @@
+---
+tags:
+  - C++
+  - 智能指针
+  - RAII
+categories:
+  - C++
+  - Foundational Syntax and Core Concepts
+series: C++
+abbrlink: 38879ff5
+title: C++ 用RAII实现智能指针
+date: 2024-05-10 22:26:13
+---
+
+```
+#ifndef SMART_PTR_H
+#define SMART_PTR_H
+
+// 基于RAII的智能指针实现，模拟unique_ptr
+template <typename T>
+class SmartPtr {
+private:
+    T* m_ptr;  // 指向管理的资源
+
+public:
+    // 构造函数：获取资源
+    explicit SmartPtr(T* ptr = nullptr) : m_ptr(ptr) {}
+
+    // 析构函数：释放资源（RAII核心）
+    ~SmartPtr() {
+        delete m_ptr;  // 自动释放资源
+        m_ptr = nullptr;
+    }
+
+    // 禁止复制构造和复制赋值（确保独占所有权）
+    SmartPtr(const SmartPtr& other) = delete;
+    SmartPtr& operator=(const SmartPtr& other) = delete;
+
+    // 允许移动构造和移动赋值（所有权转移）
+    SmartPtr(SmartPtr&& other) noexcept : m_ptr(other.m_ptr) {
+        other.m_ptr = nullptr;  // 源对象不再拥有资源
+    }
+
+    SmartPtr& operator=(SmartPtr&& other) noexcept {
+        if (this != &other) {
+            delete m_ptr;        // 释放当前资源
+            m_ptr = other.m_ptr; // 转移所有权
+            other.m_ptr = nullptr; // 源对象不再拥有资源
+        }
+        return *this;
+    }
+
+    // 指针操作符重载
+    T& operator*() const {
+        return *m_ptr;
+    }
+
+    T* operator->() const {
+        return m_ptr;
+    }
+
+    // 获取原始指针
+    T* get() const {
+        return m_ptr;
+    }
+
+    // 释放资源所有权
+    T* release() {
+        T* temp = m_ptr;
+        m_ptr = nullptr;
+        return temp;
+    }
+
+    // 重置资源
+    void reset(T* ptr = nullptr) {
+        if (m_ptr != ptr) {
+            delete m_ptr;
+            m_ptr = ptr;
+        }
+    }
+
+    // 检查是否拥有资源
+    explicit operator bool() const {
+        return m_ptr != nullptr;
+    }
+};
+
+// 辅助函数：创建智能指针，类似于std::make_unique
+template <typename T, typename... Args>
+SmartPtr<T> make_smart(Args&&... args) {
+    return SmartPtr<T>(new T(std::forward<Args>(args)...));
+}
+
+#endif // SMART_PTR_H
+
+```
+
+### **核心特性与设计思路**
+
+SmartPtr的核心是**独占所有权**：同一时间只能有一个智能指针管理资源，当指针生命周期结束时，自动释放资源。主要通过以下方式实现：
+
+1. 禁止复制（避免多个指针管理同一资源，导致重复释放）；
+2. 允许移动（通过转移所有权，支持资源在指针间传递）；
+3. 析构函数自动释放资源（RAII 的核心体现）。
+
+### **关键成员与函数解析**
+
+#### **1. 私有成员**
+
+```
+T* m_ptr;  // 指向管理的资源（原始指针）
+```
+
+- 存储实际管理的资源地址，是智能指针的核心数据。
+
+#### **2. 构造与析构函数**
+
+- **构造函数**：
+
+```
+explicit SmartPtr(T* ptr = nullptr) : m_ptr(ptr) {}
+```
+
+- 接收一个原始指针（默认nullptr），初始化m_ptr，获取资源所有权。
+- explicit防止隐式转换（避免意外将原始指针转为智能指针）。
+
+- **析构函数**：
+
+```
+~SmartPtr() {
+    delete m_ptr;  // 自动释放资源
+    m_ptr = nullptr;
+}
+```
+
+- RAII 的核心：当SmartPtr对象销毁时（如离开作用域），自动调用delete释放m_ptr指向的资源，避免内存泄漏。
+
+#### **3. 所有权控制（复制与移动）**
+
+为保证**独占性**，禁止复制、允许移动：
+
+- **禁止复制**：
+
+```
+SmartPtr(const SmartPtr& other) = delete;
+SmartPtr& operator=(const SmartPtr& other) = delete;
+```
+
+用= delete删除复制构造和复制赋值运算符，防止通过复制产生多个管理同一资源的智能指针（否则析构时会重复释放）。
+
+- **允许移动**：
+
+```
+// 移动构造：转移源对象的所有权
+SmartPtr(SmartPtr&& other) noexcept : m_ptr(other.m_ptr) {
+    other.m_ptr = nullptr;  // 源对象放弃所有权（避免重复释放）
+}
+
+// 移动赋值：先释放当前资源，再转移源对象的所有权
+SmartPtr& operator=(SmartPtr&& other) noexcept {
+    if (this != &other) {  // 避免自赋值
+        delete m_ptr;        // 释放当前资源
+        m_ptr = other.m_ptr; // 接管源对象的资源
+        other.m_ptr = nullptr; // 源对象放弃所有权
+    }
+    return *this;
+}
+```
+
+移动操作通过右值引用（&&）实现，将资源从一个SmartPtr转移到另一个，原指针不再拥有资源（m_ptr设为nullptr）。
+
+#### **4. 指针操作符重载**
+
+模拟原始指针的操作行为：
+
+- operator*()：返回资源的引用，支持*ptr形式访问。
+
+```
+T& operator*() const { return *m_ptr; }
+```
+
+- operator->()：返回资源的指针，支持ptr->member形式访问成员。
+
+```
+T* operator->() const { return m_ptr; }
+```
+
+#### **5. 资源管理辅助函数**
+
+- get()：返回原始指针（谨慎使用，避免手动释放导致智能指针重复释放）。
+
+```
+T* get() const { return m_ptr; }
+```
+
+- release()：释放资源所有权，返回原始指针（调用后智能指针不再管理该资源，需手动释放）。
+
+```
+T* release() {
+    T* temp = m_ptr;
+    m_ptr = nullptr;
+    return temp;
+}
+```
+
+- reset()：重置资源（释放当前资源，接管新资源）。
+
+```
+void reset(T* ptr = nullptr) {
+    if (m_ptr != ptr) {
+        delete m_ptr;
+        m_ptr = ptr;
+    }
+}
+```
+
+- operator bool()：检查是否持有有效资源（支持if (ptr)形式判断）。
+
+```
+explicit operator bool() const { return m_ptr != nullptr; }
+```
+
+#### **6. 辅助函数make_smart**
+
+类似std::make_unique，用于安全创建SmartPtr对象：
+
+```
+template <typename T, typename... Args>
+SmartPtr<T> make_smart(Args&&... args) {
+    return SmartPtr<T>(new T(std::forward<Args>(args)...));
+}
+```
+
+- 优势：通过完美转发（std::forward）传递参数，直接在内部创建对象并包装为SmartPtr，避免手动调用new，更安全（减少内存泄漏风险）。
+
+### **使用示例**
+
+```
+#include "SmartPtr.h"
+#include <iostream>
+
+class MyClass {
+public:
+    MyClass(int x) : m_x(x) {
+        std::cout << "MyClass constructed with " << x << std::endl;
+    }
+    ~MyClass() {
+        std::cout << "MyClass destructed" << std::endl;
+    }
+    void print() {
+        std::cout << "Value: " << m_x << std::endl;
+    }
+private:
+    int m_x;
+};
+
+int main() {
+    // 使用make_smart创建智能指针
+    SmartPtr<MyClass> ptr = make_smart<MyClass>(10);
+    ptr->print();  // 调用成员函数
+    (*ptr).print(); // 解引用访问
+
+    // 移动所有权
+    SmartPtr<MyClass> ptr2 = std::move(ptr);
+    if (!ptr) {  // 原指针已失去资源
+        std::cout << "ptr is now null" << std::endl;
+    }
+
+    // 重置资源
+    ptr2.reset(new MyClass(20));
+    ptr2->print();
+
+    return 0; // 离开作用域时，ptr2自动释放资源
+}
+```
+
+- 输出会显示对象的构造与析构，证明资源被正确管理。

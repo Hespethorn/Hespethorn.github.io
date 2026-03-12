@@ -1,0 +1,12 @@
+---
+title: 鸟哥的私房菜--区域网络 DHCP NTP
+tags:
+  - 服务器
+  - 云端
+categories: Computer-Networking
+series: 鸟哥私房菜
+abbrlink: 1b7890fe
+date: 2023-10-06 19:21:44
+---
+<img src="/img/PageCode/114.png" alt="鸟哥的私房菜--鸟哥的私房菜--区域网络 DHCP NTP" style="width: 90%;height: auto;margin: 0 auto;display: block;border: 3px solid #f0f0f0;border-radius: 12px;box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+

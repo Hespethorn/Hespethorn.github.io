@@ -1,0 +1,374 @@
+---
+title: Linux：基于 select 的即时聊天程序设计与实现
+tags:
+  - Linux
+  - 函数
+categories: Linux
+series: Linux
+abbrlink: 701ef8f6
+date: 2022-11-05 23:59:41
+---
+
+## 引言
+
+在网络编程的世界里，即时通信是一个核心话题。如何实现一个高效、稳定的聊天系统？本文将通过分析一个基于 select 的即时聊天程序 B 端代码，深入探讨 Unix/Linux 环境下的网络编程技术，包括命名管道、I/O 多路复用和非阻塞 I/O 等核心概念。
+
+## 一、 整体架构设计
+
+-----
+
+这个即时聊天程序采用客户端 - 客户端 (C2C) 架构，通过命名管道实现两个客户端之间的双向通信。系统结构简洁明了，如下图所示：
+
+```plaintext
++----------------+                +----------------+
+| 客户端A进程    |                  | 客户端B进程    |
+|                |                |                |
+| 写入1.pipe     |--------------> | 读取1.pipe     |
+|                |                |                |
+| 读取2.pipe     |<--------------| 写入2.pipe     |
+|                |                |                |
++----------------+                +----------------+
+```
+
+这种设计允许两个客户端直接通信，无需中间服务器，简化了系统架构。每个客户端负责处理用户输入、消息发送和接收显示，形成一个完整的通信闭环。
+
+## 二、 核心技术原理
+
+-----
+
+### 2.1 命名管道 (FIFO)
+
+命名管道是 Unix/Linux 系统中一种特殊的文件类型，用于实现不同进程间的通信。与普通管道不同，命名管道以文件形式存在于文件系统中，可以被多个不相关的进程访问。
+
+在本程序中，我们使用两个命名管道：
+
+- `1.pipe`：用于客户端 A 发送消息给客户端 B
+- `2.pipe`：用于客户端 B 发送消息给客户端 A
+
+命名管道的特点：
+
+- 面向字节流，类似于 TCP 套接字
+- 遵循先进先出 (FIFO) 原则
+- 必须先打开才能使用，打开操作可能会阻塞
+- 当所有打开管道的进程都关闭后，管道文件不会消失
+
+### 2.2 I/O 多路复用与 select 系统调用
+
+I/O 多路复用是一种让单个进程同时监视多个文件描述符的技术。当其中任何一个文件描述符就绪 (可读、可写或异常) 时，系统会通知进程进行相应的处理。
+
+select 是 Unix 系统中最早实现的 I/O 多路复用机制，其原型如下：
+
+```c
+int select(int nfds, fd_set *readfds, fd_set *writefds, 
+           fd_set *exceptfds, struct timeval *timeout);
+```
+
+- `nfds`：需要检查的文件描述符范围 (通常为最大描述符值加 1)
+- `readfds`：监视读就绪的文件描述符集合
+- `writefds`：监视写就绪的文件描述符集合
+- `exceptfds`：监视异常状态的文件描述符集合
+- `timeout`：超时设置，控制 select 的阻塞行为
+
+select 的工作流程：
+
+1. 初始化文件描述符集合
+2. 调用 select 阻塞等待
+3. 根据返回结果检查哪些描述符就绪
+4. 处理就绪的描述符
+
+### 2.3 非阻塞 I/O 模型
+
+在非阻塞 I/O 模型中，当请求的 I/O 操作无法立即完成时，系统不会阻塞进程，而是立即返回一个错误码。这种模型与 select 结合使用，可以有效避免进程在等待数据时被阻塞，提高系统并发处理能力。
+
+在本程序中，我们将读取管道设置为非阻塞模式：
+
+```c
+int read_fd = open("2.pipe", O_RDONLY | O_NONBLOCK);
+```
+
+这样，即使管道中没有数据可读，read 操作也会立即返回，不会阻塞程序执行。
+
+## 三、 代码实现详解
+
+-----
+
+### 3.1 时间戳生成函数
+
+```c
+// 获取当前时间字符串
+char* get_time_str() {
+    static char time_buf[32];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+    return time_buf;
+}
+```
+
+这个函数使用标准 C 库中的时间函数获取当前系统时间，并格式化为 "YYYY-MM-DD HH:MM:SS" 的字符串形式。注意使用了静态数组来保存结果，确保函数返回后数据不会丢失。
+
+静态数组的使用虽然简单，但也存在一些问题：
+
+- 线程不安全：在多线程环境中可能会出现数据竞争
+- 固定大小：如果时间格式变化，可能需要调整数组大小
+
+### 3.2 管道初始化与资源管理
+
+```c
+int main(int argc, char *argv[]) {
+    // 从2.pipe读取，向1.pipe写入
+    int read_fd = open("2.pipe", O_RDONLY | O_NONBLOCK);
+    int write_fd = open("1.pipe", O_WRONLY);
+    ERROR_CHECK(read_fd, -1, "open read_fd");
+    ERROR_CHECK(write_fd, -1, "open write_fd");
+    
+    // ... 主循环 ...
+    
+    // 清理资源
+    close(read_fd);
+    close(write_fd);
+    return 0;
+}
+```
+
+在程序初始化阶段，我们打开两个命名管道：
+
+- `read_fd`：以非阻塞模式打开，用于读取来自客户端 A 的消息
+- `write_fd`：以阻塞模式打开，用于向客户端 A 发送消息
+
+注意这里使用了`ERROR_CHECK`宏来检查打开操作的返回值，确保资源正确初始化。这个宏通常定义为：
+
+```c
+#define ERROR_CHECK(value, expected, message) \
+    if ((value) == (expected)) { \
+        perror(message); \
+        exit(EXIT_FAILURE); \
+    }
+```
+
+程序结束前，确保关闭所有打开的文件描述符，避免资源泄漏。这是编程中的一个重要原则：**谁分配资源，谁负责释放**。
+
+### 3.3 事件驱动主循环
+
+```c
+fd_set readfds;
+int max_fd = (read_fd > STDIN_FILENO) ? read_fd : STDIN_FILENO;
+
+while (1) {
+    FD_ZERO(&readfds);
+    FD_SET(STDIN_FILENO, &readfds);  // 监听标准输入
+    FD_SET(read_fd, &readfds);       // 监听管道输入
+
+    // 使用select实现非阻塞I/O
+    if (select(max_fd + 1, &readfds, NULL, NULL, NULL) == -1) {
+        perror("select error");
+        continue;
+    }
+    
+    // 处理用户输入和接收到的消息...
+}
+```
+
+这是程序的核心部分，使用 select 实现事件驱动的主循环：
+
+1. 清空文件描述符集合：`FD_ZERO`
+2. 设置需要监听的描述符：标准输入和管道读取端
+3. 调用 select 阻塞等待事件发生
+4. 检查 select 返回值，处理错误情况
+5. 根据就绪的描述符类型执行相应操作
+
+注意每次循环都需要重新设置文件描述符集合，因为 select 调用会修改这些集合。这是 `select `与其他 I/O 多路复用机制 (如 `epoll`) 的一个重要区别。
+
+### 3.4 消息处理逻辑
+
+```c
+// 处理用户输入
+if (FD_ISSET(STDIN_FILENO, &readfds)) {
+    memset(buffer, 0, BUFFER_SIZE);
+    if (fgets(buffer, BUFFER_SIZE, stdin) == NULL)
+        continue;
+
+    // 检查退出命令
+    if (strcmp(buffer, EXIT_CMD) == 0) {
+        printf("用户B已退出聊天\n");
+        break;
+    }
+
+    // 格式化带时间戳的消息
+    char send_buf[BUFFER_SIZE];
+    sprintf(send_buf, "[%s] B: %s", get_time_str(), buffer);
+    write(write_fd, send_buf, strlen(send_buf));
+}
+
+// 处理接收到的消息
+if (FD_ISSET(read_fd, &readfds)) {
+    memset(buffer, 0, BUFFER_SIZE);
+    int bytes_read = read(read_fd, buffer, BUFFER_SIZE);
+    if (bytes_read > 0) {
+        printf("%s", buffer);
+    }
+}
+```
+
+这段代码实现了消息的收发逻辑：
+
+- 当标准输入可读时，读取用户输入，添加时间戳后发送到管道
+- 当管道可读时，读取消息并显示在终端上
+
+注意使用`memset`清空缓冲区，防止旧数据影响新的读写操作。另外，使用`fgets`读取用户输入，它会保留换行符，因此在比较退出命令时需要包含`\n`。
+
+## 四、 系统性能分析
+
+-----
+
+### 4.1 select 的优缺点
+
+**优点**：
+
+- 跨平台支持：几乎所有 Unix/Linux 系统都支持 select
+- 实现简单：编程模型相对直观
+- 历史悠久：经过长时间的测试和优化，稳定性高
+
+**缺点**：
+
+- 描述符数量限制：通常受 FD_SETSIZE 限制，默认为 1024
+- 效率问题：时间复杂度为 O (n)，不适合处理大量连接
+- 内核用户空间复制开销：每次调用 select 都需要复制整个描述符集合
+- 轮询机制：需要遍历整个描述符集合来查找就绪的描述符
+
+### 4.2 性能优化方向
+
+针对 select 的局限性，可以考虑以下优化方案：
+
+1. **使用 poll 替代 select**：poll 取消了描述符数量的限制，使用链表而非固定大小的数组来管理描述符
+2. **使用 epoll (Linux 专有)**：epoll 是 Linux 特有的 I/O 多路复用机制，针对大量连接进行了优化，时间复杂度为 O (1)
+3. **多线程 / 多进程模型**：将 select 循环分配到多个线程或进程中，充分利用多核 CPU 资源
+4. **异步 I/O 模型**：使用异步 I/O 接口如 aio_read/aio_write，进一步提高并发性能
+
+## 附录：完整源代码
+
+下面是基于 select 的即时聊天程序 B 端的完整源代码：
+
+```c
+#include <my_header.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#define EXIT_MAIN "1\n"
+/* Usage:使用select和管道进行聊天通信，一方退出，另一方也退出，发送一也退出 */
+int main(int argc, char *argv[]){
+    //接收端1读2写
+    int fp_r=open("1.pipe",O_RDONLY);
+    ERROR_CHECK(fp_r,-1,"open");
+    int fp_w=open("2.pipe",O_WRONLY);
+    ERROR_CHECK(fp_w,-1,"open");
+    printf("A: 开始聊天 (输入'1'退出)\n");
+    //select 函数
+    fd_set set;
+    int max_fd = (fp_r > STDIN_FILENO) ? fp_r : STDIN_FILENO;
+    char buf[1024] = {0};
+    int num= 1;
+    while(num){
+        FD_ZERO(&set);
+        FD_SET(STDIN_FILENO,&set);
+        FD_SET(fp_r,&set);
+        if(select(max_fd+1,&set,NULL,NULL,NULL)==0){
+            perror("select");
+            num=0;
+        }
+        int ret=0;
+        if(FD_ISSET(STDIN_FILENO,&set)){
+            bzero(buf,sizeof(buf));
+            ret=read(STDIN_FILENO,buf,sizeof(buf));
+            write(fp_w,buf,ret);
+            if(strcmp(buf,EXIT_MAIN)==0){
+                printf("断开连接\n");
+                break;
+            }
+        }
+        if(FD_ISSET(fp_r,&set)){
+            time_t time_now=time(NULL);
+            struct tm *now=localtime(&time_now);
+            printf("[北京时间：%d:%d:%d]  B:\n",now->tm_hour,now->tm_min,now->tm_sec);
+            ret=read(fp_r,buf,sizeof(buf));
+            write(STDOUT_FILENO,buf,ret);
+            if(strcmp(buf,EXIT_MAIN)==0){
+                printf("对方断开连接\n");
+                break;
+            }
+        }
+    }
+    close(fp_w);
+    close(fp_r);
+    return 0;
+}  
+#include <my_header.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/select.h>
+#include <time.h>
+#define EXIT_MAIN "1\n"
+/* Usage:这是进程1，通过管道发送文件名字和内容发送给进程2  */
+int main(int argc, char *argv[]){                                  
+    mkfifo("1.pipe",0775);
+    mkfifo("2.pipe",0775);
+    //发送端1写2读
+    int fp_w=open("1.pipe",O_WRONLY);
+    ERROR_CHECK(fp_w,-1,"open 1pipe");
+    int fp_r=open("2.pipe",O_RDONLY);
+    ERROR_CHECK(fp_r,-1,"open 2pipe");
+    //select 函数
+    printf("B: 开始聊天 (输入'1'退出)\n");
+    fd_set set;
+    int max_fd = (fp_r > STDIN_FILENO) ? fp_r : STDIN_FILENO;
+    char buf[1024] = {0};
+    int num = 1;
+    while(num){
+        //分两种情况，接收和发送
+        //先处理发送
+        FD_ZERO(&set);
+        FD_SET(STDIN_FILENO,&set);
+        FD_SET(fp_r,&set);
+
+        if(select(++max_fd,&set,NULL,NULL,NULL)==-1){
+            perror("select");
+            num=0;
+        }
+
+        //监控输入
+        if(FD_ISSET(STDIN_FILENO,&set)){
+            bzero(buf,sizeof(buf));
+            int ret=read(STDIN_FILENO,buf,sizeof(buf));
+            ERROR_CHECK(ret,-1,"read STDIN_FILENO");
+            if(ret>0){
+                write(fp_w,buf,ret);
+                if(strcmp(buf,EXIT_MAIN)==0){
+                    printf("断开连接\n");
+                    break;
+                }
+            }
+        }
+        //监控读
+        if(FD_ISSET(fp_r,&set)){
+            time_t time_now=time(NULL);                          
+            struct tm *now=localtime(&time_now);
+            printf("[北京时间：%d:%d:%d]  A:\n",now->tm_hour,now->tm_min,now->tm_sec);
+            int ret=read(fp_r,buf,sizeof(buf));
+            ERROR_CHECK(ret,-1,"read fp_r");
+            write(STDOUT_FILENO,buf,ret);
+            if(strcmp(buf,EXIT_MAIN)==0){
+                printf("对方断开连接\n");
+                break;
+            }
+        }
+    }
+    close(fp_r);
+    close(fp_w);
+    return 0;
+}
+
+```

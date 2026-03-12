@@ -1,0 +1,220 @@
+---
+tags:
+  - C++
+  - 'std::pair'
+  - 容器
+categories:
+  - C++
+  - Foundational Syntax and Core Concepts
+series: C++
+abbrlink: 51edee75
+title: C++ 标准库中 pair 的实现原理与应用解析
+date: 2024-01-29 22:48:07
+---
+
+## 一、pair 的模板定义与类型参数设计
+
+### 1.1 基本模板定义
+
+C++ 标准库中的std::pair是一个模板类，用于存储两个异构对象作为一个单元。其基本定义如下：
+
+```
+namespace std {
+    template <class T1, class T2>
+    struct pair {
+        typedef T1 first_type;
+        typedef T2 second_type;
+
+        T1 first;
+        T2 second;
+
+        // 构造函数及其他成员函数...
+    };
+}
+```
+
+这个定义展示了pair的核心特征：
+
+- 两个模板类型参数T1和T2，分别指定了两个成员的类型
+
+- 公开的成员变量first和second，分别存储第一个和第二个元素
+
+- 类型别名first_type和second_type，用于获取元素类型
+
+### 1.2 类型推导机制
+
+在 C++11 及以后的标准中，引入了std::make_pair函数，它能够自动推导pair的模板参数类型：
+
+```
+template <class T1, class T2>
+constexpr pair<V1, V2> make_pair(T1&& t, T2&& u);
+```
+
+编译器通过参数t和u的类型来推导V1和V2的具体类型，通常会应用引用折叠规则和完美转发：
+
+```
+auto p1 = make_pair(10, "hello");  // 推导出pair<int, const char*>
+auto p2 = make_pair(string("a"), 3.14);  // 推导出pair<string, double>
+```
+
+## 二、pair 的内存布局与存储结构
+
+### 2.1 内存布局
+
+std::pair的内存布局通常是将两个成员变量连续存储，没有额外的包装开销。例如，对于pair<int, double>，其内存布局大致如下：
+
+```
++------------+------------+
+|   first    |   second   |
+|  (int)     |  (double)  |
++------------+------------+
+```
+
+不同编译器可能会根据类型对齐要求在成员之间插入填充字节：
+
+```
+#include <iostream>
+#include <utility>
+
+int main() {
+    std::pair<char, double> p;
+    std::cout << "Size of pair: " << sizeof(p) << std::endl;
+    std::cout << "Offset of first: " << &p.first - &p << std::endl;
+    std::cout << "Offset of second: " << &p.second - &p << std::endl;
+    return 0;
+}
+```
+
+在 64 位系统上，上述代码可能输出：
+
+```
+Size of pair: 16
+Offset of first: 0
+Offset of second: 8
+```
+
+这表明char类型的first之后有 7 字节的填充，以满足double类型的 8 字节对齐要求。
+
+### 2.2 空基类优化
+
+当pair的元素类型是空类时，编译器通常会应用空基类优化（EBO），例如在某些实现中：
+
+```
+struct Empty {};
+std::pair<Empty, int> p;
+```
+
+在这种情况下，sizeof(p)很可能等于sizeof(int)，因为空类的实例不占用实际内存。
+
+## 三、构造函数与赋值操作
+
+### 3.1 构造函数家族
+
+std::pair提供了多种构造方式以满足不同场景的需求：
+
+```
+// 默认构造函数
+pair();
+
+// 带参数的构造函数
+pair(const T1& x, const T2& y);
+
+// 移动构造函数 (C++11)
+pair(T1&& x, T2&& y);
+
+// 转换构造函数
+template <class U, class V>
+pair(const pair<U, V>& p);
+
+// 转发构造函数 (C++11)
+template <class U, class V>
+pair(U&& x, V&& y);
+
+// 从tuple构造 (C++11)
+template <class... Args1, class... Args2>
+pair(piecewise_construct_t,
+     tuple<Args1...> first_args,
+     tuple<Args2...> second_args);
+```
+
+piecewise_construct构造方式允许分别对两个元素进行就地构造，这在处理不可复制 / 移动的类型时特别有用。
+
+### 3.2 赋值操作
+
+std::pair提供了多种赋值操作符：
+
+```
+// 拷贝赋值
+pair& operator=(const pair& p);
+
+// 移动赋值 (C++11)
+pair& operator=(pair&& p) noexcept;
+
+// 从不同类型的pair赋值
+template <class U, class V>
+pair& operator=(const pair<U, V>& p);
+
+// 从不同类型的pair移动赋值
+template <class U, class V>
+pair& operator=(pair<U, V>&& p);
+```
+
+## 四、比较运算符重载
+
+std::pair重载了所有比较运算符，遵循字典序比较规则：
+
+```
+template <class T1, class T2>
+bool operator==(const pair<T1,T2>& x, const pair<T1,T2>& y);
+
+template <class T1, class T2>
+bool operator!=(const pair<T1,T2>& x, const pair<T1,T2>& y);
+
+template <class T1, class T2>
+bool operator< (const pair<T1,T2>& x, const pair<T1,T2>& y);
+
+template <class T1, class T2>
+bool operator> (const pair<T1,T2>& x, const pair<T1,T2>& y);
+
+template <class T1, class T2>
+bool operator<=(const pair<T1,T2>& x, const pair<T1,T2>& y);
+
+template <class T1, class T2>
+bool operator>=(const pair<T1,T2>& x, const pair<T1,T2>& y);
+```
+
+比较逻辑遵循：
+
+1. 首先比较first成员
+2. 如果first成员相等，则比较second成员
+
+## 五、C++ 标准版本差异
+
+### 5.1 C++11 的改进
+
+C++11 为std::pair引入了多项重要改进：
+
+- 移动语义支持（移动构造函数和移动赋值运算符）
+
+- constexpr构造函数，允许在编译期创建pair
+
+- piecewise_construct构造方式
+
+- swap()成员函数
+
+- 支持从std::tuple转换
+
+### 5.2 C++14 的增强
+
+- 增加了std::get非成员函数的支持，可以使用get<0>(p)或get<1>(p)访问元素
+
+- 为make_pair增加了更多类型推导能力
+
+### 5.3 C++17 及以后
+
+- 引入了结构化绑定，可以直接将pair的成员绑定到变量：
+
+```
+auto [a, b] = std::make_pair(1, "two");  // a=1, b="two"
+```
+

@@ -1,0 +1,12 @@
+---
+title: 鸟哥的私房菜--远端连线服务器 SSH / X / VNC
+tags:
+  - 服务器
+  - 云端
+categories: Computer-Networking
+series: 鸟哥私房菜
+abbrlink: eadb7300
+date: 2023-10-12 20:51:11
+---
+<img src="/img/PageCode/115.png" alt="鸟哥的私房菜--远端连线服务器 SSHXVNC" style="width: 90%;height: auto;margin: 0 auto;display: block;border: 3px solid #f0f0f0;border-radius: 12px;box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+

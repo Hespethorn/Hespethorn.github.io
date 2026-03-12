@@ -1,0 +1,99 @@
+---
+title: Leetcode 0054. 螺旋矩阵
+tags:
+  - leetcode
+categories:
+  - Leetcode
+  - 矩阵
+series: Leetcode
+abbrlink: 8940767b
+date: 2025-08-07 19:48:46
+---
+
+## [54. 螺旋矩阵](https://leetcode.cn/problems/spiral-matrix/)
+
+给你一个 `m` 行 `n` 列的矩阵 `matrix` ，请按照 **顺时针螺旋顺序** ，返回矩阵中的所有元素。
+
+ **示例 1：**
+
+![img](https://assets.leetcode.com/uploads/2020/11/13/spiral1.jpg)
+
+```
+输入：matrix = [[1,2,3],[4,5,6],[7,8,9]]
+输出：[1,2,3,6,9,8,7,4,5]
+```
+
+**示例 2：**
+
+![img](https://assets.leetcode.com/uploads/2020/11/13/spiral.jpg)
+
+```
+输入：matrix = [[1,2,3,4],[5,6,7,8],[9,10,11,12]]
+输出：[1,2,3,4,8,12,11,10,9,5,6,7]
+```
+
+ **提示：**
+
+- `m == matrix.length`
+- `n == matrix[i].length`
+- `1 <= m, n <= 10`
+- `-100 <= matrix[i][j] <= 100`
+
+## 题目大意
+
+给定一个 m 行 n 列的矩阵，按顺时针螺旋顺序返回矩阵中的所有元素。
+
+## 解题思路
+
+采用方向向量结合边界判断的方法：
+
+1. 定义四个方向（右、下、左、上）的坐标变化
+2. 遍历矩阵元素，按当前方向移动
+3. 当遇到边界或已访问元素时，顺时针切换方向
+4. 直到收集完所有元素
+
+```
+class Solution {
+public:
+    vector<int> spiralOrder(vector<vector<int>>& matrix) {
+        vector<int> result;
+        if (matrix.empty()) {
+        	return result;
+        	}
+        
+        int m = matrix.size();
+        int n = matrix[0].size();
+        // 标记是否访问过
+        vector<vector<bool>> visited(m, vector<bool>(n, false));
+        // 方向向量：右、下、左、上
+        vector<pair<int, int>> dirs = {{0, 1}, {1, 0}, {0, -1}, {-1, 0}};
+        int dir = 0; // 当前方向索引
+        int row = 0, col = 0;
+        
+        for (int i = 0; i < m * n; ++i) {
+            // 记录当前元素
+            result.push_back(matrix[row][col]);
+            visited[row][col] = true;
+            
+            // 计算下一个位置
+            int next_row = row + dirs[dir].first;
+            int next_col = col + dirs[dir].second;
+            
+            // 判断是否需要改变方向
+            if (next_row < 0 || next_row >= m || 
+                next_col < 0 || next_col >= n || 
+                visited[next_row][next_col]) {
+                dir = (dir + 1) % 4; // 顺时针转向
+                next_row = row + dirs[dir].first;
+                next_col = col + dirs[dir].second;
+            }
+            
+            // 更新当前位置
+            row = next_row;
+            col = next_col;
+        }
+        
+        return result;
+    }
+};
+```

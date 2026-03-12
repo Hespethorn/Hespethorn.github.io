@@ -1,0 +1,148 @@
+---
+title: 基于多人聊天室系统的实现，详细学习 epoll 函数基础
+tags:
+  - 多人聊天
+  - 计算机网络
+  - select
+categories: Computer-Networking
+series: Computer-Networking
+abbrlink: a898a0c
+date: 2023-05-11 20:28:55
+---
+
+## 导言：
+
+在 Linux 高并发网络编程中，`epoll` 作为事件驱动的 I/O 多路复用方案，是构建高性能服务器的核心技术。本文从原理、使用到实践，全面解析 `epoll` 的技术要点。
+
+## 一、epoll 的核心优势
+
+- **事件驱动**：相较于`select/poll`的遍历式轮询，`epoll` 采用事件驱动架构，由内核主动推送就绪 I/O 事件。高并发场景下，仅少量连接就绪时，`epoll `可精准定位活跃连接，避免全量扫描带来的 CPU 损耗，大幅提升资源利用率。
+
+- **海量连接**：`select`受限于固定长度数组（默认上限 1024），难以应对高并发。`epoll` 采用动态数据结构，连接上限仅受系统文件描述符表限制（可通过`ulimit -n`调整），可支撑数万至数十万级并发连接。
+
+- **高效结构**：`epoll` 以红黑树管理监控列表，文件描述符操作时间复杂度为`O(log n)`；就绪事件链表支持`O(1)`级快速检索。这种设计确保海量连接下的高效响应与处理。
+
+## 二、核心函数解析
+
+```c
+#include <sys/epoll.h>
+
+int epoll_create(int size);
+// 创建 epoll 实例，size 参数已废弃（内核2.6.8后仅保留形式参数）
+// 返回值：成功时返回非负的文件描述符（epfd），失败返回 -1 并设置 errno
+
+int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+// 对 epoll 实例进行事件管理，支持添加（ADD）、修改（MOD）、删除（DEL）操作
+// epfd：epoll_create 返回的文件描述符
+// op：操作类型，取值为 EPOLL_CTL_ADD、EPOLL_CTL_MOD、EPOLL_CTL_DEL
+// fd：需要监控的目标文件描述符
+// event：指向 struct epoll_event 的指针，定义事件类型和用户数据
+// 返回值：成功返回 0，失败返回 -1 并设置 errno
+
+int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
+// 阻塞等待已注册文件描述符上的就绪事件
+// epfd：epoll_create 返回的文件描述符
+// events：用于存放就绪事件的数组
+// maxevents：events 数组的最大长度
+// timeout：超时时间（毫秒），-1 表示永久阻塞，0 表示非阻塞立即返回
+// 返回值：就绪事件的数量，超时返回 0，失败返回 -1 并设置 errno
+```
+
+每个函数在实际应用中承担关键职责：`epoll_create` 初始化事件监控上下文；`epoll_ctl` 动态维护监控的文件描述符集合及对应事件；`epoll_wait` 高效获取就绪事件，配合用户定义的回调逻辑实现异步 I/O 处理。
+
+## 三、与 select/poll 的对比
+
+| 特性       | select       | poll       | epoll             |
+| ---------- | ------------ | ---------- | ----------------- |
+| 数据结构   | 固定大小位图 | 动态数组   | 红黑树 + 就绪链表 |
+| 最大连接数 | 1024         | 系统限制   | 系统限制          |
+| 查询效率   | O (n) 轮询   | O (n) 轮询 | O (1) 事件获取    |
+| 触发模式   | LT           | LT         | LT/ET             |
+| 内存拷贝   | 每次全量     | 每次全量   | 仅初始化时一次    |
+
+## 四、触发模式与应用
+
+`epoll `提供水平触发（LT）和边缘触发（ET）两种模式，在事件处理与应用场景上差异明显：
+
+- **水平触发（LT）**：默认模式，持续触发就绪事件。文件描述符 I/O 就绪时，`epoll_wait` 会反复返回，直到数据处理完毕。例如套接字接收数据，缓冲区有未读数据就持续触发可读事件。编程简单，无需复杂非阻塞处理，适合常规网络应用。
+- **边缘触发（ET）**：仅在 I/O 状态变化时触发一次。如套接字新数据到达或连接状态改变，`epoll_wait` 才响应。需将文件描述符设为非阻塞，否则未处理完数据就不再触发，易丢数据。该模式减少冗余，提升资源利用率，适用于高并发场景。
+
+## 五、典型使用流程
+
+**创建实例**
+
+```c
+// 1. 
+// epoll_create 函数用于创建一个 epoll 实例，返回文件描述符 epfd
+// 参数 size 在 Linux 2.6.8 之后已被废弃，但仍需传入大于 0 的值，一般传入 1
+int epfd = epoll_create(1);
+if (epfd == -1) {
+    perror("epoll_create");
+    return -1;
+}
+```
+
+**注册监听socket**
+```c
+// 定义 epoll_event 结构体，用于描述事件类型和关联的文件描述符
+struct epoll_event ev;
+// 设置感兴趣的事件为读事件（EPOLLIN）
+ev.events = EPOLLIN; 
+// 关联需要监听的文件描述符（如监听客户端连接的 listen_fd）
+ev.data.fd = listen_fd; 
+
+// epoll_ctl 函数用于控制 epoll 实例，执行添加、修改或删除操作
+// EPOLL_CTL_ADD 表示将 listen_fd 添加到 epoll 监听列表
+if (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_fd, &ev) == -1) {
+    perror("epoll_ctl: listen_fd");
+    close(epfd);
+    return -1;
+}
+```
+
+**事件循环**
+
+```c
+
+// 定义用于存储就绪事件的数组 events，MAX_EVENTS 表示一次最多处理的事件数
+struct epoll_event events[MAX_EVENTS];
+while (1) {
+    // epoll_wait 函数阻塞等待事件发生，返回就绪事件的数量
+    // -1 表示永久阻塞，直到有事件发生
+    int nfds = epoll_wait(epfd, &events, MAX_EVENTS, -1);
+    if (nfds == -1) {
+        if (errno != EINTR) {
+            perror("epoll_wait");
+            break;
+        }
+    } else if (nfds == 0) {
+        // 超时，可根据需求处理或忽略
+    } else {
+        for (int i = 0; i < nfds; i++) {
+            // 处理新连接
+            if (events[i].data.fd == listen_fd) {
+                // 接受新连接并注册到 epoll
+            } 
+            // 处理数据读写
+            else if (events[i].events & EPOLLIN) {
+                // 读取数据并处理业务逻辑
+            } 
+            // 处理连接关闭
+            else if (events[i].events & (EPOLLHUP | EPOLLRDHUP | EPOLLERR)) {
+                // 关闭文件描述符并从 epoll 中移除
+            }
+        }
+    }
+}
+close(epfd);
+```
+
+## 六、实践要点
+
+- **关闭 FD 前需先移除**：关闭文件描述符前，需通过epoll_ctl()的EPOLL_CTL_DEL操作将其从 epoll 实例中删除，否则后续操作会触发错误，高并发场景下还可能污染内核事件表。
+
+- **ET 模式需非阻塞**：边缘触发（ET）模式下，FD 必须设置为非阻塞。ET 仅在事件状态变化时触发，若 FD 阻塞，I/O 操作会导致线程停滞。
+
+- **多线程用** **EPOLLONESHOT**：多线程环境中，为避免多个线程响应同一 FD 事件引发的 “惊群效应”，可使用EPOLLONESHOT将 FD 事件分配给单个线程，处理完后需重置标志。
+
+- **定期清理无效 FD**：不再使用的 FD 需及时清理，否则会造成内存泄漏。

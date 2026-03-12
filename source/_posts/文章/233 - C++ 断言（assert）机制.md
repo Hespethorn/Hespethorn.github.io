@@ -1,0 +1,181 @@
+---
+title: C++ 断言（assert）机制
+tags:
+  - assert
+categories:
+  - C++
+  - Foundational Syntax and Core Concepts
+series: Foundational Syntax and Core Concepts
+abbrlink: ebacb40b
+date: 2025-08-20 23:28:27
+---
+
+## 一、assert 宏的基本语法与工作机制
+
+断言是 C++ 标准库提供的调试工具，核心通过<cassert>头文件（兼容 C 的<assert.h>）中的assert宏实现，其本质是**条件检查宏**，仅在调试阶段生效。
+
+### 1.1 核心语法
+
+assert宏接收一个布尔表达式作为参数，语法如下：
+
+```
+#include <cassert> // 必须包含的头文件
+
+int main() {
+    int* ptr = new int(10);
+    // 检查指针是否非空（调试阶段生效）
+    assert(ptr != nullptr); 
+    
+    delete ptr;
+    ptr = nullptr;
+    // 此时断言会失败（指针已置空）
+    assert(ptr != nullptr); 
+    return 0;
+}
+```
+
+### 1.2 工作机制与 NDEBUG 宏
+
+assert的行为完全由 **NDEBUG宏 **（"No Debug"）控制，这是 C++ 标准规定的编译级开关：
+
+- **调试模式**（未定义NDEBUG）：
+  - 若表达式为false，assert会向标准错误流（stderr）输出错误信息（包含文件名、行号、断言条件），随后调用abort()终止程序。
+
+- **释放模式**（定义NDEBUG）：
+  - assert宏会被替换为**空语句**，所有断言逻辑被完全移除，不产生任何性能开销。
+
+> 编译器定义NDEBUG的方式： GCC/Clang：编译时添加选项 -DNDEBUG
+
+## 二、断言的典型应用场景
+
+断言仅用于**开发阶段的逻辑错误检测**，不可用于处理运行时可预期的错误（如用户输入错误、磁盘空间不足）。以下是三大核心应用场景：
+
+### 2.1 前置条件：函数参数合法性检查
+
+验证函数输入是否满足逻辑要求（仅针对 “开发阶段不应出现的非法输入”）：
+
+```
+// 函数功能：计算正整数的平方（前置条件：输入必须为正）
+int square(int n) {
+    // 断言：输入n必须大于0（开发阶段若传负数，直接暴露错误）
+    assert(n > 0 && "square(): input must be positive integer");
+    return n * n;
+}
+
+int main() {
+    square(5);  // 正常执行
+    square(-3); // 调试模式：断言失败，输出"square(): input must be positive integer"
+    return 0;
+}
+```
+
+### 2.2 后置条件：函数返回结果验证
+
+确保函数执行后输出符合预期逻辑：
+
+```
+#include <cassert>
+#include <vector>
+
+// 函数功能：向vector添加元素并返回新大小（后置条件：大小需增加1）
+size_t add_element(std::vector<int>& vec, int val) {
+    size_t old_size = vec.size();
+    vec.push_back(val);
+    // 断言：添加元素后，大小必须为原大小+1
+    assert(vec.size() == old_size + 1 && "add_element(): size not increased");
+    return vec.size();
+}
+```
+
+### 2.3 不变式：程序运行中的固定条件
+
+验证程序执行过程中 “永远必须为真” 的条件（如循环变量范围、对象状态）：
+
+```
+void process_array(int arr[], size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        // 断言：循环变量i始终在[0, len)范围内（防止逻辑错误导致i越界）
+        assert(i < len && "process_array(): loop variable out of range");
+        arr[i] *= 2;
+    }
+}
+```
+
+## 三、断言条件设计的黄金准则与常见误区
+
+### 3.1 黄金准则
+
+ **断言条件必须 “无副作用”**
+
+断言在释放模式下会被删除，若条件包含修改变量的操作（如assert(i++)），会导致调试 / 释放模式行为不一致：
+
+```
+// 错误：assert包含i++的副作用，释放模式下i不递增
+assert(i++ < 10);
+// 正确：先递增，再断言
+i++;
+assert(i < 10);
+```
+
+ **断言信息需 “清晰定位”**
+
+利用字符串常量补充上下文，方便快速定位错误（如函数名、变量含义）：
+
+```
+// 差：仅知道条件失败，无法快速判断场景
+assert(ptr != nullptr);
+// 好：明确指出是"缓冲区指针"，属于"read_data函数"
+assert(ptr != nullptr && "read_data(): buffer pointer must not be null");
+```
+
+ **严格区分 “断言” 与 “错误处理”**
+
+断言仅用于**开发阶段的逻辑错误**（如程序员传错参数），运行时错误（如用户输入非法值、文件不存在）必须用if+ 错误码 / 异常处理：
+
+```
+// 错误：用断言处理用户输入（运行时可能失败）
+int age;
+std::cin >> age;
+assert(age >= 0 && "age must be non-negative"); // 用户可能输入-1，释放模式下无检查
+
+// 正确：运行时错误用if处理
+int age;
+std::cin >> age;
+if (age < 0) {
+    std::cerr << "Error: age must be non-negative" << std::endl;
+    return 1; // 优雅退出
+}
+```
+
+### 3.2 常见误区
+
+- **误区 1：断言条件永远为真**
+  - 如assert(1 == 1)，此类断言无任何意义，浪费编译资源。
+
+- **误区 2：用断言检查 “外部依赖”**
+  - 如assert(fopen("config.txt", "r") != nullptr)，配置文件可能被用户删除，属于运行时错误，不应使用断言。
+
+- **误区 3：在断言中执行核心逻辑**
+  - 如assert(write_to_file(data) == 0)，释放模式下write_to_file会被跳过，导致核心功能缺失。
+
+## 四、调试断言与运行时检查的差异
+
+| 对比维度 | 调试断言（assert）               | 运行时检查（if / 异常）              |
+| -------- | -------------------------------- | ------------------------------------ |
+| 核心目的 | 发现开发阶段的逻辑错误           | 处理运行时可能出现的合法错误         |
+| 生效阶段 | 仅调试模式（未定义 NDEBUG）      | 所有模式（调试 + 释放）              |
+| 条件特性 | 可删除（无副作用）               | 必须保留（影响程序功能）             |
+| 失败处理 | 终止程序（输出调试信息）         | 优雅处理（返回错误码 / 抛异常）      |
+| 适用场景 | 函数参数合法性（开发级）、不变式 | 用户输入错误、文件 IO 失败、内存不足 |
+
+## 五、总结
+
+断言是 C++ 开发中 “低成本发现逻辑错误” 的核心工具，其价值在于**在开发阶段提前暴露问题**，避免错误流入生产环境。正确使用断言需牢记：
+
+-  断言仅用于调试阶段，不可处理运行时错误；
+
+-  断言条件必须无副作用，信息需清晰定位；
+
+-  区分断言与错误处理，不滥用、不误用；
+
+-  可通过自定义断言和模块级控制，提升调试效率。

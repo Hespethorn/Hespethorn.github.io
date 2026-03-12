@@ -1,0 +1,439 @@
+---
+title: C++ 实现 JWT 工具类封装
+tags:
+  - jwt
+  - 加密
+categories:
+  - C++
+  - Practical System Development
+series: Practical System Development
+abbrlink: a71dc607
+date: 2025-09-22 22:18:50
+---
+
+## 一、JWT概念
+
+JWT（JSON Web Token）是一种用于在网络上安全传输信息的紧凑、自包含的方式。它由三部分组成：头部（Header）、载荷（Payload）和签名（Signature），通过点分隔的字符串形式呈现。在身份验证和信息交换场景中应用广泛，因为它可以验证信息的完整性和真实性。
+
+### 1.1 准备工作
+
+在开始之前，我们需要确保系统中安装了`libjwt`库，这是一个轻量级的 JWT 实现库。在 Ubuntu/Debian 系统上，可以使用以下命令安装：
+
+```bash
+sudo apt-get install libjwt-dev
+```
+
+### 1.2 `jwt.cc`
+
+```jwt.cc
+#include <jwt.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+
+/**
+ * 生成JWT令牌
+ * @param secret_key 用于签名JWT的密钥
+ *
+ * 功能说明：
+ * 1. 创建JWT对象并设置签名算法为HS256
+ * 2. 添加自定义载荷信息（不可包含敏感数据）
+ * 3. 设置过期时间为当前时间+3600秒（1小时）
+ * 4. 生成并打印JWT令牌
+ * 5. 释放相关资源，防止内存泄漏
+ */
+void generate_jwt_token(const char* secret_key)
+{
+    jwt_t* jwt;
+    // 创建新的JWT对象
+    jwt_new(&jwt);
+
+    // 设置签名算法为HS256，并指定密钥
+    jwt_set_alg(jwt, JWT_ALG_HS256, (unsigned char*)secret_key, strlen(secret_key));
+
+    // 设置JWT载荷信息
+    jwt_add_grant(jwt, "sub", "subject");         // 标准字段：主题
+    jwt_add_grant(jwt, "username", "hespethorn");  // 自定义字段：用户名
+    jwt_add_grant(jwt, "role", "main");          // 自定义字段：用户角色
+    jwt_add_grant_int(jwt, "exp", time(NULL) + 3600);  // 标准字段：过期时间（1小时后）
+
+    // 生成JWT令牌字符串
+    char* token = jwt_encode_str(jwt);
+    printf("Generated JWT: %s\n", token);
+
+    // 释放资源
+    jwt_free(jwt);
+    free(token);
+}
+
+/**
+ * 验证JWT令牌并解析其内容
+ * @param token 待验证的JWT令牌字符串
+ * @param secret_key 用于验证签名的密钥（需与生成时一致）
+ *
+ * 功能说明：
+ * 1. 解析JWT令牌并验证其签名
+ * 2. 检查令牌是否有效（包括过期检查）
+ * 3. 若有效，提取并打印载荷中的信息
+ * 4. 释放相关资源
+ */
+void verify_jwt(const char* token, const char* secret_key)
+{
+    jwt_t* jwt;
+    // 解析并验证JWT令牌
+    int err = jwt_decode(&jwt, token, (unsigned char*)secret_key, strlen(secret_key));
+    if (err) {
+        printf("Invalid JWT! Error code: %d\n", err);
+        return ;
+    }
+
+    // 提取并打印载荷信息
+    printf("Subject: %s\n", jwt_get_grant(jwt, "sub"));
+    printf("Username: %s\n", jwt_get_grant(jwt, "username"));
+    printf("Role: %s\n", jwt_get_grant(jwt, "role"));
+    printf("Expiration Time: %ld\n", jwt_get_grant_int(jwt, "exp"));
+
+    // 释放JWT对象
+    jwt_free(jwt);
+}
+
+/**
+ * 主函数：程序入口点
+ * 功能：演示JWT令牌的生成与验证过程
+ */
+int main()
+{
+    // 生成JWT令牌（取消注释即可生成新令牌）
+    generate_jwt_token("abc123");
+
+    // 用于验证的JWT令牌
+    const char* token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTg1NTM4MDIsInJvbGUiOiJhZG1pbiIsInN1YiI6InN1YmplY3QiLCJ1c2VybmFtZSI6InBlYW51dGl4eCJ9.oOxBaja159EM-2K9ajRFa0BZtxCJ5-Zec_CzSUz0Jm8";
+
+    // 验证JWT令牌
+    verify_jwt(token, "abc123");
+
+    return 0;
+}
+```
+
+## 二、代码封装
+
+我们的实现包含三个文件：
+
+- `jwt_wrapper.h`：类的声明
+- `jwt_wrapper.cpp`：类的实现
+- `main.cpp`：使用示例
+
+### 2.1 头文件
+
+```jwt_wrapper.h
+#ifndef JWT_WRAPPER_H
+#define JWT_WRAPPER_H
+
+#include <string>
+#include <jwt.h>  // 引入libjwt库
+
+/**
+ * @brief JWT工具类，封装了JWT令牌的生成、验证和声明提取功能
+ */
+class JWTWrapper {
+private:
+    std::string secret_key_;  // 用于签名和验证的密钥
+    jwt_alg_t algorithm_;     // 加密算法
+
+public:
+    /**
+     * @brief 构造函数
+     * @param secret_key 密钥字符串，不能为空
+     * @param algorithm 加密算法，默认使用HS256
+     * @throws std::invalid_argument 如果密钥为空
+     */
+    JWTWrapper(const std::string& secret_key, jwt_alg_t algorithm = JWT_ALG_HS256);
+
+    /**
+     * @brief 生成JWT令牌
+     * @return 生成的JWT令牌字符串
+     * @throws std::runtime_error 如果生成过程失败
+     */
+    std::string generate_token() const;
+
+    /**
+     * @brief 验证JWT令牌
+     * @param token 待验证的令牌字符串
+     * @param jwt 输出参数，用于存储解析后的JWT对象
+     * @return 验证成功返回true，否则返回false
+     */
+    bool verify_token(const std::string& token, jwt_t**jwt) const;
+
+    /**
+     * @brief 获取字符串类型的声明
+     * @param jwt 已解析的JWT对象
+     * @param claim 声明名称
+     * @return 声明的值，若参数无效返回nullptr
+     */
+    static const char* get_claim_str(jwt_t* jwt, const char* claim);
+
+    /**
+     * @brief 获取整数类型的声明
+     * @param jwt 已解析的JWT对象
+     * @param claim 声明名称
+     * @return 声明的值，若参数无效返回0
+     */
+    static int64_t get_claim_int(jwt_t* jwt, const char* claim);
+};
+
+#endif // JWT_WRAPPER_H
+```
+
+头文件主要做了以下几件事：
+
+1. 使用`#ifndef`防止头文件重复包含
+2. 声明了`JWTWrapper`类，包含私有成员变量和公共成员函数
+3. 私有成员`secret_key_`和`algorithm_`分别存储密钥和加密算法
+4. 公共接口包括构造函数、生成令牌、验证令牌和获取声明的方法
+5. 对每个函数都添加了 Doxygen 风格的注释，说明功能、参数和返回值
+
+### 2.2 实现文件
+
+```jwt_wrapper.cpp
+#include "jwt_wrapper.h"
+#include <stdexcept>   // 用于标准异常处理
+#include <time.h>      // 用于时间相关操作
+#include <cstring>     // 用于字符串处理
+
+/**
+ * @brief 构造函数：初始化JWT包装器
+ * @param secret_key 用于签名和验证的密钥
+ * @param algorithm 加密算法（如JWT_ALG_HS256）
+ * @throws std::invalid_argument 如果密钥为空则抛出异常
+ */
+JWTWrapper::JWTWrapper(const std::string& secret_key, jwt_alg_t algorithm)
+    : secret_key_(secret_key), algorithm_(algorithm) {
+    // 验证密钥有效性
+    if (secret_key.empty()) {
+        throw std::invalid_argument("Secret key cannot be empty");
+    }
+}
+
+/**
+ * @brief 生成JWT令牌
+ * @return 生成的JWT令牌字符串
+ * @throws std::runtime_error 如果生成过程中出现错误则抛出异常
+ */
+std::string JWTWrapper::generate_token() const {
+    jwt_t* jwt = nullptr;  // JWT对象指针
+    int ret = 0;
+
+    // 创建新的JWT对象
+    ret = jwt_new(&jwt);
+    if (ret != 0) {
+        throw std::runtime_error("Failed to create JWT object");
+    }
+
+    // 设置加密算法和密钥
+    ret = jwt_set_alg(jwt, algorithm_, 
+                     reinterpret_cast<const unsigned char*>(secret_key_.c_str()),
+                     secret_key_.length());
+    if (ret != 0) {
+        jwt_free(jwt);  // 释放已分配的资源
+        throw std::runtime_error("Failed to set JWT algorithm");
+    }
+
+    // 设置载荷（Payload）信息
+    jwt_add_grant(jwt, "sub", "subject");          // 标准字段：主题
+    jwt_add_grant(jwt, "username", "hespethorn");  // 自定义字段：用户名
+    jwt_add_grant(jwt, "role", "main");            // 自定义字段：用户角色
+    // 标准字段：过期时间（当前时间+3600秒，即1小时后过期）
+    jwt_add_grant_int(jwt, "exp", time(nullptr) + 3600);
+
+    // 生成JWT令牌字符串
+    char* token_str = jwt_encode_str(jwt);
+    if (!token_str) {
+        jwt_free(jwt);  // 释放已分配的资源
+        throw std::runtime_error("Failed to encode JWT token");
+    }
+
+    // 转换为C++字符串并释放C风格字符串资源
+    std::string token(token_str);
+    free(token_str);  // 注意：jwt_encode_str返回的字符串需要用free释放
+    jwt_free(jwt);    // 释放JWT对象
+
+    return token;
+}
+
+/**
+ * @brief 验证JWT令牌并解析内容
+ * @param token 待验证的JWT令牌
+ * @param jwt 输出参数，用于存储解析后的JWT对象
+ * @return 验证成功返回true，否则返回false
+ */
+bool JWTWrapper::verify_token(const std::string& token, jwt_t**jwt) const {
+    // 参数合法性检查
+    if (token.empty() || !jwt) {
+        return false;
+    }
+
+    // 解码并验证令牌（会自动检查签名和过期时间）
+    int ret = jwt_decode(jwt, token.c_str(),
+                        reinterpret_cast<const unsigned char*>(secret_key_.c_str()),
+                        secret_key_.length());
+    return ret == 0;  // 0表示验证成功
+}
+
+/**
+ * @brief 获取JWT中的字符串类型声明
+ * @param jwt 已解析的JWT对象
+ * @param claim 声明名称（如"username"）
+ * @return 声明的值，若不存在或参数无效则返回nullptr
+ */
+const char* JWTWrapper::get_claim_str(jwt_t* jwt, const char* claim) {
+    if (!jwt || !claim) {  // 空指针检查
+        return nullptr;
+    }
+    return jwt_get_grant(jwt, claim);  // 从JWT对象中获取字符串声明
+}
+
+/**
+ * @brief 获取JWT中的整数类型声明
+ * @param jwt 已解析的JWT对象
+ * @param claim 声明名称（如"exp"）
+ * @return 声明的值，若不存在或参数无效则返回0
+ */
+int64_t JWTWrapper::get_claim_int(jwt_t* jwt, const char* claim) {
+    if (!jwt || !claim) {  // 空指针检查
+        return 0;
+    }
+    return jwt_get_grant_int(jwt, claim);  // 从JWT对象中获取整数声明
+}
+```
+
+实现文件的主要功能解析：
+
+1. **构造函数**：
+
+   - 初始化密钥和加密算法
+
+   - 验证密钥有效性，为空则抛出异常
+
+2. **生成令牌方法**：
+
+   - 创建 JWT 对象
+
+   - 设置加密算法和密钥
+   - 添加标准声明（如 "sub" 主题、"exp" 过期时间）和自定义声明（如 "username"、"role"）
+   - 生成令牌字符串
+   - 释放相关资源，避免内存泄漏
+   - 错误处理：关键步骤失败时抛出异常
+
+3. **验证令牌方法**：
+
+   - 检查输入参数有效性
+
+   - 调用`jwt_decode`函数解码并验证令牌（自动检查签名和过期时间）
+   - 返回验证结果
+
+4. **获取声明方法**：
+
+   - 提供静态方法获取字符串和整数类型的声明
+
+   - 包含空指针检查，提高代码健壮性
+
+### 2.3 示例程序
+
+```main.cpp
+#include "jwt_wrapper.h"
+#include <iostream>   // 用于标准输入输出
+
+/**
+ * @brief 主函数：演示JWTWrapper类的使用方法
+ * 
+ * 流程：
+ * 1. 创建JWTWrapper实例
+ * 2. 生成JWT令牌并打印
+ * 3. 验证生成的令牌
+ * 4. 提取并打印令牌中的声明信息
+ * 5. 处理可能的异常
+ * 
+ * @return 程序退出码（0表示成功，非0表示错误）
+ */
+int main() {
+    try {
+        // 1. 创建JWT工具类实例
+        // 使用密钥"abc123"和默认算法HS256
+        JWTWrapper jwt_wrapper("abc123");
+        
+        // 2. 生成JWT令牌
+        std::string token = jwt_wrapper.generate_token();
+        if (token.empty()) {
+            std::cerr << "Failed to generate JWT token" << std::endl;
+            return 1;
+        }
+        
+        // 打印生成的令牌
+        std::cout << "Generated JWT: " << token << std::endl << std::endl;
+        
+        // 3. 验证JWT令牌
+        jwt_t* jwt = nullptr;  // 用于存储解析后的JWT对象
+        bool is_valid = jwt_wrapper.verify_token(token, &jwt);
+        
+        if (is_valid && jwt) {
+            // 验证成功：提取并打印声明信息
+            std::cout << "JWT is valid:" << std::endl;
+            std::cout << "Subject: " << JWTWrapper::get_claim_str(jwt, "sub") << std::endl;
+            std::cout << "Username: " << JWTWrapper::get_claim_str(jwt, "username") << std::endl;
+            std::cout << "Role: " << JWTWrapper::get_claim_str(jwt, "role") << std::endl;
+            std::cout << "Expiration Time: " << JWTWrapper::get_claim_int(jwt, "exp") << std::endl;
+            
+            // 释放解析后的JWT对象（避免内存泄漏）
+            jwt_free(jwt);
+        } else {
+            // 验证失败
+            std::cout << "Invalid JWT token" << std::endl;
+        }
+    } 
+    catch (const std::exception& e) {
+        // 捕获并处理所有标准异常
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    
+    // 程序正常结束
+    return 0;
+}
+```
+
+示例程序演示了`JWTWrapper`类的完整使用流程：
+
+1. 创建`JWTWrapper`实例
+2. 生成 JWT 令牌
+3. 验证令牌有效性
+4. 提取并打印令牌中的声明信息
+5. 异常处理和资源释放
+
+## 三、编译与运行
+
+编译时需要链接`libjwt`库，使用以下命令：
+
+```bash
+g++ main.cpp jwt_wrapper.cpp -o jwt_demo -ljwt
+```
+
+运行生成的可执行文件：
+
+```bash
+./jwt_demo
+```
+
+运行成功后，你将看到类似以下的输出：
+
+```plaintext
+Generated JWT: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTg1NTUzMzIsInJvbGUiOiJtYWluIiwic3ViIjoic3ViamVjdCIsInVzZXJuYW1lIjoiaGVzcGV0aG9ybiJ9.fZ09HRs9xiH7xBiglZWbwXEJw3AlOIVPZZA3MoATZnQ
+
+JWT is valid:
+Subject: subject
+Username: hespethorn
+Role: main
+Expiration Time: 1758555332
+```
+

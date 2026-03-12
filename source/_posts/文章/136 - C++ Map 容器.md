@@ -1,0 +1,165 @@
+---
+tags:
+  - C++
+  - 'std::map'
+categories:
+  - C++
+  - Foundational Syntax and Core Concepts
+series: C++
+abbrlink: 2a19bc75
+title: C++ Map 容器
+date: 2024-02-12 19:07:23
+---
+
+## 一、核心数据结构：红黑树
+
+C++ 标准库中std::map的底层实现采用**红黑树**（Red-Black Tree），这是一种自平衡的二叉搜索树（BST）。红黑树通过特定的规则保证树的高度始终维持在 O (log n) 级别，从而确保各种操作的高效性。
+
+```
+具体见前一篇 C++ 标准库中的 set 容器 
+```
+
+## 二、map 容器的核心组件
+
+### 2.1 迭代器实现
+
+std::map的迭代器是**双向迭代器**，其实现本质上是红黑树节点的指针封装，并提供了遍历树的操作。
+
+### 2.2 内存管理机制
+
+std::map通常使用**内存池**（memory pool）或**分配器**（allocator）管理节点内存，而非频繁调用new和delete：
+
+- 采用 slab 分配策略，预先分配一批节点内存
+
+- 节点释放时不直接归还给系统，而是放入空闲列表
+
+- 下次分配时优先从空闲列表获取，减少系统调用开销
+
+## 三、核心操作实现
+
+### 3.1 插入操作（insert）
+
+插入操作流程：
+
+1. 按照二叉搜索树规则找到插入位置
+2. 插入新节点并标记为红色
+3. 执行修复操作（rebalance），可能包括：
+
+- - 变色（recoloring）
+
+- - 旋转（rotation）：左旋、右旋、左右旋、右左旋
+
+```
+template <typename Key, typename Value>
+std::pair<iterator, bool> Map<Key, Value>::insert(const Key& key, const Value& value) {
+    // 1. 查找插入位置
+    Node* parent = nullptr;
+    Node** current = &root;
+    while (*current != nullptr) {
+        parent = *current;
+        if (key < (*current)->value.first)
+            current = &((*current)->left);
+        else if (key > (*current)->value.first)
+            current = &((*current)->right);
+        else
+            // 键已存在，返回现有迭代器和false
+            return {iterator(*current), false};
+    }
+    
+    // 2. 创建新节点并插入
+    *current = new Node(key, value);
+    (*current)->parent = parent;
+    
+    // 3. 修复红黑树性质
+    fixInsertion(*current);
+    
+    return {iterator(*current), true};
+}
+```
+
+### 3.2 查找操作（find）
+
+查找操作利用二叉搜索树特性，时间复杂度为 O (log n)：
+
+```
+template <typename Key, typename Value>
+iterator Map<Key, Value>::find(const Key& key) {
+    Node* current = root;
+    while (current != nullptr) {
+        if (key < current->value.first)
+            current = current->left;
+        else if (key > current->value.first)
+            current = current->right;
+        else
+            return iterator(current);  // 找到匹配键
+    }
+    return end();  // 未找到
+}
+```
+
+### 3.3 删除操作（erase）
+
+删除操作是最复杂的操作：
+
+1. 找到要删除的节点
+2. 处理三种不同情况（叶子节点、单孩子节点、双孩子节点）
+3. 执行删除后修复，维护红黑树性质
+
+双孩子节点的删除通常采用 "后继替代法"：找到中序后继节点（右子树的最左节点），复制其值到待删除节点，然后删除后继节点。
+
+## 四、性能特性分析
+
+### 4.1 时间复杂度
+
+| 操作 | 平均复杂度 | 最坏复杂度 |
+| ---- | ---------- | ---------- |
+| 插入 | O(log n)   | O(log n)   |
+| 查找 | O(log n)   | O(log n)   |
+| 删除 | O(log n)   | O(log n)   |
+| 遍历 | O(n)       | O(n)       |
+
+### 4.2 与其他容器的对比
+
+| 容器          | 底层结构 | 查找速度 | 插入速度 | 有序性 |
+| ------------- | -------- | -------- | -------- | ------ |
+| map           | 红黑树   | O(log n) | O(log n) | 有序   |
+| unordered_map | 哈希表   | O(1)     | O(1)     | 无序   |
+| 平衡二叉树    | AVL 树   | O(log n) | O(log n) | 有序   |
+
+> 红黑树与 AVL 树的区别：红黑树牺牲了部分平衡性以换取更少的旋转操作，在插入删除频繁的场景下性能更优。
+
+## 五、实践优化技巧
+
+```
+// 高效：直接在容器中构造
+map.emplace(key, value);
+
+// 低效：先构造临时对象再复制
+map.insert(std::make_pair(key, value));
+```
+1. **避免不必要的复制**：使用emplace()代替insert()，直接在容器中构造对象
+2. **范围操作更高效**：使用insert(begin, end)批量插入，减少重复的平衡操作
+3. **合理选择迭代器遍历**：对于范围查询，利用有序性直接定位到起始点再顺序遍历
+4. **预留内存**：对于已知大致大小的场景，提前reserve()合适的容量（C++11 及以上）
+5. **自定义比较器**：根据键的特性设计高效的比较函数，减少比较次数
+
+## 六、常见问题解析
+
+### 6.1 为什么 map 的键是不可修改的？
+
+因为键值用于维护红黑树的有序性，直接修改键可能破坏树的结构。若需修改键，应先删除旧键值对，再插入新键值对。
+
+### 6.2 map 与 multimap 的区别？
+
+multimap允许存储多个键相同的元素，其实现与map类似，但插入和查找逻辑略有不同，查找时可能返回一个范围的迭代器。
+
+### 6.3 如何高效地遍历 map？
+
+使用范围 for 循环（C++11 及以上）是最简洁高效的方式：
+
+```
+for (const auto& pair : my_map) {
+    // 处理pair.first（键）和pair.second（值）
+}
+```
+

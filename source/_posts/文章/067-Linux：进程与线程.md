@@ -1,0 +1,244 @@
+---
+title: 进程与线程中全局变量、变量、函数及主进程的差异剖析
+tags:
+  - Linux
+  - 进程
+  - 线程
+categories: Linux
+series: Linux
+abbrlink: baa1fd95
+date: 2023-01-12 22:56:54
+---
+
+## 一、基本概念概述
+
+### 1.1 进程
+
+进程是操作系统进行资源分配和调度的基本实体，是程序在计算机上的一次动态执行过程。每个进程都拥有独立的虚拟地址空间，包含代码段、数据段、堆和栈等关键区域。这种地址空间的独立性使得进程间天然隔离，单个进程的崩溃通常不会波及其他进程的正常运行。
+
+### 1.2 线程
+
+线程作为进程内的执行单元，构成了程序执行流的最小单位。同一进程内的多个线程共享进程的地址空间与系统资源，如全局变量、打开的文件描述符等。相较于进程切换，线程切换的系统开销更小，这一特性为提升程序的并发处理能力提供了重要支持。
+
+### 1.3 全局变量
+
+全局变量定义于函数体外部，其作用域覆盖整个程序范围，允许程序内的任意函数对其进行访问与修改。在多进程或多线程环境下，全局变量的并发访问管理尤为关键，不当操作极易引发数据一致性问题。
+
+### 1.4 局部变量
+
+局部变量在函数内部声明，其生命周期与作用域均局限于函数体内部。函数执行结束后，存储局部变量的栈空间随即释放。即便不同函数中存在同名局部变量，它们在内存中也对应独立的存储单元。
+
+### 1.5 函数
+
+函数作为封装特定功能的代码模块，通过参数传递实现数据交互并返回处理结果，是实现程序模块化设计的核心手段，有效提升了代码的复用性与可维护性。在进程与线程环境中，函数的调用与执行机制存在显著差异，进而影响程序的整体行为表现。
+
+### 1.6 主进程
+
+主进程作为程序启动时创建的首个进程，充当着程序运行的入口点。其核心职责包括初始化运行环境、创建子进程或线程，并协调各执行单元之间的协同工作。在多数情况下，主进程的终止意味着整个程序生命周期的结束。
+
+## 二、进程与线程中全局变量的差异
+
+### 2.1 进程中的全局变量
+
+在进程模型下，每个进程都拥有独立的全局变量副本。这种隔离机制确保了不同进程间的全局变量相互独立，单个进程对其全局变量的修改不会影响其他进程的同名变量。例如，在多进程文件处理系统中，各进程可利用独立的全局变量记录文件处理进度，彼此互不干扰。
+
+当需要在多进程间共享全局变量数据时，必须借助进程间通信（IPC）机制，如管道、消息队列、共享内存等。以共享内存为例，通过将特定内存区域映射至不同进程的地址空间，实现数据共享。但为保证数据一致性，需配合信号量等同步机制，避免并发访问冲突。
+
+以下是使用 `fork` 创建子进程并展示全局变量独立性的 C 语言代码示例：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int global_var = 10; // 全局变量
+
+int main() {
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        // 子进程
+        global_var = 20;
+        printf("Child process: global_var = %d\n", global_var);
+    } else {
+        // 父进程
+        sleep(1);
+        printf("Parent process: global_var = %d\n", global_var);
+    }
+    return 0;
+}
+```
+
+运行上述代码，会发现父进程和子进程中的 `global_var` 互不影响，各自拥有独立副本。
+
+### 2.2 线程中的全局变量
+
+同一进程内的所有线程共享全局变量，这种设计极大简化了线程间的数据交互流程。例如，在多线程网络服务器中，全局变量可用于存储客户端连接信息，各线程可直接进行读写操作。
+
+然而，共享全局变量带来的并发访问风险不容忽视。当多个线程同时读写同一全局变量时，极易引发数据竞争与不一致问题。例如，两个线程同时对全局计数器执行自增操作，若缺乏同步控制，最终结果可能与预期不符。为此，通常需引入互斥锁、信号量等同步原语，确保同一时刻仅有单个线程可访问和修改全局变量。
+
+以下是使用 POSIX 线程库展示线程共享全局变量及数据竞争问题的 C 语言代码示例：
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+int global_count = 0; // 全局变量
+
+void* increment(void* arg) {
+    for (int i = 0; i < 1000000; i++) {
+        global_count++;
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t thread1, thread2;
+
+    pthread_create(&thread1, NULL, increment, NULL);
+    pthread_create(&thread2, NULL, increment, NULL);
+
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+
+    printf("Expected value: 2000000, Actual value: %d\n", global_count);
+    return 0;
+}
+```
+
+多次运行上述代码，会发现 `global_count` 的实际值往往小于预期的 `2000000`，这是因为两个线程同时对 `global_count` 进行自增操作，产生了数据竞争。若要解决此问题，可引入互斥锁：
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+int global_count = 0; // 全局变量
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void* increment(void* arg) {
+    for (int i = 0; i < 1000000; i++) {
+        pthread_mutex_lock(&mutex);
+        global_count++;
+        pthread_mutex_unlock(&mutex);
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t thread1, thread2;
+
+    pthread_create(&thread1, NULL, increment, NULL);
+    pthread_create(&thread2, NULL, increment, NULL);
+
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+
+    pthread_mutex_destroy(&mutex);
+    printf("Expected value: 2000000, Actual value: %d\n", global_count);
+    return 0;
+}
+```
+
+加入互斥锁后，每次只有一个线程能访问 `global_count`，确保了数据一致性。
+
+## 三、进程与线程中局部变量的差异
+
+### 3.1 进程中的局部变量
+
+每个进程在执行函数时，均会在其独立的栈空间内为局部变量分配内存。由于进程栈空间相互隔离，不同进程间的局部变量同样互不影响。即使多个进程执行相同函数，其局部变量仍存储于各自栈中，不存在数据干扰。
+
+在创建子进程时，子进程会复制父进程的栈空间及其中的局部变量。但自复制完成后，父子进程的局部变量便相互独立，任何一方的修改均不会对另一方产生影响。
+
+### 3.2 线程中的局部变量
+
+线程同样在栈空间中为局部变量分配内存。尽管同一进程内的线程共享地址空间，但其栈空间仍保持相对独立，各线程执行相同函数时，局部变量分别存储于各自的线程栈中，彼此互不干扰。
+
+值得注意的是，线程函数中静态局部变量的行为有所不同。静态局部变量的生命周期贯穿程序运行全程，且在同一进程内的多线程间共享。因此，对静态局部变量的访问同样需采用同步机制，以规避并发访问带来的风险。
+
+以下是展示线程中局部变量独立性与静态局部变量共享性的 C 语言代码示例：
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+void* thread_function(void* arg) {
+    int local_var = 0; // 局部变量
+    static int static_local_var = 0; // 静态局部变量
+
+    for (int i = 0; i < 5; i++) {
+        local_var++;
+        static_local_var++;
+        printf("Thread: local_var = %d, static_local_var = %d\n", local_var, static_local_var);
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t thread1, thread2;
+
+    pthread_create(&thread1, NULL, thread_function, NULL);
+    pthread_create(&thread2, NULL, thread_function, NULL);
+
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+
+    return 0;
+}
+```
+
+运行上述代码，会发现不同线程的 `local_var` 各自独立计数，而 `static_local_var` 则是共享的，其值会被所有线程共同修改。
+
+## 四、进程与线程中函数的差异
+
+### 4.1 进程中的函数调用
+
+在进程环境中，函数调用遵循常规机制，执行于当前进程上下文。函数间调用涉及标准的栈操作，包括参数传递与返回地址保存。由于进程的独立性，跨进程函数调用无法直接实现。若需在不同进程中执行相似功能，通常需将函数逻辑封装为可执行程序，通过进程间通信机制触发执行。
+
+### 4.2 线程中的函数调用
+
+线程中的函数调用机制与进程类似，但由于线程共享进程地址空间，线程间的协作与数据交换更为便捷。在适当同步机制保障下，一个线程可调用其他线程的函数，并直接访问共享资源。此外，由于线程可随时被抢占，线程函数设计需充分考虑线程切换影响，确保函数执行具备原子性与可重入性，避免数据不一致或程序崩溃。
+
+以下是展示线程间协作与函数调用的简单 C 语言代码示例：
+
+```c
+#include <stdio.h>
+#include <pthread.h>
+
+int shared_data = 0;
+
+void common_function() {
+    // 模拟对共享数据的操作
+    shared_data += 10;
+    printf("Function executed, shared_data = %d\n", shared_data);
+}
+
+void* thread_function(void* arg) {
+    common_function();
+    return NULL;
+}
+
+int main() {
+    pthread_t thread;
+
+    pthread_create(&thread, NULL, thread_function, NULL);
+    common_function();
+
+    pthread_join(thread, NULL);
+    return 0;
+}
+```
+
+上述代码中，主线程和子线程都能调用 `common_function` 函数，并访问共享数据 `shared_data`，体现了线程间函数调用与资源共享的便捷性。
+
+## 五、主进程在进程与线程模型中的作用差异
+
+### 5.1 进程模型中的主进程
+
+在进程模型下，主进程作为程序入口，承担着初始化运行环境、创建子进程、加载系统资源及配置环境变量等核心任务。主进程与子进程间通过进程间通信机制实现交互与协调，并具备对子进程生命周期的完全控制权，可按需启动、暂停或终止子进程。主进程终止时，是否连带终止子进程则取决于程序的具体设计。
+
+### 5.2 线程模型中的主进程
+
+在线程模型中，主进程同样作为程序启动的入口，但主要负责创建和管理线程。由于线程共享主进程资源，二者关系更为紧密。主进程承担着线程创建、调度及资源分配等管理职责。当主进程终止时，若未作特殊处理，将导致包含所有线程在内的整个进程终止，这是因为线程的运行高度依赖于进程提供的资源与环境。
+

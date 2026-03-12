@@ -1,0 +1,214 @@
+---
+title: std::tuple 的使用
+tags:
+  - std::tuple
+categories:
+  - C++
+  - Foundational Syntax and Core Concepts
+series: Foundational Syntax and Core Concepts
+abbrlink: Foundational Syntax and Core Concepts
+date: 2025-04-23 21:07:55
+---
+
+## 一、tuple 核心定位与基本特性
+
+std::tuple（定义于 <tuple> 头文件）是 C++17 标准库中用于**打包多个异构数据类型**的轻量级容器，其核心价值在于：
+
+- 无需定义自定义结构体 / 类，即可承载任意数量的不同类型数据；
+
+- 配合 C++17 新特性（如类模板参数推导 CTAD、结构化绑定），大幅简化异构数据的创建与访问；
+
+- 无动态内存分配，内存开销与手动定义的结构体相当，性能高效。
+
+**关键区别**：
+
+- 与 std::array：array 仅支持**同构类型**（如 array<int, 3>），tuple 支持异构类型（如 tuple<int, string, double>）；
+
+- 与 std::pair：pair 仅支持**最多 2 个元素**，tuple 无元素数量限制。
+
+## 二、tuple 基本用法（创建与访问）
+
+### 1. 创建方式（C++17 CTAD 特性重点）
+
+C++17 引入**类模板参数推导（CTAD）**，创建 tuple 时无需显式指定模板参数，编译器会自动推导类型。
+
+| 创建方式        | 代码示例                                         | 说明                                                 |
+| --------------- | ------------------------------------------------ | ---------------------------------------------------- |
+| CTAD 直接初始化 | tuple t1(42, "C++17", 3.14f);                    | 推导为 tuple<int, const char*, float>                |
+| 显式构造        | tuple<int, string, double> t2(100, "Bob", 88.5); | 兼容旧代码，明确指定元素类型                         |
+| 移动构造        | string s = "move"; tuple t3(1, std::move(s));    | 移动语义，避免拷贝开销                               |
+| make_tuple      | auto t4 = make_tuple(10L, 'a');                  | 仍有用途（如隐式类型转换），推导为 tuple<long, char> |
+
+### 2. 元素访问（三种核心方式）
+
+#### （1）按索引访问（std::get<索引>）
+
+索引为**编译期常量**，访问时需用尖括号 <> 包裹，返回元素的引用（可修改非 const tuple）。
+
+```
+auto t = tuple(101, "Alice", 95.5);
+int id = std::get<0>(t);          // 101（int）
+const char* name = std::get<1>(t); // "Alice"（const char*）
+std::get<2>(t) = 96.0;            // 修改第三个元素（double）
+```
+
+#### （2）按类型访问（std::get<类型>）
+
+需确保 tuple 中**该类型唯一**，否则编译报错。
+
+```
+auto t = tuple(101, "Alice", 95.5);
+double score = std::get<double>(t); // 95.5（唯一 double 类型）
+// std::get<int>(t); // 编译错误：若有多个 int 类型元素
+```
+
+#### （3）结构化绑定（C++17 核心特性）
+
+最直观的访问方式，可一次性将 tuple 元素解包到多个变量，支持 auto、const auto、auto& 等修饰符。
+
+```
+auto t = tuple(101, "Alice", 95.5);
+auto [id, name, score] = t;          // 解包为：int id=101，const char* name="Alice"，double score=95.5
+const auto [cid, cname, cscore] = t; // 只读解包
+auto& [rid, rname, rscore] = t;      // 引用解包（修改变量会同步修改 tuple）
+```
+
+### 3. 编译期类型查询
+
+通过 tuple_element_t 和 tuple_size_v 可在编译期获取 tuple 的元素类型和数量（无运行时开销）。
+
+```
+#include <tuple>
+#include <type_traits> // 需包含此头文件
+
+auto t = tuple(101, "Alice", 95.5);
+// 1. 获取指定索引的元素类型
+using IdType = std::tuple_element_t<0, decltype(t)>;  // IdType = int
+using ScoreType = std::tuple_element_t<2, decltype(t)>; // ScoreType = double
+// 2. 获取元素总数（编译期常量）
+constexpr size_t TSize = std::tuple_size_v<decltype(t)>; // TSize = 3
+```
+
+## 三、tuple 核心应用场景
+
+### 1. 函数多返回值（替代结构体 /pair）
+
+传统方式需定义结构体或用 pair（仅支持 2 个值），tuple 可直接返回任意数量的异构值，配合结构化绑定接收，代码简洁。
+
+```
+#include <tuple>
+#include <string>
+#include <iostream>
+
+// 返回 tuple：(ID, 姓名, 分数, 是否及格)
+std::tuple<int, std::string, double, bool> get_student(int id) {
+    if (id == 101) {
+        return {101, "Alice", 95.5, true}; // C++17 CTAD 自动构造 tuple
+    } else {
+        return {102, "Bob", 58.0, false};
+    }
+}
+
+int main() {
+    // 结构化绑定接收多返回值
+    auto [id, name, score, is_pass] = get_student(101);
+    std::cout << "ID: " << id 
+              << ", Name: " << name 
+              << ", Score: " << score 
+              << ", Pass: " << (is_pass ? "Yes" : "No") << "\n";
+    // 输出：ID: 101, Name: Alice, Score: 95.5, Pass: Yes
+    return 0;
+}
+```
+
+### 2. 参数打包与展开（std::apply）
+
+std::apply（C++17 标准库函数）可将 tuple 元素**逐个展开**为函数的参数，解决 “将多个异构参数打包传递” 的需求。
+
+```
+#include <tuple>
+#include <iostream>
+
+// 普通多参数函数
+void print_info(int id, const std::string& name, double score) {
+    std::cout << "ID: " << id << ", Name: " << name << ", Score: " << score << "\n";
+}
+
+int main() {
+    // 1. 参数打包：将多个异构值存入 tuple
+    auto student = std::tuple(101, std::string("Alice"), 95.5);
+    
+    // 2. 参数展开：用 std::apply 调用函数
+    std::apply(print_info, student); // 等价于 print_info(101, "Alice", 95.5)
+    
+    // 3. 配合 lambda 展开（更灵活）
+    std::apply([](auto&&... args) {
+        std::cout << "Lambda Unpack: ";
+        ((std::cout << args << " "), ...); // 折叠表达式（C++17）：遍历所有参数
+        std::cout << "\n";
+    }, student); // 输出：Lambda Unpack: 101 Alice 95.5 
+    
+    return 0;
+}
+```
+
+## 四、tuple 高级用法
+
+### 1. tuple 拼接（std::tuple_cat）
+
+std::tuple_cat 可将多个 tuple 合并为一个，元素顺序与原 tuple 一致，返回新 tuple。
+
+```
+#include <tuple>
+#include <iostream>
+
+int main() {
+    std::tuple t1(1, "hello");       // tuple<int, const char*>
+    std::tuple t2(3.14f, 'a');       // tuple<float, char>
+    auto combined = std::tuple_cat(t1, t2); // 合并为 tuple<int, const char*, float, char>
+    
+    // 结构化绑定查看结果
+    auto [a, b, c, d] = combined;
+    std::cout << a << ", " << b << ", " << c << ", " << d << "\n"; // 输出：1, hello, 3.14, a
+    return 0;
+}
+```
+
+### 2. 作为关联容器的 Key
+
+tuple 默认提供 operator<（按元素顺序依次比较），若所有元素均支持比较，可直接作为 std::map/std::set 的 Key。
+
+```
+#include <tuple>
+#include <map>
+#include <string>
+#include <iostream>
+
+// 复用前文的 print_tuple 函数
+template <size_t I = 0, typename... Ts>
+void print_tuple(const std::tuple<Ts...>& t, std::ostream& os = std::cout) {
+    if constexpr (I == sizeof...(Ts)) { os << "]\n"; return; }
+    if constexpr (I == 0) os << "["; else os << ", ";
+    os << std::get<I>(t);
+    print_tuple<I + 1>(t, os);
+}
+
+int main() {
+    // 定义 map：Key = tuple(ID, 姓名)，Value = 分数
+    using Key = std::tuple<int, std::string>;
+    using Value = double;
+    std::map<Key, Value> student_scores;
+    
+    // 插入元素（CTAD 构造 Key）
+    student_scores.emplace(std::tuple(101, "Alice"), 95.5);
+    student_scores.emplace(std::tuple(102, "Bob"), 88.0);
+    
+    // 遍历 map（结构化绑定）
+    for (const auto& [key, val] : student_scores) {
+        std::cout << "Key: ";
+        print_tuple(key); // 输出 Key：[101, Alice]、[102, Bob]
+        std::cout << "Score: " << val << "\n";
+    }
+    return 0;
+}
+```
