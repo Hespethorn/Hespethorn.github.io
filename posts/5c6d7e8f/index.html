@@ -1,0 +1,597 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>C++ unique_ptr 所有权转移与相关问题分析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="在C++智能指针中，std::unique_ptr是一种独占所有权的智能指针，它确保同一时间只有一个unique_ptr实例拥有对对象的所有权。本文将深入分析unique_ptr的所有权转移机制以及各种相关场景下的行为。 一、unique_ptr的基本特性std::unique_ptr的核心特性：  独占所有权：同一时间只能有一个unique_ptr指向同一个对象 不可复制：禁止拷贝构造和拷贝赋值">
+<meta property="og:type" content="article">
+<meta property="og:title" content="C++ unique_ptr 所有权转移与相关问题分析">
+<meta property="og:url" content="https://hespethorn.github.io/posts/5c6d7e8f/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="在C++智能指针中，std::unique_ptr是一种独占所有权的智能指针，它确保同一时间只有一个unique_ptr实例拥有对对象的所有权。本文将深入分析unique_ptr的所有权转移机制以及各种相关场景下的行为。 一、unique_ptr的基本特性std::unique_ptr的核心特性：  独占所有权：同一时间只能有一个unique_ptr指向同一个对象 不可复制：禁止拷贝构造和拷贝赋值">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-01-13T12:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-10T06:25:35.939Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="内存管理">
+<meta property="article:tag" content="智能指针">
+<meta property="article:tag" content="unique_ptr">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "C++ unique_ptr 所有权转移与相关问题分析",
+  "url": "https://hespethorn.github.io/posts/5c6d7e8f/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-01-13T12:00:00.000Z",
+  "dateModified": "2026-04-10T06:25:35.939Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/5c6d7e8f/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'C++ unique_ptr 所有权转移与相关问题分析',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">422</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">304</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">68</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/categories/AI%E6%97%A5%E6%8A%A5/"><i class="fa-fw fas fa-robot"></i><span> 人工智能</span></a></div><div class="menus_item"><a class="site-page" href="/tags/%E7%AE%97%E6%B3%95/"><i class="fa-fw fas fa-code-branch"></i><span> 算法训练</span></a></div><div class="menus_item"><a class="site-page" href="/tags/%E9%A1%B9%E7%9B%AE%E5%A4%8D%E5%88%BB/"><i class="fa-fw fas fa-code"></i><span> 项目复刻</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">C++ unique_ptr 所有权转移与相关问题分析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/categories/AI%E6%97%A5%E6%8A%A5/"><i class="fa-fw fas fa-robot"></i><span> 人工智能</span></a></div><div class="menus_item"><a class="site-page" href="/tags/%E7%AE%97%E6%B3%95/"><i class="fa-fw fas fa-code-branch"></i><span> 算法训练</span></a></div><div class="menus_item"><a class="site-page" href="/tags/%E9%A1%B9%E7%9B%AE%E5%A4%8D%E5%88%BB/"><i class="fa-fw fas fa-code"></i><span> 项目复刻</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">C++ unique_ptr 所有权转移与相关问题分析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-01-13T12:00:00.000Z" title="Created 2026-01-13 20:00:00">2026-01-13</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>在C++智能指针中，<code>std::unique_ptr</code>是一种独占所有权的智能指针，它确保同一时间只有一个<code>unique_ptr</code>实例拥有对对象的所有权。本文将深入分析<code>unique_ptr</code>的所有权转移机制以及各种相关场景下的行为。</p>
+<h2 id="一、unique-ptr的基本特性"><a href="#一、unique-ptr的基本特性" class="headerlink" title="一、unique_ptr的基本特性"></a>一、unique_ptr的基本特性</h2><p><code>std::unique_ptr</code>的核心特性：</p>
+<ul>
+<li><strong>独占所有权</strong>：同一时间只能有一个<code>unique_ptr</code>指向同一个对象</li>
+<li><strong>不可复制</strong>：禁止拷贝构造和拷贝赋值操作</li>
+<li><strong>可移动</strong>：支持移动构造和移动赋值操作</li>
+<li><strong>自动管理</strong>：当<code>unique_ptr</code>生命周期结束时，自动释放所管理的对象</li>
+</ul>
+<h2 id="二、unique-ptr转移给另一个unique-ptr的情况"><a href="#二、unique-ptr转移给另一个unique-ptr的情况" class="headerlink" title="二、unique_ptr转移给另一个unique_ptr的情况"></a>二、unique_ptr转移给另一个unique_ptr的情况</h2><p>当将一个<code>unique_ptr</code>转移给另一个<code>unique_ptr</code>时，会发生所有权的转移。这可以通过以下方式实现：</p>
+<h3 id="1-使用std-move-进行转移"><a href="#1-使用std-move-进行转移" class="headerlink" title="1. 使用std::move()进行转移"></a>1. 使用<code>std::move()</code>进行转移</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MyClass</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="built_in">MyClass</span>(<span class="type">int</span> value) : <span class="built_in">value_</span>(value) &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;MyClass constructed with value: &quot;</span> &lt;&lt; value_ &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">    ~<span class="built_in">MyClass</span>() &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;MyClass destructed with value: &quot;</span> &lt;&lt; value_ &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="function"><span class="type">int</span> <span class="title">getValue</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> value_; &#125;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    <span class="type">int</span> value_;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 创建第一个unique_ptr</span></span><br><span class="line">    <span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr1</span><span class="params">(<span class="keyword">new</span> MyClass(<span class="number">42</span>))</span></span>;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;ptr1 value: &quot;</span> &lt;&lt; ptr1-&gt;<span class="built_in">getValue</span>() &lt;&lt; std::endl;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 使用std::move转移所有权</span></span><br><span class="line">    std::unique_ptr&lt;MyClass&gt; ptr2 = std::<span class="built_in">move</span>(ptr1);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;ptr2 value: &quot;</span> &lt;&lt; ptr2-&gt;<span class="built_in">getValue</span>() &lt;&lt; std::endl;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// ptr1现在为空，不再拥有对象</span></span><br><span class="line">    <span class="keyword">if</span> (!ptr1) &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;ptr1 is now null&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">MyClass constructed with value: 42</span><br><span class="line">ptr1 value: 42</span><br><span class="line">ptr2 value: 42</span><br><span class="line">ptr1 is now null</span><br><span class="line">MyClass destructed with value: 42</span><br></pre></td></tr></table></figure>
+
+<p><strong>分析</strong>：</p>
+<ul>
+<li><code>ptr1</code>创建并拥有对象</li>
+<li>通过<code>std::move(ptr1)</code>将所有权转移给<code>ptr2</code></li>
+<li><code>ptr1</code>变为空指针，不再拥有对象</li>
+<li>当<code>ptr2</code>离开作用域时，自动销毁对象</li>
+</ul>
+<h3 id="2-作为函数返回值"><a href="#2-作为函数返回值" class="headerlink" title="2. 作为函数返回值"></a>2. 作为函数返回值</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">createObject</span><span class="params">(<span class="type">int</span> value)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> std::<span class="built_in">unique_ptr</span>&lt;MyClass&gt;(<span class="keyword">new</span> <span class="built_in">MyClass</span>(value));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::unique_ptr&lt;MyClass&gt; ptr = <span class="built_in">createObject</span>(<span class="number">100</span>);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;ptr value: &quot;</span> &lt;&lt; ptr-&gt;<span class="built_in">getValue</span>() &lt;&lt; std::endl;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>分析</strong>：</p>
+<ul>
+<li>函数返回<code>unique_ptr</code>时，会自动进行移动操作</li>
+<li>不需要显式使用<code>std::move()</code></li>
+<li>返回后，函数内的临时<code>unique_ptr</code>被销毁，但对象的所有权已转移给返回值</li>
+</ul>
+<h2 id="三、两个unique-ptr指向同一个内存的情况"><a href="#三、两个unique-ptr指向同一个内存的情况" class="headerlink" title="三、两个unique_ptr指向同一个内存的情况"></a>三、两个unique_ptr指向同一个内存的情况</h2><h3 id="1-直接赋值（编译错误）"><a href="#1-直接赋值（编译错误）" class="headerlink" title="1. 直接赋值（编译错误）"></a>1. 直接赋值（编译错误）</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr1</span><span class="params">(<span class="keyword">new</span> MyClass(<span class="number">42</span>))</span></span>;</span><br><span class="line">std::unique_ptr&lt;MyClass&gt; ptr2 = ptr1; <span class="comment">// 编译错误：禁止拷贝</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>分析</strong>：</p>
+<ul>
+<li><code>unique_ptr</code>的拷贝构造函数被删除，因此无法直接拷贝</li>
+<li>编译时会报错，防止多个<code>unique_ptr</code>拥有同一对象</li>
+</ul>
+<h3 id="2-通过原始指针创建多个unique-ptr（运行时错误）"><a href="#2-通过原始指针创建多个unique-ptr（运行时错误）" class="headerlink" title="2. 通过原始指针创建多个unique_ptr（运行时错误）"></a>2. 通过原始指针创建多个unique_ptr（运行时错误）</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">MyClass* rawPtr = <span class="keyword">new</span> <span class="built_in">MyClass</span>(<span class="number">42</span>);</span><br><span class="line"><span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr1</span><span class="params">(rawPtr)</span></span>;</span><br><span class="line"><span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr2</span><span class="params">(rawPtr)</span></span>; <span class="comment">// 危险：两个unique_ptr指向同一内存</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>分析</strong>：</p>
+<ul>
+<li>这种情况下，两个<code>unique_ptr</code>都会认为自己拥有<code>rawPtr</code>指向的对象</li>
+<li>当第一个<code>unique_ptr</code>销毁时，会释放内存</li>
+<li>当第二个<code>unique_ptr</code>销毁时，会再次尝试释放同一块内存，导致<strong>双重释放</strong>错误</li>
+<li>这是一种严重的内存错误，会导致程序崩溃</li>
+</ul>
+<h3 id="3-示例演示双重释放"><a href="#3-示例演示双重释放" class="headerlink" title="3. 示例演示双重释放"></a>3. 示例演示双重释放</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    MyClass* rawPtr = <span class="keyword">new</span> <span class="built_in">MyClass</span>(<span class="number">42</span>);</span><br><span class="line">    </span><br><span class="line">    &#123;</span><br><span class="line">        <span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr1</span><span class="params">(rawPtr)</span></span>;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;ptr1 created&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    &#125; <span class="comment">// ptr1销毁，释放rawPtr</span></span><br><span class="line">    </span><br><span class="line">    &#123;</span><br><span class="line">        <span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr2</span><span class="params">(rawPtr)</span></span>; <span class="comment">// 接管已释放的内存</span></span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;ptr2 created&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    &#125; <span class="comment">// ptr2销毁，再次释放rawPtr，导致双重释放</span></span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">MyClass constructed with value: 42</span><br><span class="line">ptr1 created</span><br><span class="line">MyClass destructed with value: 42</span><br><span class="line">ptr2 created</span><br><span class="line">// 运行时错误：双重释放</span><br></pre></td></tr></table></figure>
+
+<h2 id="四、两个unique-ptr指向同一个指针的情况"><a href="#四、两个unique-ptr指向同一个指针的情况" class="headerlink" title="四、两个unique_ptr指向同一个指针的情况"></a>四、两个unique_ptr指向同一个指针的情况</h2><p>这种情况与指向同一内存本质上是相同的，因为指针只是内存地址的别名。当两个<code>unique_ptr</code>持有相同的指针值时，会导致双重释放问题。</p>
+<h3 id="避免方法"><a href="#避免方法" class="headerlink" title="避免方法"></a>避免方法</h3><ul>
+<li><strong>永远不要让多个<code>unique_ptr</code>管理同一个原始指针</strong></li>
+<li><strong>使用<code>std::move()</code>进行所有权转移</strong></li>
+<li><strong>使用<code>std::shared_ptr</code>处理需要共享所有权的场景</strong></li>
+</ul>
+<h2 id="五、不同指针指向unique-ptr的情况"><a href="#五、不同指针指向unique-ptr的情况" class="headerlink" title="五、不同指针指向unique_ptr的情况"></a>五、不同指针指向unique_ptr的情况</h2><p>这里的&quot;不同指针&quot;通常指原始指针或其他类型的智能指针指向<code>unique_ptr</code>对象本身，而不是<code>unique_ptr</code>管理的对象。</p>
+<h3 id="1-原始指针指向unique-ptr"><a href="#1-原始指针指向unique-ptr" class="headerlink" title="1. 原始指针指向unique_ptr"></a>1. 原始指针指向unique_ptr</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr1</span><span class="params">(<span class="keyword">new</span> MyClass(<span class="number">42</span>))</span></span>;</span><br><span class="line">std::unique_ptr&lt;MyClass&gt;* rawPtr = &amp;ptr1; <span class="comment">// 指向unique_ptr对象的指针</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 通过原始指针访问unique_ptr</span></span><br><span class="line">std::cout &lt;&lt; <span class="string">&quot;Value: &quot;</span> &lt;&lt; (*rawPtr)-&gt;<span class="built_in">getValue</span>() &lt;&lt; std::endl;</span><br></pre></td></tr></table></figure>
+
+<p><strong>分析</strong>：</p>
+<ul>
+<li>这是安全的，因为<code>rawPtr</code>只是指向<code>unique_ptr</code>对象的指针</li>
+<li><code>unique_ptr</code>对象本身的生命周期由其作用域管理</li>
+<li>当<code>ptr1</code>离开作用域时，<code>rawPtr</code>将成为悬空指针，应避免在<code>ptr1</code>销毁后使用<code>rawPtr</code></li>
+</ul>
+<h3 id="2-shared-ptr指向unique-ptr"><a href="#2-shared-ptr指向unique-ptr" class="headerlink" title="2. shared_ptr指向unique_ptr"></a>2. shared_ptr指向unique_ptr</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">std::unique_ptr&lt;MyClass&gt; <span class="title">ptr1</span><span class="params">(<span class="keyword">new</span> MyClass(<span class="number">42</span>))</span></span>;</span><br><span class="line">std::shared_ptr&lt;std::unique_ptr&lt;MyClass&gt;&gt; sharedPtr = std::make_shared&lt;std::unique_ptr&lt;MyClass&gt;&gt;(std::<span class="built_in">move</span>(ptr1));</span><br><span class="line"></span><br><span class="line"><span class="comment">// 通过shared_ptr访问unique_ptr</span></span><br><span class="line">std::cout &lt;&lt; <span class="string">&quot;Value: &quot;</span> &lt;&lt; (*sharedPtr)-&gt;<span class="built_in">getValue</span>() &lt;&lt; std::endl;</span><br></pre></td></tr></table></figure>
+
+<p><strong>分析</strong>：</p>
+<ul>
+<li>这种用法比较少见，但技术上是可行的</li>
+<li><code>shared_ptr</code>管理的是<code>unique_ptr</code>对象本身</li>
+<li><code>unique_ptr</code>管理的是底层的<code>MyClass</code>对象</li>
+<li>当<code>sharedPtr</code>的引用计数降为0时，会销毁<code>unique_ptr</code>对象，进而销毁<code>MyClass</code>对象</li>
+</ul>
+<h2 id="六、unique-ptr的所有权管理总结"><a href="#六、unique-ptr的所有权管理总结" class="headerlink" title="六、unique_ptr的所有权管理总结"></a>六、unique_ptr的所有权管理总结</h2><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>结果</th>
+<th>安全性</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>std::move(ptr1)</code></td>
+<td>所有权转移，ptr1变为空</td>
+<td>安全</td>
+</tr>
+<tr>
+<td>函数返回unique_ptr</td>
+<td>所有权转移给返回值</td>
+<td>安全</td>
+</tr>
+<tr>
+<td>直接拷贝unique_ptr</td>
+<td>编译错误</td>
+<td>安全（编译时阻止）</td>
+</tr>
+<tr>
+<td>多个unique_ptr指向同一原始指针</td>
+<td>运行时双重释放</td>
+<td>危险</td>
+</tr>
+<tr>
+<td>原始指针指向unique_ptr</td>
+<td>需注意unique_ptr的生命周期</td>
+<td>一般安全</td>
+</tr>
+<tr>
+<td>shared_ptr指向unique_ptr</td>
+<td>技术可行但少见</td>
+<td>一般安全</td>
+</tr>
+</tbody></table>
+<h2 id="七、最佳实践"><a href="#七、最佳实践" class="headerlink" title="七、最佳实践"></a>七、最佳实践</h2><ol>
+<li><strong>始终使用<code>std::make_unique</code>创建unique_ptr</strong>（C++14及以上）<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">auto</span> ptr = std::<span class="built_in">make_unique</span>&lt;MyClass&gt;(<span class="number">42</span>);</span><br></pre></td></tr></table></figure></li>
+<li><strong>使用<code>std::move</code>进行所有权转移</strong><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">auto</span> ptr2 = std::<span class="built_in">move</span>(ptr1);</span><br></pre></td></tr></table></figure></li>
+<li><strong>避免手动管理原始指针</strong><ul>
+<li>不要将原始指针传递给多个<code>unique_ptr</code></li>
+<li>尽量使用智能指针的工厂函数</li>
+</ul>
+</li>
+<li><strong>在需要共享所有权时使用<code>std::shared_ptr</code></strong><ul>
+<li><code>unique_ptr</code>适用于独占所有权的场景</li>
+<li><code>shared_ptr</code>适用于共享所有权的场景</li>
+</ul>
+</li>
+<li><strong>注意unique_ptr的生命周期</strong><ul>
+<li>当<code>unique_ptr</code>离开作用域时，其管理的对象会被自动销毁</li>
+<li>避免在<code>unique_ptr</code>销毁后使用指向它的指针</li>
+</ul>
+</li>
+</ol>
+<h2 id="八、代码示例：安全使用unique-ptr"><a href="#八、代码示例：安全使用unique-ptr" class="headerlink" title="八、代码示例：安全使用unique_ptr"></a>八、代码示例：安全使用unique_ptr</h2><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Resource</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="built_in">Resource</span>(<span class="type">int</span> id) : <span class="built_in">id_</span>(id) &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;Resource &quot;</span> &lt;&lt; id_ &lt;&lt; <span class="string">&quot; created&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">    ~<span class="built_in">Resource</span>() &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;Resource &quot;</span> &lt;&lt; id_ &lt;&lt; <span class="string">&quot; destroyed&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="function"><span class="type">int</span> <span class="title">getId</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> id_; &#125;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    <span class="type">int</span> id_;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 函数返回unique_ptr（自动移动）</span></span><br><span class="line"><span class="function">std::unique_ptr&lt;Resource&gt; <span class="title">createResource</span><span class="params">(<span class="type">int</span> id)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> std::<span class="built_in">make_unique</span>&lt;Resource&gt;(id);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 函数接收unique_ptr（通过移动）</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">processResource</span><span class="params">(std::unique_ptr&lt;Resource&gt; resource)</span> </span>&#123;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Processing resource &quot;</span> &lt;&lt; resource-&gt;<span class="built_in">getId</span>() &lt;&lt; std::endl;</span><br><span class="line">    <span class="comment">// resource离开作用域时自动销毁</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 创建unique_ptr</span></span><br><span class="line">    <span class="keyword">auto</span> res1 = std::<span class="built_in">make_unique</span>&lt;Resource&gt;(<span class="number">1</span>);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Created res1 with id: &quot;</span> &lt;&lt; res1-&gt;<span class="built_in">getId</span>() &lt;&lt; std::endl;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 转移所有权给res2</span></span><br><span class="line">    <span class="keyword">auto</span> res2 = std::<span class="built_in">move</span>(res1);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Transferred ownership to res2&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;res1 is null: &quot;</span> &lt;&lt; (!res1 ? <span class="string">&quot;yes&quot;</span> : <span class="string">&quot;no&quot;</span>) &lt;&lt; std::endl;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 转移所有权给函数</span></span><br><span class="line">    <span class="built_in">processResource</span>(std::<span class="built_in">move</span>(res2));</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;res2 is null: &quot;</span> &lt;&lt; (!res2 ? <span class="string">&quot;yes&quot;</span> : <span class="string">&quot;no&quot;</span>) &lt;&lt; std::endl;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 从函数获取unique_ptr</span></span><br><span class="line">    <span class="keyword">auto</span> res3 = <span class="built_in">createResource</span>(<span class="number">3</span>);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Created res3 with id: &quot;</span> &lt;&lt; res3-&gt;<span class="built_in">getId</span>() &lt;&lt; std::endl;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Resource 1 created</span><br><span class="line">Created res1 with id: 1</span><br><span class="line">Transferred ownership to res2</span><br><span class="line">res1 is null: yes</span><br><span class="line">Processing resource 1</span><br><span class="line">Resource 1 destroyed</span><br><span class="line">res2 is null: yes</span><br><span class="line">Resource 3 created</span><br><span class="line">Created res3 with id: 3</span><br><span class="line">Resource 3 destroyed</span><br></pre></td></tr></table></figure>
+
+<h2 id="九、常见陷阱与避免方法"><a href="#九、常见陷阱与避免方法" class="headerlink" title="九、常见陷阱与避免方法"></a>九、常见陷阱与避免方法</h2><h3 id="1-陷阱：使用原始指针初始化多个unique-ptr"><a href="#1-陷阱：使用原始指针初始化多个unique-ptr" class="headerlink" title="1. 陷阱：使用原始指针初始化多个unique_ptr"></a>1. 陷阱：使用原始指针初始化多个unique_ptr</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 错误示例</span></span><br><span class="line">Resource* raw = <span class="keyword">new</span> <span class="built_in">Resource</span>(<span class="number">42</span>);</span><br><span class="line"><span class="function">std::unique_ptr&lt;Resource&gt; <span class="title">p1</span><span class="params">(raw)</span></span>;</span><br><span class="line"><span class="function">std::unique_ptr&lt;Resource&gt; <span class="title">p2</span><span class="params">(raw)</span></span>; <span class="comment">// 危险：双重释放</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>避免方法</strong>：始终使用<code>std::make_unique</code>或确保每个原始指针只被一个<code>unique_ptr</code>管理。</p>
+<h3 id="2-陷阱：在unique-ptr销毁后使用其管理的对象"><a href="#2-陷阱：在unique-ptr销毁后使用其管理的对象" class="headerlink" title="2. 陷阱：在unique_ptr销毁后使用其管理的对象"></a>2. 陷阱：在unique_ptr销毁后使用其管理的对象</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 错误示例</span></span><br><span class="line">std::unique_ptr&lt;Resource&gt; p1 = std::<span class="built_in">make_unique</span>&lt;Resource&gt;(<span class="number">42</span>);</span><br><span class="line">Resource* raw = p<span class="number">1.</span><span class="built_in">get</span>(); <span class="comment">// 获取原始指针</span></span><br><span class="line">p<span class="number">1.</span><span class="built_in">reset</span>(); <span class="comment">// 销毁对象</span></span><br><span class="line">std::cout &lt;&lt; raw-&gt;<span class="built_in">getId</span>(); <span class="comment">// 危险：访问已销毁的对象</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>避免方法</strong>：不要在<code>unique_ptr</code>销毁后使用通过<code>get()</code>获取的原始指针。</p>
+<h3 id="3-陷阱：将unique-ptr作为函数参数按值传递（未使用移动语义）"><a href="#3-陷阱：将unique-ptr作为函数参数按值传递（未使用移动语义）" class="headerlink" title="3. 陷阱：将unique_ptr作为函数参数按值传递（未使用移动语义）"></a>3. 陷阱：将unique_ptr作为函数参数按值传递（未使用移动语义）</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 错误示例</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">func</span><span class="params">(std::unique_ptr&lt;Resource&gt; p)</span> </span>&#123; <span class="comment">/* ... */</span> &#125;</span><br><span class="line"></span><br><span class="line">std::unique_ptr&lt;Resource&gt; p = std::<span class="built_in">make_unique</span>&lt;Resource&gt;(<span class="number">42</span>);</span><br><span class="line"><span class="built_in">func</span>(p); <span class="comment">// 编译错误：无法拷贝</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>避免方法</strong>：使用<code>std::move</code>或按引用传递。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 正确示例</span></span><br><span class="line"><span class="built_in">func</span>(std::<span class="built_in">move</span>(p)); <span class="comment">// 转移所有权</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 或按引用传递（不转移所有权）</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">func</span><span class="params">(<span class="type">const</span> std::unique_ptr&lt;Resource&gt;&amp; p)</span> </span>&#123; <span class="comment">/* ... */</span> &#125;</span><br><span class="line"><span class="built_in">func</span>(p); <span class="comment">// 正确：传递引用</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="十、总结"><a href="#十、总结" class="headerlink" title="十、总结"></a>十、总结</h2><p><code>std::unique_ptr</code>是C++中管理独占所有权资源的强大工具，正确使用它可以避免内存泄漏和双重释放等问题。关键要点：</p>
+<ol>
+<li><strong>独占所有权</strong>：同一时间只能有一个<code>unique_ptr</code>拥有对象</li>
+<li><strong>所有权转移</strong>：使用<code>std::move</code>进行安全的所有权转移</li>
+<li><strong>禁止拷贝</strong>：防止多个<code>unique_ptr</code>管理同一对象</li>
+<li><strong>自动管理</strong>：离开作用域时自动释放资源</li>
+<li><strong>避免陷阱</strong>：不要让多个<code>unique_ptr</code>指向同一原始指针，不要在<code>unique_ptr</code>销毁后使用其管理的对象</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/5c6d7e8f/">https://hespethorn.github.io/posts/5c6d7e8f/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/">内存管理</a><a class="post-meta__tags" href="/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/">智能指针</a><a class="post-meta__tags" href="/tags/unique-ptr/">unique_ptr</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">422</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">304</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">68</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8f9e7d0c/" title="Claude Code 代理循环：从输入到响应的核心流程">Claude Code 代理循环：从输入到响应的核心流程</a><time datetime="2026-04-07T03:00:00.000Z" title="Created 2026-04-07 11:00:00">2026-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c8d9e0f/" title="Claude Code 工作原理：从按键到响应的完整流程">Claude Code 工作原理：从按键到响应的完整流程</a><time datetime="2026-04-07T02:00:00.000Z" title="Created 2026-04-07 10:00:00">2026-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3c4d5e6f/" title="Claude Skills 实现原理：加载阶段详解">Claude Skills 实现原理：加载阶段详解</a><time datetime="2026-02-22T02:00:00.000Z" title="Created 2026-02-22 10:00:00">2026-02-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2b3c4d5e/" title="Claude Skills 核心概念与组成">Claude Skills 核心概念与组成</a><time datetime="2026-02-15T02:00:00.000Z" title="Created 2026-02-15 10:00:00">2026-02-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1a2b3c4d/" title="LLM 发展与 Claude Skills 的诞生">LLM 发展与 Claude Skills 的诞生</a><time datetime="2026-02-01T02:00:00.000Z" title="Created 2026-02-01 10:00:00">2026-02-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/5c6d7e8f/" title="C++ unique_ptr 所有权转移与相关问题分析">C++ unique_ptr 所有权转移与相关问题分析</a><time datetime="2026-01-13T12:00:00.000Z" title="Created 2026-01-13 20:00:00">2026-01-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/4a7b8c9d/" title="C++智能指针：shared_ptr、make_shared与make_shared(new T)的关联与比较">C++智能指针：shared_ptr、make_shared与make_shared(new T)的关联与比较</a><time datetime="2026-01-10T12:30:15.000Z" title="Created 2026-01-10 20:30:15">2026-01-10</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8f9e7d0c/" title="Claude Code 代理循环：从输入到响应的核心流程">Claude Code 代理循环：从输入到响应的核心流程</a><time datetime="2026-04-07T03:00:00.000Z" title="Created 2026-04-07 11:00:00">2026-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c8d9e0f/" title="Claude Code 工作原理：从按键到响应的完整流程">Claude Code 工作原理：从按键到响应的完整流程</a><time datetime="2026-04-07T02:00:00.000Z" title="Created 2026-04-07 10:00:00">2026-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6a7b8c9d/" title="Git 核心原理：对象模型与有向无环图">Git 核心原理：对象模型与有向无环图</a><time datetime="2026-04-02T13:00:00.000Z" title="Created 2026-04-02 21:00:00">2026-04-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-daily-2026-03-27/" title="2026-03-27 AI日报">2026-03-27 AI日报</a><time datetime="2026-03-26T16:00:00.000Z" title="Created 2026-03-27 00:00:00">2026-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-daily-2026-03-20/" title="2026-03-20 AI日报">2026-03-20 AI日报</a><time datetime="2026-03-19T16:00:00.000Z" title="Created 2026-03-20 00:00:00">2026-03-20</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leecode/">LeetCode</a><a href="/categories/AI日报/">AI日报</a></li><li><a href="/categories/八股文/">C++八股文</a><a href="/categories/文章/">技术文章</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/算法/">算法</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/网络编程/">网络编程</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
