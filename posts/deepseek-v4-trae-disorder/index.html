@@ -1,0 +1,602 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="在 Windows 版 TRAE IDE 中通过 DeepSeek v4 Pro 模型辅助编程和写作时（通过 SSH 远程连接到 Linux 开发环境），我遇到了一个令人困扰的现象：模型的思考过程和编写过程出现严重的输出乱序——文字片段像被洗牌一样随机排列，完全无法阅读。 问题的诡异之处在于：不是偶尔乱序，而是几乎每次长回复都会出现。下面是一段真实的乱序输出：  真实的乱序输出示例：  Deepe">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决">
+<meta property="og:url" content="https://hespethorn.github.io/posts/deepseek-v4-trae-disorder/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="在 Windows 版 TRAE IDE 中通过 DeepSeek v4 Pro 模型辅助编程和写作时（通过 SSH 远程连接到 Linux 开发环境），我遇到了一个令人困扰的现象：模型的思考过程和编写过程出现严重的输出乱序——文字片段像被洗牌一样随机排列，完全无法阅读。 问题的诡异之处在于：不是偶尔乱序，而是几乎每次长回复都会出现。下面是一段真实的乱序输出：  真实的乱序输出示例：  Deepe">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-04-27T02:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-27T13:35:59.975Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="DeepSeek">
+<meta property="article:tag" content="TRAE">
+<meta property="article:tag" content="流式输出">
+<meta property="article:tag" content="SSE">
+<meta property="article:tag" content="reasoning_content">
+<meta property="article:tag" content="调试">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决",
+  "url": "https://hespethorn.github.io/posts/deepseek-v4-trae-disorder/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-04-27T02:00:00.000Z",
+  "dateModified": "2026-04-27T13:35:59.975Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/deepseek-v4-trae-disorder/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">480</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">466</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">68</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-04-27T02:00:00.000Z" title="Created 2026-04-27 10:00:00">2026-04-27</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>在 Windows 版 TRAE IDE 中通过 DeepSeek v4 Pro 模型辅助编程和写作时（通过 SSH 远程连接到 Linux 开发环境），我遇到了一个令人困扰的现象：模型的<strong>思考过程和编写过程出现严重的输出乱序</strong>——文字片段像被洗牌一样随机排列，完全无法阅读。</p>
+<p>问题的诡异之处在于：不是偶尔乱序，而是几乎每次长回复都会出现。下面是一段真实的乱序输出：</p>
+<hr>
+<p><strong>真实的乱序输出示例：</strong></p>
+<blockquote>
+<p>DeepekSe是模型Tra <strong>通过界e面面的</strong>UI添加 ，的存储在别 ，的地方在你。TraIDE e看到中Deep-ekSe24 v ro-p正在并使用##。</p>
+<p>DeepSe ek -v4的por乱序输出 原因深层的Deep</p>
+<p>Seek<strong>根本模型 原因是）流式响应（Streaming 机制 T与e ra IDE响应的 处理不兼容</strong> ：</p>
+</blockquote>
+<hr>
+<p>可以看到，不同来源的文字被不规则地<strong>插花式交错</strong>在一起。这并非某一段落整体后移或前移，而是真正的<strong>词级&#x2F;片段级交错</strong>——两个文本流被以非预期的方式交替拼接到了一行中。</p>
+<p>本文将记录问题的完整排查过程、目前最合理的推断和实际可行的应对方案。需要说明的是，关于根因的分析目前仍处于<strong>推测阶段</strong>——已向 TRAE 和 DeepSeek 双方提交反馈，正在等待官方确认。</p>
+<h2 id="一、问题场景"><a href="#一、问题场景" class="headerlink" title="一、问题场景"></a>一、问题场景</h2><h3 id="1-1-实际使用环境"><a href="#1-1-实际使用环境" class="headerlink" title="1.1 实际使用环境"></a>1.1 实际使用环境</h3><table>
+<thead>
+<tr>
+<th>环境要素</th>
+<th>详情</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>IDE</strong></td>
+<td>TRAE（Windows 版）</td>
+</tr>
+<tr>
+<td><strong>开发环境</strong></td>
+<td>通过 SSH 远程连接 Linux 服务器</td>
+</tr>
+<tr>
+<td><strong>模型</strong></td>
+<td>DeepSeek v4 Pro</td>
+</tr>
+<tr>
+<td><strong>API 端点</strong></td>
+<td><code>https://api.deepseek.com</code>（OpenAI 兼容格式）</td>
+</tr>
+<tr>
+<td><strong>添加方式</strong></td>
+<td>在 TRAE 的 UI 界面中添加</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>关于 TRAE</strong>：TRAE 目前只有 Windows 版本。它与 Linux 的关系仅限于通过 SSH 进行远程开发——TRAE 本身运行在 Windows 上，远程连接到 Linux 服务器操作文件和执行命令。因此问题与&quot;Linux 版 TRAE&quot;无关，问题发生在 TRAE Windows 客户端与 DeepSeek v4 Pro API 的交互过程中。</p>
+</blockquote>
+<h3 id="1-2-乱序的特征"><a href="#1-2-乱序的特征" class="headerlink" title="1.2 乱序的特征"></a>1.2 乱序的特征</h3><p>经过反复观察，乱序呈现出鲜明的规律：</p>
+<ul>
+<li><strong>长回复必乱</strong>：回复超过约 200 token 时，几乎必然出现乱序</li>
+<li><strong>词级&#x2F;片段级交错，而非段落级</strong>：不是&quot;A 段落跑到了 B 段落前面&quot;，而是 A 段落的词和 B 段落的词<strong>交替出现</strong>在同一行</li>
+<li><strong>思考过程和正文交错</strong>：模型的&quot;内心独白&quot;（reasoning）和&quot;最终回答&quot;（content）混在了一起</li>
+<li><strong>不限于写作</strong>：生成代码时同样出现乱序</li>
+</ul>
+<h3 id="1-3-关键观察：乱序是-两股流交织-的结果"><a href="#1-3-关键观察：乱序是-两股流交织-的结果" class="headerlink" title="1.3 关键观察：乱序是&quot;两股流交织&quot;的结果"></a>1.3 关键观察：乱序是&quot;两股流交织&quot;的结果</h3><p>仔细观察上面的真实乱序输出，你会发现它看起来像是<strong>两段不同的话被打碎后逐词交替拼接</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">流 A（思考）: &quot;DeepSeek 模型的乱序输出...&quot;</span><br><span class="line">流 B（正文）: &quot;根本原因是流式响应机制与 TRAE IDE 的响应处理不兼容...&quot;</span><br><span class="line"></span><br><span class="line">实际显示: &quot;DeepSe ek -v4的por乱序输出 原因深层的Deep Seek根本模型原因是）流式响应...&quot;</span><br></pre></td></tr></table></figure>
+
+<p>这个观察是理解整个问题的关键。</p>
+<h2 id="二、已排除的方案"><a href="#二、已排除的方案" class="headerlink" title="二、已排除的方案"></a>二、已排除的方案</h2><p>在深入分析之前，先把两条常见的排查路径排除掉——它们在我这个场景中都不适用。</p>
+<h3 id="2-1-TRAE-没有流式输出开关"><a href="#2-1-TRAE-没有流式输出开关" class="headerlink" title="2.1 TRAE 没有流式输出开关"></a>2.1 TRAE 没有流式输出开关</h3><p>我详细检查了 TRAE 的模型设置界面，<strong>没有找到&quot;流式输出（Streaming）&quot;的开关选项</strong>。TRAE 在模型配置中并未暴露这个控制项，用户无法从 UI 层面关闭流式响应。</p>
+<h3 id="2-2-已经在使用-OpenAI-兼容端点"><a href="#2-2-已经在使用-OpenAI-兼容端点" class="headerlink" title="2.2 已经在使用 OpenAI 兼容端点"></a>2.2 已经在使用 OpenAI 兼容端点</h3><p>我的 API 端点配置为 <code>https://api.deepseek.com</code>，这正是 DeepSeek 提供的 OpenAI 兼容端点——无需切换到&quot;更兼容&quot;的端点，因为已经是最兼容的选项。</p>
+<p><strong>结论</strong>：常规的&quot;关 streaming&quot;和&quot;换端点&quot;两条路都走不通，需要深入理解问题本质后才能找到真正的解法。</p>
+<h2 id="三、原因推测"><a href="#三、原因推测" class="headerlink" title="三、原因推测"></a>三、原因推测</h2><p>以下分析基于观察到的现象和网络协议知识，<strong>尚未经 TRAE 或 DeepSeek 官方确认</strong>，仅代表当前最合理的推断。</p>
+<h3 id="3-1-核心推测"><a href="#3-1-核心推测" class="headerlink" title="3.1 核心推测"></a>3.1 核心推测</h3><p><strong>DeepSeek v4 Pro 是推理模型（reasoning model），在 SSE 流式输出中同时发送 <code>reasoning_content</code> 和 <code>content</code> 两种字段，而 TRAE 的 SSE 解析器没有正确分离这两种字段，导致它们在渲染时产生逐词交错。</strong></p>
+<blockquote>
+<p>⚠️ 这一推测已向 TRAE 和 DeepSeek 双方反馈，目前等待官方确认或修正。</p>
+</blockquote>
+<h3 id="3-2-推理模型-vs-普通模型的-SSE-差异"><a href="#3-2-推理模型-vs-普通模型的-SSE-差异" class="headerlink" title="3.2 推理模型 vs 普通模型的 SSE 差异"></a>3.2 推理模型 vs 普通模型的 SSE 差异</h3><p>普通模型（如 deepseek-chat）的 SSE chunk 格式是标准的：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;choices&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;index&quot;</span><span class="punctuation">:</span> <span class="number">0</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;delta&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;流式响应机制&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>而 DeepSeek v4 Pro 作为推理模型，每个 chunk 可能<strong>同时包含两种内容</strong>：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;choices&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;index&quot;</span><span class="punctuation">:</span> <span class="number">0</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;delta&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;reasoning_content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;这段输出乱序...&quot;</span><span class="punctuation">,</span>  <span class="comment">// ← 思考过程</span></span><br><span class="line">      <span class="attr">&quot;content&quot;</span><span class="punctuation">:</span> <span class="string">&quot;根本原因是流式响应&quot;</span>           <span class="comment">// ← 最终回答</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>或者两种情况<strong>交替出现</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">chunk-1: delta.content = &quot;根本&quot;</span><br><span class="line">chunk-2: delta.reasoning_content = &quot;让我想想...&quot;</span><br><span class="line">chunk-3: delta.content = &quot;原因是&quot;</span><br><span class="line">chunk-4: delta.reasoning_content = &quot;应该是...&quot;</span><br><span class="line">chunk-5: delta.content = &quot;流式响应&quot;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-3-TRAE-如何处理这两种内容"><a href="#3-3-TRAE-如何处理这两种内容" class="headerlink" title="3.3 TRAE 如何处理这两种内容"></a>3.3 TRAE 如何处理这两种内容</h3><p>关键问题是：<strong>TRAE 如何处理 <code>reasoning_content</code>？</strong></p>
+<p>有两种可能的情况，都会导致类似乱序：</p>
+<p><strong>情况 A — TRAE 把两种内容混入同一条流</strong>：</p>
+<p>TRAE 的解析器不认识 <code>reasoning_content</code> 字段，直接把所有 <code>delta</code> 中的内容拼接在一起。由于 SSE chunk 中 <code>reasoning_content</code> 和 <code>content</code> 交替出现，拼接结果自然就是两段话的逐词交错。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">拼出来的结果：</span><br><span class="line">&quot;让我想想...根本应该是...原因是...流式响应...&quot;</span><br></pre></td></tr></table></figure>
+
+<p><strong>情况 B — TRAE 分别在两个区域渲染，但未能同步</strong>：</p>
+<p>TRAE 识别了 <code>reasoning_content</code> 和 <code>content</code>，分别放到&quot;思考区域&quot;和&quot;回答区域&quot;显示。但两个区域的渲染使用了同一个 SSE 事件循环，导致两者的 DOM 更新互相穿插，视觉上呈现交错。</p>
+<p>不管是哪种情况，假设的根因都是 <strong>DeepSeek v4 Pro 的推理模型 SSE 格式超出了标准 OpenAI 协议的范围，而 TRAE 尚未针对这一格式做完整适配</strong>。</p>
+<h3 id="3-4-直观理解"><a href="#3-4-直观理解" class="headerlink" title="3.4 直观理解"></a>3.4 直观理解</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">正常 Chat 模型的流：</span><br><span class="line">  [正文A] [正文B] [正文C] [正文D] → 线性拼接，永不错位 ✓</span><br><span class="line"></span><br><span class="line">DeepSeek v4 Pro 推理模型的流：</span><br><span class="line">  [思考A] [正文A] [思考B] [正文B] [思考C] [正文C] → 两股流交替</span><br><span class="line">  </span><br><span class="line">TRAE 的处理：</span><br><span class="line">  [思考A] [正文A] [思考B] [正文B] [思考C] [正文C] → 混在一起显示 ✗</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-5-为什么-Chat-模型不受影响"><a href="#3-5-为什么-Chat-模型不受影响" class="headerlink" title="3.5 为什么 Chat 模型不受影响"></a>3.5 为什么 Chat 模型不受影响</h3><p>作为对照，我测试了 DeepSeek 的 deepseek-chat（非推理模型），在同样的 TRAE 环境中<strong>完全正常</strong>，没有任何乱序。这进一步暗示问题很可能出在推理模型特有的 SSE 字段上。</p>
+<h2 id="四、可行解决方案"><a href="#四、可行解决方案" class="headerlink" title="四、可行解决方案"></a>四、可行解决方案</h2><p>以下方案按实用程度排序。</p>
+<h3 id="方案一（⭐⭐⭐-推荐）：换用-deepseek-chat-模型"><a href="#方案一（⭐⭐⭐-推荐）：换用-deepseek-chat-模型" class="headerlink" title="方案一（⭐⭐⭐ 推荐）：换用 deepseek-chat 模型"></a>方案一（⭐⭐⭐ 推荐）：换用 deepseek-chat 模型</h3><p><strong>最直接有效的方案。</strong></p>
+<p>DeepSeek v4 Pro 是推理模型（reasoning model），其 SSE 格式很可能是乱序的直接原因。如果你不需要模型的&quot;显式思考过程&quot;，直接切换到 deepseek-chat 即可：</p>
+<ul>
+<li>deepseek-chat 的 SSE 流只包含 <code>content</code>，没有 <code>reasoning_content</code></li>
+<li>与 TRAE 完全兼容，和标准 OpenAI 模型一样稳定</li>
+<li>响应速度更快，适合日常编码和写作</li>
+</ul>
+<p><strong>操作</strong>：在 TRAE 的模型配置中，将模型名称从 <code>deepseek-v4-pro</code> 改为 <code>deepseek-chat</code>。</p>
+<h3 id="方案二（⭐⭐）：搭建本地-SSE-代理"><a href="#方案二（⭐⭐）：搭建本地-SSE-代理" class="headerlink" title="方案二（⭐⭐）：搭建本地 SSE 代理"></a>方案二（⭐⭐）：搭建本地 SSE 代理</h3><p>如果必须使用 deepseek-v4 Pro 的推理能力，可以搭建一个本地代理，将 DeepSeek 的 SSE 流转换为标准格式再喂给 TRAE。</p>
+<p><strong>代理做的事情</strong>：接收 DeepSeek v4 Pro 的 SSE 流，完整收集所有 chunk，将 <code>reasoning_content</code> 和 <code>content</code> <strong>正确分离并有序拼接</strong>，然后重新以标准 SSE 格式输出给 TRAE。</p>
+<p>核心逻辑示意：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 本地 SSE 代理核心逻辑</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">DeepSeekSSEProxy</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="variable language_">self</span>.reasoning_parts = []</span><br><span class="line">        <span class="variable language_">self</span>.content_parts = []</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">process_chunk</span>(<span class="params">self, chunk</span>):</span><br><span class="line">        delta = chunk[<span class="string">&quot;choices&quot;</span>][<span class="number">0</span>][<span class="string">&quot;delta&quot;</span>]</span><br><span class="line">        <span class="comment"># 分别收集两类内容</span></span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;reasoning_content&quot;</span> <span class="keyword">in</span> delta:</span><br><span class="line">            <span class="variable language_">self</span>.reasoning_parts.append(delta[<span class="string">&quot;reasoning_content&quot;</span>])</span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;content&quot;</span> <span class="keyword">in</span> delta:</span><br><span class="line">            <span class="variable language_">self</span>.content_parts.append(delta[<span class="string">&quot;content&quot;</span>])</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">emit_to_trae</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="comment"># 先发送完整思考</span></span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.reasoning_parts:</span><br><span class="line">            <span class="keyword">yield</span> format_chunk(<span class="string">&quot;&quot;</span>.join(<span class="variable language_">self</span>.reasoning_parts), is_reasoning=<span class="literal">True</span>)</span><br><span class="line">        <span class="comment"># 再发送完整正文</span></span><br><span class="line">        <span class="keyword">if</span> <span class="variable language_">self</span>.content_parts:</span><br><span class="line">            <span class="keyword">yield</span> format_chunk(<span class="string">&quot;&quot;</span>.join(<span class="variable language_">self</span>.content_parts), is_reasoning=<span class="literal">False</span>)</span><br></pre></td></tr></table></figure>
+
+<p>代理启动后，将 TRAE 的 Provider URL 指向 <code>http://localhost:11434/...</code>（代理地址），由代理转发并美化 SSE 格式。</p>
+<blockquote>
+<p>这个方案需要一定编程基础，适合愿意折腾的同学。好处是一劳永逸。</p>
+</blockquote>
+<h3 id="方案三（⭐）：控制单次请求长度"><a href="#方案三（⭐）：控制单次请求长度" class="headerlink" title="方案三（⭐）：控制单次请求长度"></a>方案三（⭐）：控制单次请求长度</h3><p>虽然不是根治方案，但可以有效降低乱序的发生频率：</p>
+<ul>
+<li>将长文任务拆分成多个短对话</li>
+<li>每个请求控制在 ~300 token 以内</li>
+<li>分步骤提问：&quot;先写大纲&quot; → &quot;展开第一节&quot; → &quot;展开第二节&quot;...</li>
+</ul>
+<p>乱序的概率与回复长度正相关——越短越安全。</p>
+<h3 id="方案四：等待双方适配"><a href="#方案四：等待双方适配" class="headerlink" title="方案四：等待双方适配"></a>方案四：等待双方适配</h3><p>这是长期方案。问题本质是 DeepSeek 和 TRAE 之间的协议适配，需要其中一方或双方做出改变：</p>
+<ul>
+<li><strong>TRAE 侧</strong>：正确识别并分离 <code>reasoning_content</code> 和 <code>content</code>，在 UI 中分区域展示</li>
+<li><strong>DeepSeek 侧</strong>：提供纯标准 OpenAI 格式的流式输出选项（不发送 <code>reasoning_content</code>）</li>
+</ul>
+<p><strong>当前状态</strong>：已向 TRAE 和 DeepSeek 双方提交 issue 反馈此问题及推测，正在等待双方的技术确认和回复。</p>
+<h2 id="五、给开发者的启示"><a href="#五、给开发者的启示" class="headerlink" title="五、给开发者的启示"></a>五、给开发者的启示</h2><p>这个案例折射出 AI 工具生态中的几个深层问题：</p>
+<ol>
+<li><p><strong>&quot;OpenAI 兼容&quot;不等于完全兼容</strong>：<code>reasoning_content</code> 是 DeepSeek v4 Pro 特有的扩展字段，不在 OpenAI 标准协议中。&quot;声称兼容&quot;和&quot;完全兼容&quot;之间的缝隙，正是这类问题的藏身之处</p>
+</li>
+<li><p><strong>推理模型的流式协议是新战场</strong>：OpenAI 的 o1 系列、DeepSeek 的 v4 Pro 都在探索&quot;显式思考过程&quot;，但目前各家对 reasoning 内容的 SSE 表示方式并无统一标准——这会导致越来越多的 IDE-模型兼容问题</p>
+</li>
+<li><p><strong>SSE 协议的设计留白</strong>：RFC 中的 SSE 规范只定义了传输格式（<code>data:</code> 行），不涉及内容的语义结构。当多个逻辑流（reasoning + content）通过同一条 SSE 连接传输时，如何区分、如何排序，完全由实现方自行约定</p>
+</li>
+<li><p><strong>用户的排障困境</strong>：当 TRAE 没有 streaming 开关、已经用了 OpenAI 端点、问题依然存在时，用户的排障路径基本走尽了。工具链应提供更透明的<strong>底层日志</strong>（如原始 SSE 流），帮助用户定位问题</p>
+</li>
+</ol>
+<h2 id="六、总结"><a href="#六、总结" class="headerlink" title="六、总结"></a>六、总结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>问题本质（推测）</strong></td>
+<td>DeepSeek v4 Pro 推理模型的 SSE 流包含 <code>reasoning_content</code> 和 <code>content</code> 两股内容，TRAE 未正确分离，导致逐词交错（待官方确认）</td>
+</tr>
+<tr>
+<td><strong>已排除</strong></td>
+<td>TRAE 无 streaming 控制开关；已使用 OpenAI 兼容端点</td>
+</tr>
+<tr>
+<td><strong>当前状态</strong></td>
+<td>已向 TRAE 和 DeepSeek 双方提交反馈，等待回复</td>
+</tr>
+<tr>
+<td><strong>最优方案</strong></td>
+<td>换用 deepseek-chat 模型，SSE 格式与 TRAE 完全兼容</td>
+</tr>
+<tr>
+<td><strong>高级方案</strong></td>
+<td>搭建 SSE 代理，手动分离 reasoning 和 content</td>
+</tr>
+<tr>
+<td><strong>长期方案</strong></td>
+<td>期待官方确认问题并适配推理模型的流式协议</td>
+</tr>
+</tbody></table>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/deepseek-v4-trae-disorder/">https://hespethorn.github.io/posts/deepseek-v4-trae-disorder/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/AI/">AI</a><a class="post-meta__tags" href="/tags/DeepSeek/">DeepSeek</a><a class="post-meta__tags" href="/tags/TRAE/">TRAE</a><a class="post-meta__tags" href="/tags/%E6%B5%81%E5%BC%8F%E8%BE%93%E5%87%BA/">流式输出</a><a class="post-meta__tags" href="/tags/SSE/">SSE</a><a class="post-meta__tags" href="/tags/reasoning-content/">reasoning_content</a><a class="post-meta__tags" href="/tags/%E8%B0%83%E8%AF%95/">调试</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">480</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">466</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">68</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/deepseek-v4-trae-disorder/" title="DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决">DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决</a><time datetime="2026-04-27T02:00:00.000Z" title="Created 2026-04-27 10:00:00">2026-04-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c8d9e0f/" title="Claude Code 工作原理：从按键到响应的完整流程">Claude Code 工作原理：从按键到响应的完整流程</a><time datetime="2026-04-08T02:00:00.000Z" title="Created 2026-04-08 10:00:00">2026-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8f9e7d0c/" title="Claude Code 代理循环：从输入到响应的核心流程">Claude Code 代理循环：从输入到响应的核心流程</a><time datetime="2026-04-05T03:00:00.000Z" title="Created 2026-04-05 11:00:00">2026-04-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/4d5e6f7g/" title="Claude Skills 实现原理：注入调用阶段详解">Claude Skills 实现原理：注入调用阶段详解</a><time datetime="2026-03-01T02:00:00.000Z" title="Created 2026-03-01 10:00:00">2026-03-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3c4d5e6f/" title="Claude Skills 实现原理：加载阶段详解">Claude Skills 实现原理：加载阶段详解</a><time datetime="2026-02-22T02:00:00.000Z" title="Created 2026-02-22 10:00:00">2026-02-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2b3c4d5e/" title="Claude Skills 核心概念与组成">Claude Skills 核心概念与组成</a><time datetime="2026-02-15T02:00:00.000Z" title="Created 2026-02-15 10:00:00">2026-02-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1a2b3c4d/" title="LLM 发展与 Claude Skills 的诞生">LLM 发展与 Claude Skills 的诞生</a><time datetime="2026-02-01T02:00:00.000Z" title="Created 2026-02-01 10:00:00">2026-02-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8f7d5e9c/" title="MQTT主题选择的数据报格式分析">MQTT主题选择的数据报格式分析</a><time datetime="2026-01-24T13:13:00.000Z" title="Created 2026-01-24 21:13:00">2026-01-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/5c6d7e8f/" title="C++ unique_ptr 所有权转移与相关问题分析">C++ unique_ptr 所有权转移与相关问题分析</a><time datetime="2026-01-16T12:00:00.000Z" title="Created 2026-01-16 20:00:00">2026-01-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/4a7b8c9d/" title="C++智能指针：shared_ptr、make_shared与make_shared(new T)的关联与比较">C++智能指针：shared_ptr、make_shared与make_shared(new T)的关联与比较</a><time datetime="2026-01-10T12:30:15.000Z" title="Created 2026-01-10 20:30:15">2026-01-10</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/deepseek-v4-trae-disorder/" title="DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决">DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决</a><time datetime="2026-04-27T02:00:00.000Z" title="Created 2026-04-27 10:00:00">2026-04-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/eva-assistant-code-analysis/" title="EVA智能助手代码深度解析">EVA智能助手代码深度解析</a><time datetime="2026-04-23T13:30:45.000Z" title="Created 2026-04-23 21:30:45">2026-04-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-15T12:45:00.000Z" title="Created 2026-04-15 20:45:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-12T12:45:00.000Z" title="Created 2026-04-12 20:45:00">2026-04-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c8d9e0f/" title="Claude Code 工作原理：从按键到响应的完整流程">Claude Code 工作原理：从按键到响应的完整流程</a><time datetime="2026-04-08T02:00:00.000Z" title="Created 2026-04-08 10:00:00">2026-04-08</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leetcode/">LeetCode</a><a href="/tags/Python/">Python</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/GO/">GO</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/English/">English</a></li><li><a href="/categories/热门导读/">热门导读</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
