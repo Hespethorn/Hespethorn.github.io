@@ -1,0 +1,637 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>模块动态下发：基于动态链接库的热插拔架构设计 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你改了一行日志格式，然后等了 45 分钟——编译 18 分钟、单测 12 分钟、镜像构建 10 分钟、滚动发布 5 分钟。等新版本上线后，日志显示一切正常。但你忍不住想：我为什么要为一行日志重启整个服务？ 静态编译的痛苦在于它的&quot;原子性&quot;：哪怕只改一行代码，也要重新经历完整的构建-测试-部署链条。随着项目规模膨胀到百万行级别，这个链条会变得越来越难以忍受。 如果每个模块都是一个">
+<meta property="og:type" content="article">
+<meta property="og:title" content="模块动态下发：基于动态链接库的热插拔架构设计">
+<meta property="og:url" content="https://hespethorn.github.io/posts/dynamic-lib-hotplug-architecture/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="你改了一行日志格式，然后等了 45 分钟——编译 18 分钟、单测 12 分钟、镜像构建 10 分钟、滚动发布 5 分钟。等新版本上线后，日志显示一切正常。但你忍不住想：我为什么要为一行日志重启整个服务？ 静态编译的痛苦在于它的&quot;原子性&quot;：哪怕只改一行代码，也要重新经历完整的构建-测试-部署链条。随着项目规模膨胀到百万行级别，这个链条会变得越来越难以忍受。 如果每个模块都是一个">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-05-05T02:32:55.000Z">
+<meta property="article:modified_time" content="2026-05-06T01:59:12.172Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="插件架构">
+<meta property="article:tag" content="动态链接库">
+<meta property="article:tag" content="dlopen">
+<meta property="article:tag" content="热插拔">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="零停机更新">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "模块动态下发：基于动态链接库的热插拔架构设计",
+  "url": "https://hespethorn.github.io/posts/dynamic-lib-hotplug-architecture/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-05-05T02:32:55.000Z",
+  "dateModified": "2026-05-06T01:59:12.172Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/dynamic-lib-hotplug-architecture/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '模块动态下发：基于动态链接库的热插拔架构设计',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">505</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">533</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">模块动态下发：基于动态链接库的热插拔架构设计</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">模块动态下发：基于动态链接库的热插拔架构设计</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-05-05T02:32:55.000Z" title="Created 2026-05-05 10:32:55">2026-05-05</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你改了一行日志格式，然后等了 45 分钟——编译 18 分钟、单测 12 分钟、镜像构建 10 分钟、滚动发布 5 分钟。等新版本上线后，日志显示一切正常。但你忍不住想：<strong>我为什么要为一行日志重启整个服务？</strong></p>
+<p>静态编译的痛苦在于它的&quot;原子性&quot;：哪怕只改一行代码，也要重新经历完整的构建-测试-部署链条。随着项目规模膨胀到百万行级别，这个链条会变得越来越难以忍受。</p>
+<p><strong>如果每个模块都是一个独立的动态链接库（.so &#x2F; .dll &#x2F; .dylib），可以被主程序在运行时加载、卸载、替换——会怎样？</strong></p>
+<p>这就是基于动态库的&quot;热插拔&quot;架构。</p>
+<h2 id="一、核心思想：动态库即插件"><a href="#一、核心思想：动态库即插件" class="headerlink" title="一、核心思想：动态库即插件"></a>一、核心思想：动态库即插件</h2><h3 id="1-1-从静态到动态的思维转变"><a href="#1-1-从静态到动态的思维转变" class="headerlink" title="1.1 从静态到动态的思维转变"></a>1.1 从静态到动态的思维转变</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">静态编译模型：</span><br><span class="line">┌──────────────────────────────┐</span><br><span class="line">│  main.cpp                    │</span><br><span class="line">│  + module_a.cpp (静态链接)    │</span><br><span class="line">│  + module_b.cpp (静态链接)    │  →  一个庞大的二进制文件</span><br><span class="line">│  + module_c.cpp (静态链接)    │     修改任何一行代码 = 重新构建全部</span><br><span class="line">│  + ... (100+ 个模块)          │</span><br><span class="line">└──────────────────────────────┘</span><br><span class="line"></span><br><span class="line">动态库模型：</span><br><span class="line">┌──────────┐</span><br><span class="line">│  main    │  ← 轻量主程序，只负责插件管理</span><br><span class="line">└────┬─────┘</span><br><span class="line">     │ dlopen / dlsym</span><br><span class="line">┌────┴─────┬─────────┬─────────┐</span><br><span class="line">│ lib_a.so │ lib_b.so│ lib_c.so│  ← 每个模块独立编译、独立分发、独立替换</span><br><span class="line">└──────────┴─────────┴─────────┘</span><br></pre></td></tr></table></figure>
+
+<p><strong>关键差异</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>静态编译</th>
+<th>动态库热插拔</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>修改一行代码</td>
+<td>全量重新编译链接</td>
+<td>只编译变更的 .so</td>
+</tr>
+<tr>
+<td>部署方式</td>
+<td>替换整个二进制</td>
+<td>替换单个 .so 文件</td>
+</tr>
+<tr>
+<td>是否需要重启</td>
+<td>必须重启</td>
+<td>重新加载即可，主程序不中断</td>
+</tr>
+<tr>
+<td>多版本共存</td>
+<td>不支持</td>
+<td>支持（不同路径加载不同版本）</td>
+</tr>
+<tr>
+<td>灰度能力</td>
+<td>依赖外部路由</td>
+<td>主程序内按逻辑选择加载版本</td>
+</tr>
+</tbody></table>
+<h3 id="1-2-这个方案不是银弹"><a href="#1-2-这个方案不是银弹" class="headerlink" title="1.2 这个方案不是银弹"></a>1.2 这个方案不是银弹</h3><p>在进入细节之前，先把丑话说在前面。动态库架构有三个不可回避的代价，你需要确认自己能承受：</p>
+<ol>
+<li><strong>ABI 兼容性地狱</strong>：编译器版本、编译选项、标准库版本不一致，可能导致运行时崩溃。这不是 bug，是 C++ ABI 没有标准化的必然结果</li>
+<li><strong>调试难度陡增</strong>：core dump 时符号可能找不到，GDB 断点打不到 .so 里，内存泄漏的归属难定</li>
+<li><strong>团队要求高</strong>：需要团队对编译链接有深入理解，不能只是&quot;会用 CMake&quot;</li>
+</ol>
+<p>如果你的团队刚起步，请谨慎考虑。如果你已经受够了全量部署的痛苦并愿意承担这些代价，我们继续。</p>
+<h2 id="二、架构原理"><a href="#二、架构原理" class="headerlink" title="二、架构原理"></a>二、架构原理</h2><h3 id="2-1-接口设计：版本兼容是基座"><a href="#2-1-接口设计：版本兼容是基座" class="headerlink" title="2.1 接口设计：版本兼容是基座"></a>2.1 接口设计：版本兼容是基座</h3><p>热插拔的第一要务是<strong>接口稳定性</strong>。如果每次改 .so 都要改主程序的接口定义，那和静态编译没什么区别。</p>
+<p><strong>方案：纯虚接口（C++）或 C ABI</strong></p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// plugin_interface.h —— 主程序和所有插件共用的头文件</span></span><br><span class="line"><span class="comment">// 这个文件一旦发布就不可修改，只能追加</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cstdint&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 插件基本信息</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">PluginInfo</span> &#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* name;        <span class="comment">// 插件名称，如 &quot;AuthModule&quot;</span></span><br><span class="line">    <span class="type">uint32_t</span>    version;     <span class="comment">// 语义化版本编码，如 0x00020001 表示 v2.1.0</span></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* description;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 核心插件接口 —— 纯虚类 = 稳定的二进制约定</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">IPlugin</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="keyword">virtual</span> ~<span class="built_in">IPlugin</span>() = <span class="keyword">default</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 生命周期</span></span><br><span class="line">    <span class="function"><span class="keyword">virtual</span> <span class="type">bool</span> <span class="title">initialize</span><span class="params">(<span class="type">const</span> <span class="type">char</span>* configPath)</span> </span>= <span class="number">0</span>;</span><br><span class="line">    <span class="function"><span class="keyword">virtual</span> <span class="type">void</span> <span class="title">shutdown</span><span class="params">()</span> </span>= <span class="number">0</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 身份信息</span></span><br><span class="line">    <span class="function"><span class="keyword">virtual</span> <span class="type">const</span> PluginInfo* <span class="title">getInfo</span><span class="params">()</span> <span class="type">const</span> </span>= <span class="number">0</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 能力查询（版本兼容的关键）</span></span><br><span class="line">    <span class="function"><span class="keyword">virtual</span> <span class="type">bool</span> <span class="title">hasCapability</span><span class="params">(<span class="type">const</span> <span class="type">char</span>* capName)</span> <span class="type">const</span> </span>= <span class="number">0</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 接口版本号</span></span><br><span class="line">    <span class="type">static</span> <span class="keyword">constexpr</span> <span class="type">uint32_t</span> INTERFACE_VERSION = <span class="number">1</span>;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 每个插件必须导出的工厂函数（C 链接，避免 Name Mangling 问题）</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> &#123;</span><br><span class="line">    <span class="function">IPlugin* <span class="title">createPlugin</span><span class="params">()</span></span>;</span><br><span class="line">    <span class="function"><span class="type">void</span>     <span class="title">destroyPlugin</span><span class="params">(IPlugin* plugin)</span></span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>版本兼容策略</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">接口版本 INTERFACE_VERSION = 1</span><br><span class="line">    → 插件 v1.0.0 实现 IPlugin</span><br><span class="line">    → 插件 v1.1.0 实现 IPlugin + 新增 hasCapability(&quot;batch_verify&quot;)</span><br><span class="line">    → 插件 v2.0.0 实现 IPlugin + 新增 hasCapability(&quot;oauth2&quot;)</span><br><span class="line">    </span><br><span class="line">主程序加载逻辑：</span><br><span class="line">    plugin-&gt;getInfo()-&gt;version  →  知道插件自身版本</span><br><span class="line">    plugin-&gt;hasCapability(...)  →  知道支持哪些可选能力</span><br><span class="line">    </span><br><span class="line">如果主程序需要&quot;batch_verify&quot;但插件不支持：</span><br><span class="line">    降级到逐条验证，而不是崩溃</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-2-加载机制：dlopen-的正确姿势"><a href="#2-2-加载机制：dlopen-的正确姿势" class="headerlink" title="2.2 加载机制：dlopen 的正确姿势"></a>2.2 加载机制：dlopen 的正确姿势</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// plugin_manager.h</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dlfcn.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;filesystem&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;vector&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PluginManager</span> &#123;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    <span class="keyword">struct</span> <span class="title class_">LoadedPlugin</span> &#123;</span><br><span class="line">        std::string name;</span><br><span class="line">        std::string path;</span><br><span class="line">        <span class="type">void</span>*       handle;       <span class="comment">// dlopen 返回的句柄</span></span><br><span class="line">        IPlugin*    instance;     <span class="comment">// 插件实例</span></span><br><span class="line">        <span class="type">uint32_t</span>    version;</span><br><span class="line">    &#125;;</span><br><span class="line">    </span><br><span class="line">    std::vector&lt;LoadedPlugin&gt; plugins;</span><br><span class="line">    </span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="comment">// 扫描插件目录，发现所有 .so 文件</span></span><br><span class="line">    <span class="function">std::vector&lt;std::string&gt; <span class="title">discoverPlugins</span><span class="params">(<span class="type">const</span> std::string&amp; pluginDir)</span> </span>&#123;</span><br><span class="line">        std::vector&lt;std::string&gt; found;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; entry : std::filesystem::<span class="built_in">directory_iterator</span>(pluginDir)) &#123;</span><br><span class="line">            <span class="keyword">if</span> (entry.<span class="built_in">path</span>().<span class="built_in">extension</span>() == <span class="string">&quot;.so&quot;</span>) &#123;</span><br><span class="line">                found.<span class="built_in">push_back</span>(entry.<span class="built_in">path</span>().<span class="built_in">string</span>());</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> found;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 加载单个插件</span></span><br><span class="line">    <span class="function">LoadResult <span class="title">loadPlugin</span><span class="params">(<span class="type">const</span> std::string&amp; soPath)</span> </span>&#123;</span><br><span class="line">        LoadResult result;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤1：dlopen —— 加载动态库到进程地址空间</span></span><br><span class="line">        <span class="comment">// RTLD_NOW：立即解析所有符号，解析失败则返回 nullptr（而非运行时崩溃）</span></span><br><span class="line">        <span class="comment">// RTLD_LOCAL：符号不暴露给其他 .so，避免命名冲突</span></span><br><span class="line">        <span class="type">void</span>* handle = <span class="built_in">dlopen</span>(soPath.<span class="built_in">c_str</span>(), RTLD_NOW | RTLD_LOCAL);</span><br><span class="line">        <span class="keyword">if</span> (!handle) &#123;</span><br><span class="line">            result.error = <span class="built_in">dlerror</span>();</span><br><span class="line">            <span class="keyword">return</span> result;</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤2：dlsym —— 查找符号地址</span></span><br><span class="line">        <span class="comment">// 清理上一次 dlerror</span></span><br><span class="line">        <span class="built_in">dlerror</span>();</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">using</span> CreateFunc = IPlugin* (*)();</span><br><span class="line">        <span class="keyword">auto</span> createFn = <span class="built_in">reinterpret_cast</span>&lt;CreateFunc&gt;(</span><br><span class="line">            <span class="built_in">dlsym</span>(handle, <span class="string">&quot;createPlugin&quot;</span>));</span><br><span class="line">        </span><br><span class="line">        <span class="type">const</span> <span class="type">char</span>* dlsymError = <span class="built_in">dlerror</span>();</span><br><span class="line">        <span class="keyword">if</span> (dlsymError) &#123;</span><br><span class="line">            <span class="built_in">dlclose</span>(handle);</span><br><span class="line">            result.error = dlsymError;</span><br><span class="line">            <span class="keyword">return</span> result;</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤3：创建插件实例</span></span><br><span class="line">        IPlugin* plugin = <span class="built_in">createFn</span>();</span><br><span class="line">        <span class="keyword">if</span> (!plugin) &#123;</span><br><span class="line">            <span class="built_in">dlclose</span>(handle);</span><br><span class="line">            result.error = <span class="string">&quot;createPlugin returned nullptr&quot;</span>;</span><br><span class="line">            <span class="keyword">return</span> result;</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤4：版本检查</span></span><br><span class="line">        <span class="type">const</span> PluginInfo* info = plugin-&gt;<span class="built_in">getInfo</span>();</span><br><span class="line">        <span class="keyword">if</span> (!<span class="built_in">validateVersion</span>(info-&gt;version)) &#123;</span><br><span class="line">            plugin-&gt;<span class="built_in">shutdown</span>();</span><br><span class="line">            <span class="built_in">dlclose</span>(handle);</span><br><span class="line">            result.error = <span class="string">&quot;Unsupported plugin version&quot;</span>;</span><br><span class="line">            <span class="keyword">return</span> result;</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        result.plugin = plugin;</span><br><span class="line">        result.handle = handle;</span><br><span class="line">        result.success = <span class="literal">true</span>;</span><br><span class="line">        <span class="keyword">return</span> result;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 卸载插件（热更新的前提）</span></span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">unloadPlugin</span><span class="params">(<span class="type">const</span> std::string&amp; name)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">auto</span> it = std::<span class="built_in">find_if</span>(plugins.<span class="built_in">begin</span>(), plugins.<span class="built_in">end</span>(),</span><br><span class="line">            [&amp;name](<span class="type">const</span> LoadedPlugin&amp; p) &#123; <span class="keyword">return</span> p.name == name; &#125;);</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">if</span> (it == plugins.<span class="built_in">end</span>()) <span class="keyword">return</span>;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 关键顺序：先 shutdown → 再 delete → 最后 dlclose</span></span><br><span class="line">        it-&gt;instance-&gt;<span class="built_in">shutdown</span>();</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">using</span> DestroyFunc = <span class="built_in">void</span> (*)(IPlugin*);</span><br><span class="line">        <span class="keyword">auto</span> destroyFn = <span class="built_in">reinterpret_cast</span>&lt;DestroyFunc&gt;(</span><br><span class="line">            <span class="built_in">dlsym</span>(it-&gt;handle, <span class="string">&quot;destroyPlugin&quot;</span>));</span><br><span class="line">        <span class="keyword">if</span> (destroyFn) <span class="built_in">destroyFn</span>(it-&gt;instance);</span><br><span class="line">        </span><br><span class="line">        <span class="built_in">dlclose</span>(it-&gt;handle);</span><br><span class="line">        plugins.<span class="built_in">erase</span>(it);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-3-依赖处理：插件-A-依赖插件-B"><a href="#2-3-依赖处理：插件-A-依赖插件-B" class="headerlink" title="2.3 依赖处理：插件 A 依赖插件 B"></a>2.3 依赖处理：插件 A 依赖插件 B</h3><p>真实项目中，插件之间往往有依赖关系。比如&quot;支付插件&quot;依赖&quot;用户认证插件&quot;来获取当前用户信息。</p>
+<p><strong>方案：主程序作为依赖注入容器</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">传统方式（插件间直接依赖）：</span><br><span class="line">  [支付插件] ——dlopen——→ [用户插件]</span><br><span class="line">  问题：循环引用、加载顺序、版本耦合</span><br><span class="line"></span><br><span class="line">推荐方式（主程序中介）：</span><br><span class="line">  [支付插件] ——getService(&quot;UserService&quot;)——→ [主程序]</span><br><span class="line">                                                   ↓</span><br><span class="line">                                             [用户插件]</span><br><span class="line">  主程序维护服务注册表，插件通过名称获取依赖</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 主程序暴露的服务注册表</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ServiceRegistry</span> &#123;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::unordered_map&lt;std::string, <span class="type">void</span>*&gt; services;</span><br><span class="line">    </span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span></span><br><span class="line"><span class="function">    <span class="type">void</span> <span class="title">registerService</span><span class="params">(<span class="type">const</span> std::string&amp; name, T* service)</span> </span>&#123;</span><br><span class="line">        services[name] = <span class="built_in">static_cast</span>&lt;<span class="type">void</span>*&gt;(service);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="function"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span></span><br><span class="line"><span class="function">    T* <span class="title">getService</span><span class="params">(<span class="type">const</span> std::string&amp; name)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">auto</span> it = services.<span class="built_in">find</span>(name);</span><br><span class="line">        <span class="keyword">return</span> (it != services.<span class="built_in">end</span>()) ? <span class="built_in">static_cast</span>&lt;T*&gt;(it-&gt;second) : <span class="literal">nullptr</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 插件通过主程序获取依赖</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PaymentPlugin</span> : <span class="keyword">public</span> IPlugin &#123;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    ServiceRegistry* registry;  <span class="comment">// 由主程序注入</span></span><br><span class="line">    </span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="type">bool</span> <span class="title">initialize</span><span class="params">(<span class="type">const</span> <span class="type">char</span>* configPath)</span> <span class="keyword">override</span> </span>&#123;</span><br><span class="line">        <span class="comment">// 通过主程序获取依赖，而非自己加载</span></span><br><span class="line">        <span class="keyword">auto</span>* userService = registry-&gt;<span class="built_in">getService</span>&lt;IUserService&gt;(<span class="string">&quot;UserService&quot;</span>);</span><br><span class="line">        <span class="keyword">if</span> (!userService) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">false</span>;  <span class="comment">// 依赖未就绪，初始化失败</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">this</span>-&gt;userService = userService;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="三、实战演练：热更新流程"><a href="#三、实战演练：热更新流程" class="headerlink" title="三、实战演练：热更新流程"></a>三、实战演练：热更新流程</h2><h3 id="3-1-不中断服务的-so-替换"><a href="#3-1-不中断服务的-so-替换" class="headerlink" title="3.1 不中断服务的 .so 替换"></a>3.1 不中断服务的 .so 替换</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">时间线（总耗时：约 200ms）：</span><br><span class="line"></span><br><span class="line">T+0ms   运维通过管理接口发送：&quot;reload module=payment, path=/opt/plugins/payment_v2.so&quot;</span><br><span class="line">T+5ms   主程序验证文件存在且签名有效</span><br><span class="line">T+10ms  主程序将新 .so 加载到内存：dlopen(&quot;/opt/plugins/payment_v2.so&quot;)</span><br><span class="line">T+15ms  验证插件接口版本兼容</span><br><span class="line">T+20ms  调用新插件的 initialize()</span><br><span class="line">T+25ms  原子替换：将请求流量切换到新插件实例</span><br><span class="line">T+30ms  排空旧插件上的进行中请求（最多等待 50ms）</span><br><span class="line">T+80ms  调用旧插件的 shutdown()，清理资源</span><br><span class="line">T+100ms dlclose 旧句柄，释放内存</span><br><span class="line">T+100ms 热更新完成，全程无请求丢失</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-2-请求排空的关键代码"><a href="#3-2-请求排空的关键代码" class="headerlink" title="3.2 请求排空的关键代码"></a>3.2 请求排空的关键代码</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PluginManager</span> &#123;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::shared_mutex pluginMutex;  <span class="comment">// 读写锁</span></span><br><span class="line">    std::atomic&lt;<span class="type">uint64_t</span>&gt; activeRequests&#123;<span class="number">0</span>&#125;;  <span class="comment">// 进行中的请求计数</span></span><br><span class="line">    </span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="comment">// 获取插件（读锁）</span></span><br><span class="line">    <span class="function">IPlugin* <span class="title">getPlugin</span><span class="params">(<span class="type">const</span> std::string&amp; name)</span> </span>&#123;</span><br><span class="line">        <span class="function">std::shared_lock <span class="title">lock</span><span class="params">(pluginMutex)</span></span>;</span><br><span class="line">        activeRequests.<span class="built_in">fetch_add</span>(<span class="number">1</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">findPlugin</span>(name);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 释放插件引用</span></span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">releasePlugin</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        activeRequests.<span class="built_in">fetch_sub</span>(<span class="number">1</span>);</span><br><span class="line">        <span class="comment">// 通知等待排空的线程</span></span><br><span class="line">        cv.<span class="built_in">notify_one</span>();</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 热更新插件（写锁）</span></span><br><span class="line">    <span class="function"><span class="type">bool</span> <span class="title">hotReload</span><span class="params">(<span class="type">const</span> std::string&amp; name, <span class="type">const</span> std::string&amp; newSoPath)</span> </span>&#123;</span><br><span class="line">        <span class="comment">// 步骤1：预加载新插件（不加写锁，不影响现有请求）</span></span><br><span class="line">        LoadResult newPlugin = <span class="built_in">loadPlugin</span>(newSoPath);</span><br><span class="line">        <span class="keyword">if</span> (!newPlugin.success) <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤2：获取写锁，准备替换</span></span><br><span class="line">        <span class="function">std::unique_lock <span class="title">lock</span><span class="params">(pluginMutex)</span></span>;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤3：调换新旧实例</span></span><br><span class="line">        IPlugin* oldPlugin = <span class="built_in">swapPluginInstance</span>(name, newPlugin.plugin);</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤4：释放写锁（新请求立即走新插件）</span></span><br><span class="line">        lock.<span class="built_in">unlock</span>();</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤5：等待旧插件上的请求全部完成</span></span><br><span class="line">        cv.<span class="built_in">wait</span>(lock, [<span class="keyword">this</span>]&#123; <span class="keyword">return</span> activeRequests.<span class="built_in">load</span>() == <span class="number">0</span>; &#125;);</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 步骤6：安全卸载旧插件</span></span><br><span class="line">        <span class="built_in">unloadOldPlugin</span>(oldPlugin);</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="四、优缺点分析"><a href="#四、优缺点分析" class="headerlink" title="四、优缺点分析"></a>四、优缺点分析</h2><h3 id="4-1-优点"><a href="#4-1-优点" class="headerlink" title="4.1 优点"></a>4.1 优点</h3><table>
+<thead>
+<tr>
+<th>优点</th>
+<th>具体收益</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>零 IPC 开销</strong></td>
+<td>插件运行在同一个地址空间，函数调用开销 &#x3D; 一次虚函数查找（~5ns）</td>
+</tr>
+<tr>
+<td><strong>内存共享</strong></td>
+<td>多个插件共享同一份 libc、libstdc++，100 个插件比 100 个进程节省 90% 内存</td>
+</tr>
+<tr>
+<td><strong>部署灵活</strong></td>
+<td>单个 .so 替换，秒级生效，不影响其他模块</td>
+</tr>
+<tr>
+<td><strong>灰度发布</strong></td>
+<td>主程序可按流量比例分配新老版本插件，实现业务级灰度</td>
+</tr>
+<tr>
+<td><strong>开发效率</strong></td>
+<td>插件开发者只需理解接口定义，无需了解主程序全貌</td>
+</tr>
+</tbody></table>
+<h3 id="4-2-缺点与应对"><a href="#4-2-缺点与应对" class="headerlink" title="4.2 缺点与应对"></a>4.2 缺点与应对</h3><table>
+<thead>
+<tr>
+<th>缺点</th>
+<th>影响程度</th>
+<th>应对策略</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>ABI 兼容性</strong></td>
+<td>🔴 严重</td>
+<td>统一编译环境（Docker 镜像固定 gcc 版本）；纯虚接口 + C ABI 边界</td>
+</tr>
+<tr>
+<td><strong>符号冲突</strong></td>
+<td>🟡 中等</td>
+<td><code>RTLD_LOCAL</code> 隔离符号；使用 <code>-fvisibility=hidden</code> 编译插件</td>
+</tr>
+<tr>
+<td><strong>内存泄漏归属</strong></td>
+<td>🟡 中等</td>
+<td>每个插件使用独立的内存池；<code>dlclose</code> 后检查是否有残留分配</td>
+</tr>
+<tr>
+<td><strong>调试困难</strong></td>
+<td>🟡 中等</td>
+<td>保留调试符号（strip 前备份）；使用 <code>dladdr</code> 辅助定位崩溃模块</td>
+</tr>
+<tr>
+<td><strong>线程安全</strong></td>
+<td>🟡 中等</td>
+<td>插件接口必须明确标注线程安全性；主程序用读写锁保护加载&#x2F;卸载</td>
+</tr>
+</tbody></table>
+<h2 id="五、与前面两种架构的对比"><a href="#五、与前面两种架构的对比" class="headerlink" title="五、与前面两种架构的对比"></a>五、与前面两种架构的对比</h2><p>这是系列文章的第三篇，有必要做一次横向对比：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>混合架构（移动端）</th>
+<th>线程池+沙箱</th>
+<th>动态库热插拔</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>隔离级别</strong></td>
+<td>进程级（小程序）</td>
+<td>线程级 + 信号捕获</td>
+<td>地址空间级（单进程）</td>
+</tr>
+<tr>
+<td><strong>通信延迟</strong></td>
+<td>毫秒级（IPC）</td>
+<td>纳秒级（内存共享）</td>
+<td>纳秒级（函数调用）</td>
+</tr>
+<tr>
+<td><strong>崩溃隔离</strong></td>
+<td>强（独立进程）</td>
+<td>强（siglongjmp）</td>
+<td>弱（插件崩溃 &#x3D; 主程序崩溃）</td>
+</tr>
+<tr>
+<td><strong>更新粒度</strong></td>
+<td>页面级</td>
+<td>脚本级</td>
+<td>二进制模块级</td>
+</tr>
+<tr>
+<td><strong>适用平台</strong></td>
+<td>iOS &#x2F; Android</td>
+<td>Linux &#x2F; macOS</td>
+<td>Linux &#x2F; macOS &#x2F; Windows</td>
+</tr>
+<tr>
+<td><strong>性能开销</strong></td>
+<td>容器初始化 100ms+</td>
+<td>沙箱创建 ~10μs</td>
+<td>dlopen ~5ms（一次性）</td>
+</tr>
+</tbody></table>
+<h2 id="六、总结"><a href="#六、总结" class="headerlink" title="六、总结"></a>六、总结</h2><p>动态库热插拔架构不是新技术——它诞生于操作系统设计之初。但在微服务盛行的今天，它提供了一种被遗忘的可能性：<strong>在单进程内实现模块级别的独立部署，用纳秒级的函数调用替代毫秒级的网络通信。</strong></p>
+<p>它最适合的场景是：</p>
+<ul>
+<li><strong>性能极致敏感</strong>的系统（高频交易、游戏服务器），连 localhost 网络栈的几十微秒延迟都不能容忍</li>
+<li><strong>团队基础扎实</strong>——团队成员理解编译链接、ABI 版本兼容、内存管理</li>
+<li><strong>需要频繁单独更新</strong>部分模块，但整体服务不能中断</li>
+</ul>
+<p>如果这些条件都满足，动态库架构可以把你从&quot;一行日志一个完整的发布流水线&quot;中解放出来。那 45 分钟的等待，从此变成一个 200ms 的 dlopen + 原子替换。</p>
+<hr>
+<blockquote>
+<p><strong>系列文章</strong></p>
+<ul>
+<li>第一篇：《混合架构：核心原生+边缘动态的双引擎架构之道》</li>
+<li>第二篇：《轻量级沙箱+线程池：榨干单机性能的插件隔离架构》</li>
+<li>本文：《模块动态下发：基于动态链接库的热插拔架构设计》</li>
+</ul>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/dynamic-lib-hotplug-architecture/">https://hespethorn.github.io/posts/dynamic-lib-hotplug-architecture/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E6%8F%92%E4%BB%B6%E6%9E%B6%E6%9E%84/">插件架构</a><a class="post-meta__tags" href="/tags/%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93/">动态链接库</a><a class="post-meta__tags" href="/tags/dlopen/">dlopen</a><a class="post-meta__tags" href="/tags/%E7%83%AD%E6%8F%92%E6%8B%94/">热插拔</a><a class="post-meta__tags" href="/tags/Go/">Go</a><a class="post-meta__tags" href="/tags/%E9%9B%B6%E5%81%9C%E6%9C%BA%E6%9B%B4%E6%96%B0/">零停机更新</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">505</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">533</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-06T12:11:00.000Z" title="Created 2026-05-06 20:11:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-05T02:32:55.000Z" title="Created 2026-05-05 10:32:55">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-04T03:28:08.000Z" title="Created 2026-05-04 11:28:08">2026-05-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/hybrid-arch-core-native-edge-dynamic/" title="混合架构：核心原生+边缘动态的双引擎架构之道">混合架构：核心原生+边缘动态的双引擎架构之道</a><time datetime="2026-05-03T12:11:13.000Z" title="Created 2026-05-03 20:11:13">2026-05-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-13T12:17:00.000Z" title="Created 2026-05-13 20:17:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-06T12:11:00.000Z" title="Created 2026-05-06 20:11:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-05T02:32:55.000Z" title="Created 2026-05-05 10:32:55">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-04T03:28:08.000Z" title="Created 2026-05-04 11:28:08">2026-05-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leetcode/">LeetCode</a><a href="/tags/Python/">Python</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/GO/">GO</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/English/">English</a></li><li><a href="/categories/热门导读/">热门导读</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

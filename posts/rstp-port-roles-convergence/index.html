@@ -1,0 +1,606 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、从角色模糊到分工明确：RSTP 端口角色的革命在上一篇文章中，我们提到 STP 只有两种端口角色：根端口（Root Port）和指定端口（Designated Port）。这种二分法在面对复杂拓扑时显得力不从心——一个端口如果既不是根端口也不是指定端口，就只是一个&quot;被阻塞的端口&quot;，交换机不知道这个阻塞端口在拓扑变化时能起到什么作用。 RSTP 将端口角色扩展为四种： 123">
+<meta property="og:type" content="article">
+<meta property="og:title" content="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">
+<meta property="og:url" content="https://hespethorn.github.io/posts/rstp-port-roles-convergence/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、从角色模糊到分工明确：RSTP 端口角色的革命在上一篇文章中，我们提到 STP 只有两种端口角色：根端口（Root Port）和指定端口（Designated Port）。这种二分法在面对复杂拓扑时显得力不从心——一个端口如果既不是根端口也不是指定端口，就只是一个&quot;被阻塞的端口&quot;，交换机不知道这个阻塞端口在拓扑变化时能起到什么作用。 RSTP 将端口角色扩展为四种： 123">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-05-20T13:23:00.000Z">
+<meta property="article:modified_time" content="2026-05-09T05:41:12.732Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="网络协议">
+<meta property="article:tag" content="RSTP">
+<meta property="article:tag" content="生成树">
+<meta property="article:tag" content="端口角色">
+<meta property="article:tag" content="快速收敛">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制",
+  "url": "https://hespethorn.github.io/posts/rstp-port-roles-convergence/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-05-20T13:23:00.000Z",
+  "dateModified": "2026-05-09T05:41:12.732Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/rstp-port-roles-convergence/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">505</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">533</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、从角色模糊到分工明确：RSTP-端口角色的革命"><a href="#一、从角色模糊到分工明确：RSTP-端口角色的革命" class="headerlink" title="一、从角色模糊到分工明确：RSTP 端口角色的革命"></a>一、从角色模糊到分工明确：RSTP 端口角色的革命</h2><p>在上一篇文章中，我们提到 STP 只有两种端口角色：<strong>根端口（Root Port）<strong>和</strong>指定端口（Designated Port）</strong>。这种二分法在面对复杂拓扑时显得力不从心——一个端口如果既不是根端口也不是指定端口，就只是一个&quot;被阻塞的端口&quot;，交换机不知道这个阻塞端口在拓扑变化时能起到什么作用。</p>
+<p>RSTP 将端口角色扩展为四种：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">RSTP 端口角色</span><br><span class="line">├── Root Port（根端口）         — 非根桥上离根最近的端口</span><br><span class="line">├── Designated Port（指定端口）  — 每条链路上离根最近的端口</span><br><span class="line">├── Alternate Port（替代端口）   — 根端口的&quot;备胎&quot;</span><br><span class="line">└── Backup Port（备份端口）      — 指定端口的&quot;备胎&quot;</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-1-Alternate-端口：根端口的快速后备"><a href="#1-1-Alternate-端口：根端口的快速后备" class="headerlink" title="1.1 Alternate 端口：根端口的快速后备"></a>1.1 Alternate 端口：根端口的快速后备</h3><p><strong>Alternate 端口</strong>是 RSTP 最重要的新增角色。它的定义是：收到了来自<strong>其他交换机</strong>的更优 BPDU，但不如当前根端口优的端口。</p>
+<p>用一个通俗的类比：</p>
+<blockquote>
+<p>根端口是你的&quot;正门&quot;——通向根桥的最短路径。Alternate 端口是你的&quot;后门&quot;——如果你发现正门被堵了（根端口故障），你能立刻从后门出去，而不需要重新翻墙找路。</p>
+</blockquote>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">    [根桥]</span><br><span class="line">     /  \</span><br><span class="line">    /    \</span><br><span class="line">[SW-A]  [SW-B]</span><br><span class="line">   |      |</span><br><span class="line">   +------+</span><br><span class="line">   阻塞(Alt)</span><br></pre></td></tr></table></figure>
+
+<p>在上图中，SW-A 通过直连根桥的链路作为根端口，而连接到 SW-B 的端口就成为了 <strong>Alternate 端口</strong>——它提供了一条备用的到根桥的路径。</p>
+<p>Alternate 端口处于 <strong>Discarding（丢弃）<strong>状态，不转发用户数据，但持续监听 BPDU。一旦根端口失效，Alternate 端口可以</strong>立即切换为新的根端口并进入 Forwarding 状态</strong>——无须经历 Listening 和 Learning 的等待过程。</p>
+<h3 id="1-2-Backup-端口：指定端口的本地候补"><a href="#1-2-Backup-端口：指定端口的本地候补" class="headerlink" title="1.2 Backup 端口：指定端口的本地候补"></a>1.2 Backup 端口：指定端口的本地候补</h3><p><strong>Backup 端口</strong>的概念更精细：它指的是同一台交换机上的<strong>到同一网段</strong>的冗余端口。它收到了来自<strong>自己</strong>的更优 BPDU。</p>
+<p>这在<strong>自环拓扑</strong>中很常见，例如一台交换机的两个端口通过 Hub 连接到同一个网段：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"> [Switch]</span><br><span class="line">   /   \</span><br><span class="line">  /     \</span><br><span class="line">[Hub 网段]</span><br></pre></td></tr></table></figure>
+
+<p>或者两台交换机之间有多条并行链路时（虽然实际部署中推荐使用链路聚合，但从协议角度 RSTP 需要处理这种情况）。</p>
+<p>Backup 端口同样处于 Discarding 状态，当对应的指定端口失效时，Backup 端口可以立即接替。</p>
+<h3 id="1-3-四种角色的决策树"><a href="#1-3-四种角色的决策树" class="headerlink" title="1.3 四种角色的决策树"></a>1.3 四种角色的决策树</h3><p>交换机如何决定端口的角色？以下决策流程清晰地展示了整个过程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">收到 BPDU 后，比较优先级</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">   ┌─────────────┐</span><br><span class="line">   │ 我是根桥？   │</span><br><span class="line">   └──────┬──────┘</span><br><span class="line">      是 / \ 否</span><br><span class="line">        /   \</span><br><span class="line">       ▼     ▼</span><br><span class="line">所有端口都是  哪个端口到根最近？</span><br><span class="line">Designated     │</span><br><span class="line">           ┌───┴───┐</span><br><span class="line">           │       │</span><br><span class="line">        这个端口  其他端口</span><br><span class="line">           │       │</span><br><span class="line">           ▼       ▼</span><br><span class="line">      Root Port  收到的 BPDU 来自谁？</span><br><span class="line">                     │</span><br><span class="line">             ┌───────┴───────┐</span><br><span class="line">             │               │</span><br><span class="line">         自己(本机)       其他交换机</span><br><span class="line">             │               │</span><br><span class="line">             ▼               ▼</span><br><span class="line">       Backup Port     Alternate Port</span><br><span class="line">                      (若更优是 Designated)</span><br></pre></td></tr></table></figure>
+
+<h2 id="二、端口状态的-减法-哲学：从五到三"><a href="#二、端口状态的-减法-哲学：从五到三" class="headerlink" title="二、端口状态的&quot;减法&quot;哲学：从五到三"></a>二、端口状态的&quot;减法&quot;哲学：从五到三</h2><h3 id="2-1-为什么要精简"><a href="#2-1-为什么要精简" class="headerlink" title="2.1 为什么要精简"></a>2.1 为什么要精简</h3><p>STP 的五个端口状态中，<strong>Disabled、Blocking、Listening</strong> 对用户数据的行为完全一致——都不转发、都不学习 MAC。从用户流量的角度看，区分它们没有意义。</p>
+<p>RSTP 做了一个大胆的简化：将这些&quot;不转发&quot;的状态合并为一个 <strong>Discarding</strong> 状态。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">STP 五态                  RSTP 三态</span><br><span class="line">───────                  ────────</span><br><span class="line">Disabled ─┐</span><br><span class="line">Blocking ─┤</span><br><span class="line">Listening ─┼──→ Discarding（丢弃）</span><br><span class="line">           │</span><br><span class="line">Learning ──┼──→ Learning  （学习）</span><br><span class="line">           │</span><br><span class="line">Forwarding ┘──→ Forwarding（转发）</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-2-三种状态的精确定义"><a href="#2-2-三种状态的精确定义" class="headerlink" title="2.2 三种状态的精确定义"></a>2.2 三种状态的精确定义</h3><table>
+<thead>
+<tr>
+<th>状态</th>
+<th align="center">转发数据帧</th>
+<th align="center">学习 MAC</th>
+<th align="center">处理 BPDU</th>
+<th>行为说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Discarding</strong></td>
+<td align="center">✗</td>
+<td align="center">✗</td>
+<td align="center">✓</td>
+<td>端口被阻塞，不参与数据转发</td>
+</tr>
+<tr>
+<td><strong>Learning</strong></td>
+<td align="center">✗</td>
+<td align="center">✓</td>
+<td align="center">✓</td>
+<td>学习 MAC 但不转发，为转发做准备</td>
+</tr>
+<tr>
+<td><strong>Forwarding</strong></td>
+<td align="center">✓</td>
+<td align="center">✓</td>
+<td align="center">✓</td>
+<td>正常转发数据和学习 MAC</td>
+</tr>
+</tbody></table>
+<p>关键洞察：<strong>Learning 状态在 RSTP 中很少被使用</strong>。在 Proposal&#x2F;Agreement 机制下，端口大多数时候直接从 Discarding 跳到 Forwarding。Learning 状态仅在特定场景（如端口被配置为共享链路而非 P2P 链路）下作为安全过渡。</p>
+<h3 id="2-3-端口角色与状态的映射"><a href="#2-3-端口角色与状态的映射" class="headerlink" title="2.3 端口角色与状态的映射"></a>2.3 端口角色与状态的映射</h3><p>端口角色和端口状态是两个正交的概念。角色决定了一个端口在生成树拓扑中的<strong>位置</strong>，状态决定了这个端口当前的<strong>行为</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>端口角色</th>
+<th>通常状态</th>
+<th align="center">可否转发</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Root Port</td>
+<td>Forwarding</td>
+<td align="center">✓</td>
+</tr>
+<tr>
+<td>Designated Port</td>
+<td>Forwarding</td>
+<td align="center">✓</td>
+</tr>
+<tr>
+<td>Alternate Port</td>
+<td>Discarding</td>
+<td align="center">✗</td>
+</tr>
+<tr>
+<td>Backup Port</td>
+<td>Discarding</td>
+<td align="center">✗</td>
+</tr>
+</tbody></table>
+<p>根端口和指定端口处于 Forwarding，构成了数据转发的<strong>活跃拓扑</strong>。Alternate 和 Backup 处于 Discarding，构成了随时待命的<strong>备用拓扑</strong>。</p>
+<h2 id="三、Proposal-Agreement：快速收敛的核心引擎"><a href="#三、Proposal-Agreement：快速收敛的核心引擎" class="headerlink" title="三、Proposal&#x2F;Agreement：快速收敛的核心引擎"></a>三、Proposal&#x2F;Agreement：快速收敛的核心引擎</h2><h3 id="3-1-STP-的-下水道-问题"><a href="#3-1-STP-的-下水道-问题" class="headerlink" title="3.1 STP 的&quot;下水道&quot;问题"></a>3.1 STP 的&quot;下水道&quot;问题</h3><p>理解 STP 收敛慢的根源，我们需要回顾一个重要的细节。在 STP 中，一台交换机无法确定它下游的交换机是否已经完成了生成树计算。所以它只能&quot;等够&quot;计时器——<strong>Max Age + 2×Forward Delay &#x3D; 50 秒</strong>——确保全网都稳定了再转发。</p>
+<p>这好比一个管道系统：你打开了上游的水龙头，但你不知道下游的管道是否已经连接好，所以你得等足够长的时间&quot;确保&quot;水不会漏出来。</p>
+<h3 id="3-2-RSTP-的-握手确认-方案"><a href="#3-2-RSTP-的-握手确认-方案" class="headerlink" title="3.2 RSTP 的&quot;握手确认&quot;方案"></a>3.2 RSTP 的&quot;握手确认&quot;方案</h3><p>RSTP 用一个巧妙的<strong>逐跳握手</strong>机制替代了盲目等待。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">[SW1] Designated Port           [SW2] Root Port</span><br><span class="line">  |                                   |</span><br><span class="line">  | ① Proposal（我准备好了，请求转发）  |</span><br><span class="line">  |──────────────────────────────────&gt;|</span><br><span class="line">  |                                   |</span><br><span class="line">  |       ② SW2 将所有非边缘端口同步阻塞 |</span><br><span class="line">  |          (Sync 操作)               |</span><br><span class="line">  |                                   |</span><br><span class="line">  | ③ Agreement（下游已就绪，同意转发）  |</span><br><span class="line">  |&lt;──────────────────────────────────|</span><br><span class="line">  |                                   |</span><br><span class="line">  | ④ SW1 将该 DP 置为 Forwarding      |</span><br><span class="line">  |===================================&gt; 开始转发</span><br><span class="line">  |                                   |</span><br><span class="line">  | ⑤ SW2 继续向下游发起 Proposal      |</span><br><span class="line">  |    (递归握手，逐跳推进)              |</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-3-Sync-操作：防止临时环路的关键"><a href="#3-3-Sync-操作：防止临时环路的关键" class="headerlink" title="3.3 Sync 操作：防止临时环路的关键"></a>3.3 Sync 操作：防止临时环路的关键</h3><p>当 SW2 收到 Proposal 后，它执行的 Sync 操作是整个机制中最精妙的部分：</p>
+<p><strong>Sync 操作 &#x3D; 将所有非边缘的指定端口强制进入 Discarding 状态</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">SW2 收到 Proposal 之前：</span><br><span class="line">      [SW1]</span><br><span class="line">        | (DP, Forwarding)</span><br><span class="line">      [SW2]</span><br><span class="line">       / \  ← 两个 DP 都在 Forwarding</span><br><span class="line">      /   \</span><br><span class="line">   [SW3] [SW4]</span><br><span class="line"></span><br><span class="line">SW2 收到 Proposal 并执行 Sync 后：</span><br><span class="line">      [SW1]</span><br><span class="line">        | (DP, Forwarding)</span><br><span class="line">      [SW2]</span><br><span class="line">       / \  ← 两个 DP 被 Sync，进入 Discarding</span><br><span class="line">      ✗   ✗</span><br><span class="line">   [SW3] [SW4]</span><br><span class="line"></span><br><span class="line">SW2 回复 Agreement，SW1 端口进入 Forwarding</span><br><span class="line">然后 SW2 再分别向 SW3、SW4 发起 Proposal...</span><br></pre></td></tr></table></figure>
+
+<p>这种<strong>先阻塞再逐跳打开</strong>的策略，从根本上杜绝了临时环路的产生。整个过程由上游向下游逐级推进，像拉链一样稳稳当当地展开。</p>
+<h3 id="3-4-收敛时间分析"><a href="#3-4-收敛时间分析" class="headerlink" title="3.4 收敛时间分析"></a>3.4 收敛时间分析</h3><p>在最佳场景（所有链路都是 P2P 全双工链路，所有非边缘端口一次握手成功）下，RSTP 的收敛时间可以压缩到秒级：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">收敛时间 ≈ 握手次数 × 单次握手延迟</span><br><span class="line">        ≈ (拓扑直径) × (2 × 链路延迟 + BPDU 处理时间)</span><br></pre></td></tr></table></figure>
+
+<p>对于一个三层交换机组成的典型园区网（拓扑直径约为 3<del>5 跳），在 RSTP 下完成收敛通常不需要超过 **1</del>2 秒**，与 STP 的 30~50 秒相比是天壤之别。</p>
+<h2 id="四、边缘端口与链路类型：两把加速利器"><a href="#四、边缘端口与链路类型：两把加速利器" class="headerlink" title="四、边缘端口与链路类型：两把加速利器"></a>四、边缘端口与链路类型：两把加速利器</h2><h3 id="4-1-边缘端口（Edge-Port）"><a href="#4-1-边缘端口（Edge-Port）" class="headerlink" title="4.1 边缘端口（Edge Port）"></a>4.1 边缘端口（Edge Port）</h3><p>边缘端口连接的是终端设备（PC、服务器、打印机等），这些端口<strong>绝对不会形成环路</strong>。RSTP 为这类端口提供了特权：</p>
+<ul>
+<li><strong>UP 后立即进入 Forwarding 状态</strong>，无须经历任何等待</li>
+<li>端口 UP&#x2F;DOWN <strong>不触发拓扑变更</strong>（不产生 TC 消息）</li>
+<li>如果边缘端口收到了 BPDU（说明有人误接了交换机），<strong>自动丧失边缘端口身份</strong>，变回普通生成树端口</li>
+</ul>
+<p>配置边缘端口是一个简单的动作，但在大规模园区网中能显著减少拓扑变更抖动：</p>
+<blockquote>
+<p>设想一个有 2000 个终端用户的网络，如果每天有 200 台 PC 重启或开关机，在没有边缘端口的情况下，STP&#x2F;RSTP 会产生 200 次拓扑变更。每次都引发全网 MAC 表刷新——这就是&quot;风暴中的风暴&quot;。</p>
+</blockquote>
+<h3 id="4-2-链路类型：P2P-vs-Shared"><a href="#4-2-链路类型：P2P-vs-Shared" class="headerlink" title="4.2 链路类型：P2P vs Shared"></a>4.2 链路类型：P2P vs Shared</h3><p>RSTP 区分两种链路类型：</p>
+<table>
+<thead>
+<tr>
+<th>链路类型</th>
+<th>特点</th>
+<th align="center">Proposal&#x2F;Agreement</th>
+<th>收敛速度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>P2P（点对点）</strong></td>
+<td>全双工链路，两端各一台交换机</td>
+<td align="center">✓ 启用</td>
+<td><strong>快</strong>（秒级）</td>
+</tr>
+<tr>
+<td><strong>Shared（共享）</strong></td>
+<td>半双工或连接 Hub，可能有多台设备</td>
+<td align="center">✗ 回退到计时器</td>
+<td>慢（与 STP 相同）</td>
+</tr>
+</tbody></table>
+<p>在现代网络中，几乎所有交换机之间的链路都是全双工的，RSTP 会自动识别为 P2P 链路并启用快速握手。只有在非常老旧的半双工 Hub 环境中，才会降级为传统计时器模式。</p>
+<h3 id="4-3-RSTP-快速收敛的四个前提条件"><a href="#4-3-RSTP-快速收敛的四个前提条件" class="headerlink" title="4.3 RSTP 快速收敛的四个前提条件"></a>4.3 RSTP 快速收敛的四个前提条件</h3><p>总结起来，RSTP 实现秒级收敛需要满足以下条件：</p>
+<ol>
+<li><strong>链路必须是 P2P 全双工</strong> — 半双工链路回退到 STP 计时器模式</li>
+<li><strong>非边缘指定端口成功完成 Sync 操作</strong> — 确保下游没有环路</li>
+<li><strong>对端也运行 RSTP</strong> — 与 STP 交换机对接时降级为 STP 模式</li>
+<li><strong>拓扑直径不宜过大</strong> — 直径每增加一跳，握手次数就增加一次</li>
+</ol>
+<h2 id="五、拓扑变更机制的优化"><a href="#五、拓扑变更机制的优化" class="headerlink" title="五、拓扑变更机制的优化"></a>五、拓扑变更机制的优化</h2><h3 id="5-1-STP-的-逐级上报-模式（回顾）"><a href="#5-1-STP-的-逐级上报-模式（回顾）" class="headerlink" title="5.1 STP 的&quot;逐级上报&quot;模式（回顾）"></a>5.1 STP 的&quot;逐级上报&quot;模式（回顾）</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">链路故障 → SW3 检测到</span><br><span class="line">              ↓</span><br><span class="line">         SW3 → SW2：发送 TCN（拓扑变更通知）</span><br><span class="line">                   ↓</span><br><span class="line">              SW2 → SW1（根桥）：转发 TCN</span><br><span class="line">                          ↓</span><br><span class="line">                     SW1 → 全网泛洪 TC</span><br><span class="line">                          ↓</span><br><span class="line">                  所有交换机：MAC 表老化时间 300s → 15s</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-RSTP-的-直接泛洪-模式"><a href="#5-2-RSTP-的-直接泛洪-模式" class="headerlink" title="5.2 RSTP 的&quot;直接泛洪&quot;模式"></a>5.2 RSTP 的&quot;直接泛洪&quot;模式</h3><p>RSTP 彻底改造了这个机制：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">链路故障 → SW3 检测到</span><br><span class="line">              ↓</span><br><span class="line">         SW3 → 从所有非边缘 DP 泛洪 TC 消息</span><br><span class="line">              ↓</span><br><span class="line">         所有收到 TC 的交换机：</span><br><span class="line">              ↓</span><br><span class="line">         ① 刷新除收到 TC 的端口外的所有 MAC 表项</span><br><span class="line">         ② 继续向自己的非边缘 DP 泛洪 TC</span><br></pre></td></tr></table></figure>
+
+<p>核心改进在于：</p>
+<ol>
+<li><strong>无需向根桥报告</strong>，检测到变化的交换机直接向全网泛洪 TC</li>
+<li><strong>泛洪范围更精确</strong>，不通过边缘端口发送（边缘端口下游是终端设备，不需要刷新）</li>
+<li><strong>刷新策略更激进</strong>，收到 TC 后立即清除相关 MAC 表项，而不是等待老化</li>
+</ol>
+<p>这种&quot;去中心化&quot;的拓扑变更通知机制，使得 RSTP 在拓扑变化时能以极快的速度清除过期的 MAC 表项，减少数据帧的&quot;走错路&quot;时间。</p>
+<h2 id="六、端口状态机速览（非完整）"><a href="#六、端口状态机速览（非完整）" class="headerlink" title="六、端口状态机速览（非完整）"></a>六、端口状态机速览（非完整）</h2><p>RSTP 的端口状态机远比 STP 复杂——802.1D-2004 标准定义了十余个子状态机协同工作。在这里我们仅梳理最核心的状态迁移关系：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">   端口启用</span><br><span class="line">      │</span><br><span class="line">      ▼</span><br><span class="line">Discarding ◄──────────────────┐</span><br><span class="line">      │                       │</span><br><span class="line">      │ Proposal/Agreement 成功  │ 故障/阻断</span><br><span class="line">      │ (P2P + Sync 完成)      │</span><br><span class="line">      ▼                       │</span><br><span class="line"> Learning ────────────────────┘</span><br><span class="line">      │</span><br><span class="line">      │ 短暂停留后</span><br><span class="line">      ▼</span><br><span class="line"> Forwarding</span><br><span class="line">      │</span><br><span class="line">      │ 收到更优 BPDU（成为 Alt/Backup）</span><br><span class="line">      ▼</span><br><span class="line">Discarding</span><br></pre></td></tr></table></figure>
+
+<p>对于边缘端口，路径更短：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">  端口启用</span><br><span class="line">     │</span><br><span class="line">     ▼</span><br><span class="line">Forwarding（秒级！）</span><br></pre></td></tr></table></figure>
+
+<hr>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/rstp-port-roles-convergence/">https://hespethorn.github.io/posts/rstp-port-roles-convergence/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E7%BD%91%E7%BB%9C%E5%8D%8F%E8%AE%AE/">网络协议</a><a class="post-meta__tags" href="/tags/RSTP/">RSTP</a><a class="post-meta__tags" href="/tags/%E7%94%9F%E6%88%90%E6%A0%91/">生成树</a><a class="post-meta__tags" href="/tags/%E7%AB%AF%E5%8F%A3%E8%A7%92%E8%89%B2/">端口角色</a><a class="post-meta__tags" href="/tags/%E5%BF%AB%E9%80%9F%E6%94%B6%E6%95%9B/">快速收敛</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">505</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">533</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-13T12:17:00.000Z" title="Created 2026-05-13 20:17:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-15T12:45:00.000Z" title="Created 2026-04-15 20:45:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-12T12:45:00.000Z" title="Created 2026-04-12 20:45:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-13T12:17:00.000Z" title="Created 2026-05-13 20:17:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-06T12:11:00.000Z" title="Created 2026-05-06 20:11:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-05T02:32:55.000Z" title="Created 2026-05-05 10:32:55">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-04T03:28:08.000Z" title="Created 2026-05-04 11:28:08">2026-05-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leetcode/">LeetCode</a><a href="/tags/Python/">Python</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/GO/">GO</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/English/">English</a></li><li><a href="/categories/热门导读/">热门导读</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>

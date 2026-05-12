@@ -1,0 +1,638 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Pipeline 模式：流水线架构的设计与实现 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="如果你曾写过这样的代码—— 12345678910Result process(Request req) &#123;    req &#x3D; validate(req);    if (!req.valid) return error;    req &#x3D; enrich(req);    req &#x3D; transform(req);    req &#x3D; filterFields(req);    saveT">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Pipeline 模式：流水线架构的设计与实现">
+<meta property="og:url" content="https://hespethorn.github.io/posts/pipeline-pattern/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="如果你曾写过这样的代码—— 12345678910Result process(Request req) &#123;    req &#x3D; validate(req);    if (!req.valid) return error;    req &#x3D; enrich(req);    req &#x3D; transform(req);    req &#x3D; filterFields(req);    saveT">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-05-06T12:11:00.000Z">
+<meta property="article:modified_time" content="2026-05-08T09:57:42.618Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="数据处理">
+<meta property="article:tag" content="Pipeline">
+<meta property="article:tag" content="设计模式">
+<meta property="article:tag" content="架构模式">
+<meta property="article:tag" content="中间件">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Pipeline 模式：流水线架构的设计与实现",
+  "url": "https://hespethorn.github.io/posts/pipeline-pattern/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-05-06T12:11:00.000Z",
+  "dateModified": "2026-05-08T09:57:42.618Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/pipeline-pattern/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Pipeline 模式：流水线架构的设计与实现',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">505</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">533</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Pipeline 模式：流水线架构的设计与实现</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Pipeline 模式：流水线架构的设计与实现</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-05-06T12:11:00.000Z" title="Created 2026-05-06 20:11:00">2026-05-06</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>14mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>如果你曾写过这样的代码——</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Result <span class="title">process</span><span class="params">(Request req)</span> </span>&#123;</span><br><span class="line">    req = <span class="built_in">validate</span>(req);</span><br><span class="line">    <span class="keyword">if</span> (!req.valid) <span class="keyword">return</span> error;</span><br><span class="line">    req = <span class="built_in">enrich</span>(req);</span><br><span class="line">    req = <span class="built_in">transform</span>(req);</span><br><span class="line">    req = <span class="built_in">filterFields</span>(req);</span><br><span class="line">    <span class="built_in">saveToDB</span>(req);</span><br><span class="line">    <span class="built_in">sendNotification</span>(req);</span><br><span class="line">    <span class="keyword">return</span> success;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>——你一定感受过它的问题：函数体越来越长、每个步骤紧耦合、加一步就要改主流程、单元测试只能测整体。</p>
+<p><strong>Pipeline 模式</strong>就是为这种&quot;多步骤顺序处理&quot;场景而生的。它把每一步封装成独立的阶段（Stage），数据像流水线一样在阶段之间传递——每个阶段只做一件事，且只关心自己的输入和输出。</p>
+<h2 id="一、什么是-Pipeline-模式"><a href="#一、什么是-Pipeline-模式" class="headerlink" title="一、什么是 Pipeline 模式"></a>一、什么是 Pipeline 模式</h2><h3 id="1-1-核心思想"><a href="#1-1-核心思想" class="headerlink" title="1.1 核心思想"></a>1.1 核心思想</h3><p>Pipeline 模式将复杂处理流程拆解为一系列独立的<strong>阶段（Stage）</strong>，每个阶段接收数据、加工数据、输出数据，阶段之间通过一个统一的**管道（Pipeline）**串联。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">输入 → [Stage 1] → [Stage 2] → [Stage 3] → ... → [Stage N] → 输出</span><br></pre></td></tr></table></figure>
+
+<p><strong>四个关键特征</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>特征</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>单向流动</strong></td>
+<td>数据从第一个阶段流入，依次经过每个阶段，最终流出</td>
+</tr>
+<tr>
+<td><strong>阶段独立</strong></td>
+<td>每个阶段不依赖其他阶段的内部实现，只依赖接口约定</td>
+</tr>
+<tr>
+<td><strong>可组合</strong></td>
+<td>阶段可以自由排列组合，形成不同的处理链</td>
+</tr>
+<tr>
+<td><strong>可复用</strong></td>
+<td>同一个阶段可以在多条 Pipeline 中复用</td>
+</tr>
+</tbody></table>
+<h3 id="1-2-与责任链模式的本质区别"><a href="#1-2-与责任链模式的本质区别" class="headerlink" title="1.2 与责任链模式的本质区别"></a>1.2 与责任链模式的本质区别</h3><p>Pipeline 和责任链（Chain of Responsibility）是两种容易混淆的模式，但它们的意图截然不同：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Pipeline</th>
+<th>责任链</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>数据流</strong></td>
+<td>每个阶段<strong>都必须</strong>处理数据</td>
+<td>处理者可以<strong>选择不处理</strong>，跳过</td>
+</tr>
+<tr>
+<td><strong>终止条件</strong></td>
+<td>数据走完所有阶段</td>
+<td>任一处理者处理后即可终止</td>
+</tr>
+<tr>
+<td><strong>数据变换</strong></td>
+<td>每个阶段<strong>修改数据</strong>并传递给下一阶段</td>
+<td>通常不修改数据，只做判断</td>
+</tr>
+<tr>
+<td><strong>典型场景</strong></td>
+<td>ETL、编译管道、HTTP 中间件</td>
+<td>审批流、事件冒泡、异常处理</td>
+</tr>
+<tr>
+<td><strong>阶段感知</strong></td>
+<td>阶段知道自己的位置（有时）</td>
+<td>处理者不知道自己在链中的位置</td>
+</tr>
+</tbody></table>
+<p>一句话区分：<strong>Pipeline 是在&quot;加工数据&quot;，责任链是在&quot;寻找谁来处理&quot;。</strong></p>
+<h2 id="二、基础实现"><a href="#二、基础实现" class="headerlink" title="二、基础实现"></a>二、基础实现</h2><h3 id="2-1-最小可用-Pipeline"><a href="#2-1-最小可用-Pipeline" class="headerlink" title="2.1 最小可用 Pipeline"></a>2.1 最小可用 Pipeline</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// pipeline.h</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;vector&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;functional&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Pipeline</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="keyword">using</span> StageFunc = std::function&lt;<span class="built_in">T</span>(<span class="type">const</span> T&amp;)&gt;;</span><br><span class="line">    </span><br><span class="line">    <span class="function">Pipeline&amp; <span class="title">addStage</span><span class="params">(StageFunc stage)</span> </span>&#123;</span><br><span class="line">        stages.<span class="built_in">push_back</span>(std::<span class="built_in">move</span>(stage));</span><br><span class="line">        <span class="keyword">return</span> *<span class="keyword">this</span>;  <span class="comment">// 支持链式调用</span></span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="function">T <span class="title">execute</span><span class="params">(T input)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        T current = std::<span class="built_in">move</span>(input);</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; stage : stages) &#123;</span><br><span class="line">            current = <span class="built_in">stage</span>(current);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> current;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::vector&lt;StageFunc&gt; stages;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p><strong>使用示例</strong>：一个最简单的字符串处理管道</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">Pipeline&lt;std::string&gt; textPipeline;</span><br><span class="line">textPipeline</span><br><span class="line">    .<span class="built_in">addStage</span>([](<span class="type">const</span> std::string&amp; s) &#123;</span><br><span class="line">        <span class="comment">// 阶段1：移除首尾空白</span></span><br><span class="line">        <span class="keyword">auto</span> start = s.<span class="built_in">find_first_not_of</span>(<span class="string">&quot; \t\n\r&quot;</span>);</span><br><span class="line">        <span class="keyword">auto</span> end   = s.<span class="built_in">find_last_not_of</span>(<span class="string">&quot; \t\n\r&quot;</span>);</span><br><span class="line">        <span class="built_in">return</span> (start == std::string::npos) ? <span class="string">&quot;&quot;</span> : s.<span class="built_in">substr</span>(start, end - start + <span class="number">1</span>);</span><br><span class="line">    &#125;)</span><br><span class="line">    .<span class="built_in">addStage</span>([](<span class="type">const</span> std::string&amp; s) &#123;</span><br><span class="line">        <span class="comment">// 阶段2：全部转大写</span></span><br><span class="line">        std::string result = s;</span><br><span class="line">        std::<span class="built_in">transform</span>(result.<span class="built_in">begin</span>(), result.<span class="built_in">end</span>(), result.<span class="built_in">begin</span>(), ::toupper);</span><br><span class="line">        <span class="keyword">return</span> result;</span><br><span class="line">    &#125;)</span><br><span class="line">    .<span class="built_in">addStage</span>([](<span class="type">const</span> std::string&amp; s) &#123;</span><br><span class="line">        <span class="comment">// 阶段3：将多个空格合并为一个</span></span><br><span class="line">        std::string result;</span><br><span class="line">        <span class="type">bool</span> lastWasSpace = <span class="literal">false</span>;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">char</span> c : s) &#123;</span><br><span class="line">            <span class="keyword">if</span> (std::<span class="built_in">isspace</span>(c)) &#123;</span><br><span class="line">                <span class="keyword">if</span> (!lastWasSpace) result += <span class="string">&#x27; &#x27;</span>;</span><br><span class="line">                lastWasSpace = <span class="literal">true</span>;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                result += c;</span><br><span class="line">                lastWasSpace = <span class="literal">false</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> result;</span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">std::string result = textPipeline.<span class="built_in">execute</span>(<span class="string">&quot;  hello    world  &quot;</span>);</span><br><span class="line"><span class="comment">// 结果：&quot;HELLO WORLD&quot;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="2-2-带错误的-Pipeline"><a href="#2-2-带错误的-Pipeline" class="headerlink" title="2.2 带错误的 Pipeline"></a>2.2 带错误的 Pipeline</h3><p>实际项目中，处理过程可能失败。这时需要对结果类型建模：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Result</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="type">static</span> Result <span class="title">ok</span><span class="params">(T value)</span> </span>&#123; <span class="keyword">return</span> <span class="built_in">Result</span>(<span class="literal">true</span>, std::<span class="built_in">move</span>(value), <span class="string">&quot;&quot;</span>); &#125;</span><br><span class="line">    <span class="function"><span class="type">static</span> Result <span class="title">error</span><span class="params">(std::string msg)</span> </span>&#123; <span class="keyword">return</span> <span class="built_in">Result</span>(<span class="literal">false</span>, T&#123;&#125;, std::<span class="built_in">move</span>(msg)); &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="function"><span class="type">bool</span> <span class="title">isOk</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> success; &#125;</span><br><span class="line">    <span class="function"><span class="type">const</span> T&amp; <span class="title">value</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> data; &#125;</span><br><span class="line">    <span class="function"><span class="type">const</span> std::string&amp; <span class="title">errorMsg</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> errMsg; &#125;</span><br><span class="line">    </span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    <span class="type">bool</span> success;</span><br><span class="line">    T data;</span><br><span class="line">    std::string errMsg;</span><br><span class="line">    <span class="built_in">Result</span>(<span class="type">bool</span> ok, T val, std::string err)</span><br><span class="line">        : <span class="built_in">success</span>(ok), <span class="built_in">data</span>(std::<span class="built_in">move</span>(val)), <span class="built_in">errMsg</span>(std::<span class="built_in">move</span>(err)) &#123;&#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FalliblePipeline</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="keyword">using</span> StageFunc = std::function&lt;<span class="built_in">Result</span>&lt;T&gt;(<span class="type">const</span> T&amp;)&gt;;</span><br><span class="line">    </span><br><span class="line">    <span class="function">FalliblePipeline&amp; <span class="title">addStage</span><span class="params">(StageFunc stage)</span> </span>&#123;</span><br><span class="line">        stages.<span class="built_in">push_back</span>(std::<span class="built_in">move</span>(stage));</span><br><span class="line">        <span class="keyword">return</span> *<span class="keyword">this</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 一旦失败就短路，跳过后续阶段</span></span><br><span class="line">    <span class="function">Result&lt;T&gt; <span class="title">execute</span><span class="params">(T input)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        T current = std::<span class="built_in">move</span>(input);</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; stage : stages) &#123;</span><br><span class="line">            <span class="keyword">auto</span> result = <span class="built_in">stage</span>(current);</span><br><span class="line">            <span class="keyword">if</span> (!result.<span class="built_in">isOk</span>()) &#123;</span><br><span class="line">                <span class="keyword">return</span> result;  <span class="comment">// 短路：立即返回错误</span></span><br><span class="line">            &#125;</span><br><span class="line">            current = result.<span class="built_in">value</span>();</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> Result&lt;T&gt;::<span class="built_in">ok</span>(current);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::vector&lt;StageFunc&gt; stages;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p><strong>短路行为</strong>是 Pipeline 的关键设计决策之一。上面选择&quot;遇错即停&quot;，但也可以设计为&quot;收集所有错误继续执行&quot;，取决于业务场景。</p>
+<h2 id="三、进阶：并行-Pipeline"><a href="#三、进阶：并行-Pipeline" class="headerlink" title="三、进阶：并行 Pipeline"></a>三、进阶：并行 Pipeline</h2><p>当 Pipeline 中某几个阶段可以并行执行时（阶段之间无数据依赖），可以进一步榨干多核性能。</p>
+<h3 id="3-1-并行阶段示意"><a href="#3-1-并行阶段示意" class="headerlink" title="3.1 并行阶段示意"></a>3.1 并行阶段示意</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">         ┌→ [Stage 2a: OCR识别] ──┐</span><br><span class="line">输入 → [Stage 1] ─┼→ [Stage 2b: 人脸检测] ─┼→ [Stage 3: 结果聚合] → 输出</span><br><span class="line">         └→ [Stage 2c: 关键词提取] ┘</span><br></pre></td></tr></table></figure>
+
+<p>Stage 2a、2b、2c 互不依赖，可以并行。Stage 3 等它们全部完成后再聚合。</p>
+<h3 id="3-2-C-实现"><a href="#3-2-C-实现" class="headerlink" title="3.2 C++ 实现"></a>3.2 C++ 实现</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;future&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;thread&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ParallelPipeline</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="keyword">struct</span> <span class="title class_">StageGroup</span> &#123;</span><br><span class="line">        <span class="comment">// 同组内的阶段可以并行执行</span></span><br><span class="line">        std::vector&lt;std::function&lt;T(T)&gt;&gt; stages;</span><br><span class="line">    &#125;;</span><br><span class="line">    </span><br><span class="line">    <span class="function">ParallelPipeline&amp; <span class="title">addSequential</span><span class="params">(std::function&lt;T(T)&gt; stage)</span> </span>&#123;</span><br><span class="line">        <span class="comment">// 单阶段 = 只含一个阶段的组</span></span><br><span class="line">        groups.<span class="built_in">push_back</span>(&#123;&#123;std::<span class="built_in">move</span>(stage)&#125;&#125;);</span><br><span class="line">        <span class="keyword">return</span> *<span class="keyword">this</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="function">ParallelPipeline&amp; <span class="title">addParallel</span><span class="params">(std::vector&lt;std::function&lt;T(T)&gt;&gt; stages)</span> </span>&#123;</span><br><span class="line">        groups.<span class="built_in">push_back</span>(&#123;std::<span class="built_in">move</span>(stages)&#125;);</span><br><span class="line">        <span class="keyword">return</span> *<span class="keyword">this</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="function">T <span class="title">execute</span><span class="params">(T input)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        T current = std::<span class="built_in">move</span>(input);</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; group : groups) &#123;</span><br><span class="line">            <span class="keyword">if</span> (group.stages.<span class="built_in">size</span>() == <span class="number">1</span>) &#123;</span><br><span class="line">                <span class="comment">// 顺序阶段</span></span><br><span class="line">                current = group.stages[<span class="number">0</span>](current);</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                <span class="comment">// 并行阶段：每个 stage 拿到的是 same 输入，输出需要合并</span></span><br><span class="line">                <span class="keyword">auto</span> results = <span class="built_in">runParallel</span>(current, group.stages);</span><br><span class="line">                current = <span class="built_in">mergeResults</span>(std::<span class="built_in">move</span>(results));</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">return</span> current;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::vector&lt;StageGroup&gt; groups;</span><br><span class="line">    </span><br><span class="line">    <span class="function">std::vector&lt;T&gt; <span class="title">runParallel</span><span class="params">(<span class="type">const</span> T&amp; input,</span></span></span><br><span class="line"><span class="params"><span class="function">                               <span class="type">const</span> std::vector&lt;std::function&lt;T(T)&gt;&gt;&amp; stages)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        std::vector&lt;std::future&lt;T&gt;&gt; futures;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; stage : stages) &#123;</span><br><span class="line">            futures.<span class="built_in">push_back</span>(std::<span class="built_in">async</span>(std::launch::async,</span><br><span class="line">                [&amp;stage, &amp;input]() &#123; <span class="keyword">return</span> <span class="built_in">stage</span>(input); &#125;));</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        std::vector&lt;T&gt; results;</span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">auto</span>&amp; f : futures) &#123;</span><br><span class="line">            results.<span class="built_in">push_back</span>(f.<span class="built_in">get</span>());</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> results;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="function">T <span class="title">mergeResults</span><span class="params">(std::vector&lt;T&gt; results)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        <span class="comment">// 默认：合并所有字符串</span></span><br><span class="line">        <span class="function"><span class="keyword">if</span> <span class="title">constexpr</span> <span class="params">(std::is_same_v&lt;T, std::string&gt;)</span> </span>&#123;</span><br><span class="line">            std::string merged;</span><br><span class="line">            <span class="keyword">for</span> (<span class="type">const</span> <span class="keyword">auto</span>&amp; r : results) &#123;</span><br><span class="line">                merged += r + <span class="string">&quot;\n&quot;</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> merged;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 其他类型：取第一个结果（可根据业务自定义）</span></span><br><span class="line">        <span class="keyword">return</span> results.<span class="built_in">empty</span>() ? T&#123;&#125; : results[<span class="number">0</span>];</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-3-何时用并行-Pipeline"><a href="#3-3-何时用并行-Pipeline" class="headerlink" title="3.3 何时用并行 Pipeline"></a>3.3 何时用并行 Pipeline</h3><p>并行 Pipeline 不是银弹。判断标准：</p>
+<table>
+<thead>
+<tr>
+<th>条件</th>
+<th>适合并行？</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>阶段之间<strong>无数据依赖</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>每个阶段的<strong>耗时较均匀</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>阶段数量<strong>超过 CPU 核心数</strong></td>
+<td>❌ 反而引入调度开销</td>
+</tr>
+<tr>
+<td>数据量小、阶段计算轻</td>
+<td>❌ 线程创建开销大于计算本身</td>
+</tr>
+<tr>
+<td>阶段有<strong>共享状态</strong></td>
+<td>❌ 需要同步，抵消并行收益</td>
+</tr>
+</tbody></table>
+<p><strong>经验法则</strong>：单个阶段耗时 &gt; 100μs 且阶段之间无依赖时，并行才有正向收益。</p>
+<h2 id="四、典型场景"><a href="#四、典型场景" class="headerlink" title="四、典型场景"></a>四、典型场景</h2><h3 id="4-1-编译管道"><a href="#4-1-编译管道" class="headerlink" title="4.1 编译管道"></a>4.1 编译管道</h3><p>这是 Pipeline 模式最经典的实现。从源码到可执行文件，数据（源代码文本）依次经过：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">源码 → [词法分析] → [语法分析] → [语义分析] → [中间代码生成] → [优化] → [目标代码生成] → 可执行文件</span><br></pre></td></tr></table></figure>
+
+<p>LLVM 和 GCC 的内部架构都遵循这个 Pipeline 模型。每个 Pass 是一个阶段，Pass 之间通过 IR（中间表示）传递数据。</p>
+<h3 id="4-2-HTTP-中间件"><a href="#4-2-HTTP-中间件" class="headerlink" title="4.2 HTTP 中间件"></a>4.2 HTTP 中间件</h3><p>Web 框架的中间件机制本质上是 Pipeline：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">请求 → [日志] → [鉴权] → [限流] → [参数校验] → [业务处理] → 响应</span><br></pre></td></tr></table></figure>
+
+<p>Go 的 <code>net/http</code> 中间件、Express&#x2F;Koa 的中间件、ASP.NET Core 的 Middleware Pipeline，都是同一模式的不同实现。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 伪代码：HTTP 中间件 Pipeline</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">HttpPipeline</span> &#123;</span><br><span class="line">    std::vector&lt;Middleware&gt; middlewares;</span><br><span class="line">    </span><br><span class="line">    <span class="function">Response <span class="title">handle</span><span class="params">(Request req)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">auto</span> handler = <span class="built_in">wrapHandler</span>(businessLogic);</span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">auto</span> it = middlewares.<span class="built_in">rbegin</span>(); it != middlewares.<span class="built_in">rend</span>(); ++it) &#123;</span><br><span class="line">            handler = it-&gt;<span class="built_in">wrap</span>(handler);  <span class="comment">// 洋葱模型包装</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">handler</span>(req);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br><span class="line"><span class="comment">// 执行顺序：日志 → 鉴权 → 限流 → 业务 → 限流 → 鉴权 → 日志</span></span><br><span class="line"><span class="comment">//                   ────── 请求方向 →    ← 响应方向 ──────</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="4-3-ETL-数据处理"><a href="#4-3-ETL-数据处理" class="headerlink" title="4.3 ETL 数据处理"></a>4.3 ETL 数据处理</h3><p>在数据工程中，ETL（Extract-Transform-Load）流程天然适合 Pipeline：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">数据源 → [抽取] → [清洗] → [转换] → [校验] → [聚合] → [加载到数据仓库]</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-4-图像-视频处理"><a href="#4-4-图像-视频处理" class="headerlink" title="4.4 图像&#x2F;视频处理"></a>4.4 图像&#x2F;视频处理</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">原始帧 → [解码] → [缩放] → [降噪] → [色彩校正] → [人脸检测] → [编码输出]</span><br><span class="line">                                     ↘ [OCR识别] ↗</span><br></pre></td></tr></table></figure>
+
+<p>两个下游阶段（人脸检测、OCR）可以并行。</p>
+<h2 id="五、设计考量"><a href="#五、设计考量" class="headerlink" title="五、设计考量"></a>五、设计考量</h2><h3 id="5-1-阶段粒度"><a href="#5-1-阶段粒度" class="headerlink" title="5.1 阶段粒度"></a>5.1 阶段粒度</h3><p>太粗：一个阶段做太多事，丧失灵活性和可复用性<br>太细：阶段数量爆炸，Pipeline 的执行开销超过业务逻辑</p>
+<p><strong>经验法则</strong>：一个阶段 &#x3D; <strong>一个明确的、可独立命名的职责</strong>。如果命名时不得不使用&quot;和&quot;字（&quot;解析和校验&quot;），就该拆成两个。</p>
+<h3 id="5-2-阶段间数据格式"><a href="#5-2-阶段间数据格式" class="headerlink" title="5.2 阶段间数据格式"></a>5.2 阶段间数据格式</h3><p>是所有阶段共享同一数据类型，还是每个阶段有不同的输入&#x2F;输出类型？</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">方案 A（统一类型）：</span><br><span class="line">  Pipeline&lt;Request&gt; pipeline;</span><br><span class="line">  优点：简单</span><br><span class="line">  缺点：Request 会成为&quot;上帝对象&quot;，携带所有阶段可能需要的字段</span><br><span class="line"></span><br><span class="line">方案 B（类型转换）：</span><br><span class="line">  Pipeline&lt;RawData, CleanedData, ProcessedData, ...&gt; pipeline;</span><br><span class="line">  优点：类型安全，每个阶段明确表达自己的输入输出</span><br><span class="line">  缺点：实现复杂，需要类型列表或 variant</span><br></pre></td></tr></table></figure>
+
+<p><strong>建议</strong>：初期用方案 A（统一类型），当 Request 膨胀到不可维护时再迁移到方案 B。</p>
+<h3 id="5-3-错误处理策略"><a href="#5-3-错误处理策略" class="headerlink" title="5.3 错误处理策略"></a>5.3 错误处理策略</h3><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>行为</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>短路停止</strong></td>
+<td>遇错立即返回，跳过后续阶段</td>
+<td>多数业务场景</td>
+</tr>
+<tr>
+<td><strong>收集继续</strong></td>
+<td>记录错误仍继续执行，最后汇总</td>
+<td>批量处理、数据校验</td>
+</tr>
+<tr>
+<td><strong>降级跳过</strong></td>
+<td>遇错跳过当前阶段，继续后续</td>
+<td>非关键步骤（如日志、分析）</td>
+</tr>
+</tbody></table>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">enum class</span> <span class="title class_">ErrorPolicy</span> &#123; FailFast, CollectAndContinue, SkipOnError &#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ConfigurablePipeline</span> &#123;</span><br><span class="line">    FalliblePipeline&lt;T&gt; mainPipeline;</span><br><span class="line">    FalliblePipeline&lt;T&gt; fallbackPipeline;  <span class="comment">// 降级 Pipeline</span></span><br><span class="line">    </span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function">Result&lt;T&gt; <span class="title">execute</span><span class="params">(<span class="type">const</span> T&amp; input, ErrorPolicy policy)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">switch</span> (policy) &#123;</span><br><span class="line">            <span class="keyword">case</span> ErrorPolicy::FailFast:</span><br><span class="line">                <span class="keyword">return</span> mainPipeline.<span class="built_in">execute</span>(input);</span><br><span class="line">            <span class="keyword">case</span> ErrorPolicy::SkipOnError:</span><br><span class="line">                <span class="comment">// 主 Pipeline 失败时走降级 Pipeline</span></span><br><span class="line">                <span class="keyword">auto</span> result = mainPipeline.<span class="built_in">execute</span>(input);</span><br><span class="line">                <span class="keyword">return</span> result.<span class="built_in">isOk</span>() ? result : fallbackPipeline.<span class="built_in">execute</span>(input);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-4-生命周期管理"><a href="#5-4-生命周期管理" class="headerlink" title="5.4 生命周期管理"></a>5.4 生命周期管理</h3><p>Pipeline 对象本身应该<strong>无状态</strong>还是<strong>有状态</strong>？</p>
+<ul>
+<li><strong>无状态 Pipeline</strong>：阶段本身不保存状态，每次 execute 独立。线程安全，可复用。推荐。</li>
+<li><strong>有状态 Pipeline</strong>：阶段内部有缓存或计数器。需要关注线程安全和重置逻辑。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 无状态阶段（推荐）</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">TrimStage</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function">std::string <span class="title">operator</span><span class="params">()</span><span class="params">(<span class="type">const</span> std::string&amp; input)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        <span class="comment">// const 成员函数，无副作用</span></span><br><span class="line">        <span class="keyword">auto</span> start = input.<span class="built_in">find_first_not_of</span>(<span class="string">&quot; \t\n\r&quot;</span>);</span><br><span class="line">        <span class="keyword">auto</span> end   = input.<span class="built_in">find_last_not_of</span>(<span class="string">&quot; \t\n\r&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> (start == std::string::npos) ? <span class="string">&quot;&quot;</span> : input.<span class="built_in">substr</span>(start, end - start + <span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 有状态阶段（需要谨慎）</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CounterStage</span> &#123;</span><br><span class="line">    std::atomic&lt;<span class="type">uint64_t</span>&gt; count&#123;<span class="number">0</span>&#125;;  <span class="comment">// 线程安全</span></span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function">Request <span class="title">operator</span><span class="params">()</span><span class="params">(<span class="type">const</span> Request&amp; input)</span> </span>&#123;</span><br><span class="line">        count.<span class="built_in">fetch_add</span>(<span class="number">1</span>);</span><br><span class="line">        <span class="comment">// 利用计数做某些处理...</span></span><br><span class="line">        <span class="keyword">return</span> input;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="function"><span class="type">uint64_t</span> <span class="title">getCount</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> count.<span class="built_in">load</span>(); &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="六、实战：日志处理-Pipeline"><a href="#六、实战：日志处理-Pipeline" class="headerlink" title="六、实战：日志处理 Pipeline"></a>六、实战：日志处理 Pipeline</h2><p>用一个完整的例子来串联所有概念——一个服务端日志处理 Pipeline。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">LogEntry</span> &#123;</span><br><span class="line">    std::string timestamp;</span><br><span class="line">    std::string level;      <span class="comment">// INFO, WARN, ERROR</span></span><br><span class="line">    std::string service;</span><br><span class="line">    std::string message;</span><br><span class="line">    <span class="type">bool</span> isValid = <span class="literal">true</span>;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 阶段1：解析原始文本</span></span><br><span class="line"><span class="function">Result&lt;LogEntry&gt; <span class="title">parseStage</span><span class="params">(<span class="type">const</span> std::string&amp; raw)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 格式：&quot;2026-05-06T20:11:00Z|ERROR|PaymentService|timeout:3000ms&quot;</span></span><br><span class="line">    <span class="function">std::istringstream <span class="title">ss</span><span class="params">(raw)</span></span>;</span><br><span class="line">    std::string ts, level, service, msg;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> (!std::<span class="built_in">getline</span>(ss, ts, <span class="string">&#x27;|&#x27;</span>) ||</span><br><span class="line">        !std::<span class="built_in">getline</span>(ss, level, <span class="string">&#x27;|&#x27;</span>) ||</span><br><span class="line">        !std::<span class="built_in">getline</span>(ss, service, <span class="string">&#x27;|&#x27;</span>) ||</span><br><span class="line">        !std::<span class="built_in">getline</span>(ss, msg)) &#123;</span><br><span class="line">        <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">error</span>(<span class="string">&quot;Parse failed: &quot;</span> + raw);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">ok</span>(&#123;ts, level, service, msg, <span class="literal">true</span>&#125;);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 阶段2：校验</span></span><br><span class="line"><span class="function">Result&lt;LogEntry&gt; <span class="title">validateStage</span><span class="params">(<span class="type">const</span> LogEntry&amp; entry)</span> </span>&#123;</span><br><span class="line">    <span class="type">static</span> <span class="type">const</span> std::set&lt;std::string&gt; validLevels = &#123;<span class="string">&quot;INFO&quot;</span>, <span class="string">&quot;WARN&quot;</span>, <span class="string">&quot;ERROR&quot;</span>, <span class="string">&quot;FATAL&quot;</span>&#125;;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> (entry.timestamp.<span class="built_in">empty</span>() || entry.service.<span class="built_in">empty</span>()) &#123;</span><br><span class="line">        <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">error</span>(<span class="string">&quot;Missing required fields&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (!validLevels.<span class="built_in">count</span>(entry.level)) &#123;</span><br><span class="line">        <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">error</span>(<span class="string">&quot;Invalid level: &quot;</span> + entry.level);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    LogEntry validated = entry;</span><br><span class="line">    validated.isValid = <span class="literal">true</span>;</span><br><span class="line">    <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">ok</span>(validated);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 阶段3：脱敏</span></span><br><span class="line"><span class="function">Result&lt;LogEntry&gt; <span class="title">maskStage</span><span class="params">(<span class="type">const</span> LogEntry&amp; entry)</span> </span>&#123;</span><br><span class="line">    LogEntry masked = entry;</span><br><span class="line">    <span class="comment">// 脱敏手机号</span></span><br><span class="line">    <span class="function"><span class="type">static</span> std::regex <span class="title">phoneRegex</span><span class="params">(<span class="string">R&quot;(\b1[3-9]\d&#123;9&#125;\b)&quot;</span>)</span></span>;</span><br><span class="line">    masked.message = std::<span class="built_in">regex_replace</span>(entry.message, phoneRegex, <span class="string">&quot;1**********&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">ok</span>(masked);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 阶段4：分级存储（ERROR 走告警通道）</span></span><br><span class="line"><span class="function">Result&lt;LogEntry&gt; <span class="title">routeStage</span><span class="params">(<span class="type">const</span> LogEntry&amp; entry)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (entry.level == <span class="string">&quot;ERROR&quot;</span> || entry.level == <span class="string">&quot;FATAL&quot;</span>) &#123;</span><br><span class="line">        <span class="built_in">sendAlert</span>(entry);  <span class="comment">// 发送告警</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">writeToStorage</span>(entry);  <span class="comment">// 持久化</span></span><br><span class="line">    <span class="keyword">return</span> Result&lt;LogEntry&gt;::<span class="built_in">ok</span>(entry);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 组装 Pipeline</span></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    FalliblePipeline&lt;LogEntry&gt; logPipeline;</span><br><span class="line">    logPipeline</span><br><span class="line">        .<span class="built_in">addStage</span>(validateStage)</span><br><span class="line">        .<span class="built_in">addStage</span>(maskStage)</span><br><span class="line">        .<span class="built_in">addStage</span>(routeStage);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 处理日志流</span></span><br><span class="line">    std::string rawLine;</span><br><span class="line">    <span class="keyword">while</span> (std::<span class="built_in">getline</span>(std::cin, rawLine)) &#123;</span><br><span class="line">        <span class="keyword">auto</span> parsed = <span class="built_in">parseStage</span>(rawLine);</span><br><span class="line">        <span class="keyword">if</span> (!parsed.<span class="built_in">isOk</span>()) &#123;</span><br><span class="line">            std::cerr &lt;&lt; <span class="string">&quot;[SKIP] &quot;</span> &lt;&lt; parsed.<span class="built_in">errorMsg</span>() &lt;&lt; std::endl;</span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">auto</span> result = logPipeline.<span class="built_in">execute</span>(parsed.<span class="built_in">value</span>());</span><br><span class="line">        <span class="keyword">if</span> (!result.<span class="built_in">isOk</span>()) &#123;</span><br><span class="line">            std::cerr &lt;&lt; <span class="string">&quot;[FAIL] &quot;</span> &lt;&lt; result.<span class="built_in">errorMsg</span>() &lt;&lt; std::endl;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个例子展示了 Pipeline 的核心价值：</p>
+<ol>
+<li><strong>每个阶段独立</strong>：你可以单独测试 <code>parseStage</code>、<code>validateStage</code>、<code>maskStage</code></li>
+<li><strong>易于扩展</strong>：想加一个&quot;采样&quot;阶段？<code>addStage(samplingStage)</code> 一行搞定</li>
+<li><strong>错误短路</strong>：解析失败的日志直接跳过，不会进入校验和脱敏</li>
+<li><strong>可替换</strong>：生产环境和测试环境可以用不同的 <code>routeStage</code></li>
+</ol>
+<h2 id="七、总结"><a href="#七、总结" class="headerlink" title="七、总结"></a>七、总结</h2><p>Pipeline 模式的本质是<strong>用组合替代过程</strong>。它不是技术上的创新，而是组织上的优化——把一个大函数拆成一系列小阶段，然后声明式地组合它们。</p>
+<p>三个最重要的原则：</p>
+<ol>
+<li><strong>每个阶段做且只做一件事</strong>——如果一个阶段既校验又脱敏，拆成两个</li>
+<li><strong>阶段之间通过数据耦合，不通过控制流耦合</strong>——阶段不调用其他阶段，只返回结果</li>
+<li><strong>Pipeline 本身是可配置、可替换的</strong>——不同环境、不同场景可以组装不同的 Pipeline</li>
+</ol>
+<p>当你下次面对一个超过 50 行的 <code>process()</code> 函数时，可以问自己一个问题：<strong>这里面的步骤，哪些可以独立成一个阶段？</strong> 答案通常决定了 Pipeline 的边界。</p>
+<hr>
+<blockquote>
+<p><strong>延伸阅读</strong></p>
+<ul>
+<li>责任链模式：Pipeline 的&quot;近亲&quot;，适用于&quot;谁处理不确定&quot;的场景</li>
+<li>本系列《Runtime Architecture》中的其他运行时架构模式</li>
+</ul>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/pipeline-pattern/">https://hespethorn.github.io/posts/pipeline-pattern/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86/">数据处理</a><a class="post-meta__tags" href="/tags/Pipeline/">Pipeline</a><a class="post-meta__tags" href="/tags/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F/">设计模式</a><a class="post-meta__tags" href="/tags/%E6%9E%B6%E6%9E%84%E6%A8%A1%E5%BC%8F/">架构模式</a><a class="post-meta__tags" href="/tags/%E4%B8%AD%E9%97%B4%E4%BB%B6/">中间件</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">505</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">533</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-06T12:11:00.000Z" title="Created 2026-05-06 20:11:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-05T02:32:55.000Z" title="Created 2026-05-05 10:32:55">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-04T03:28:08.000Z" title="Created 2026-05-04 11:28:08">2026-05-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/hybrid-arch-core-native-edge-dynamic/" title="混合架构：核心原生+边缘动态的双引擎架构之道">混合架构：核心原生+边缘动态的双引擎架构之道</a><time datetime="2026-05-03T12:11:13.000Z" title="Created 2026-05-03 20:11:13">2026-05-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-13T12:17:00.000Z" title="Created 2026-05-13 20:17:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-06T12:11:00.000Z" title="Created 2026-05-06 20:11:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-05T02:32:55.000Z" title="Created 2026-05-05 10:32:55">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-04T03:28:08.000Z" title="Created 2026-05-04 11:28:08">2026-05-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leetcode/">LeetCode</a><a href="/tags/Python/">Python</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/GO/">GO</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/English/">English</a></li><li><a href="/categories/热门导读/">热门导读</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
