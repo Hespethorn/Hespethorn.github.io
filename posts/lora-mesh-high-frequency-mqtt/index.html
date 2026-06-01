@@ -1,0 +1,615 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="零、一个看似自相矛盾的需求前面的 Mesh 系列文章反复强调了一件事：LoRa 带宽极低，单信道不到 6 kbps。在这个前提下，如果有人对你说——  &quot;我想在这个 LoRa Mesh 上跑 MQTT，10Hz 频率，大量消息。&quot;  你的第一反应大概率是：不可能。 但先别急。这个需求并非凭空想象——工业传感器、无人机遥测、车辆追踪、机器人状态上报，这些场景天然需要高频数据流。即">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">
+<meta property="og:url" content="https://hespethorn.github.io/posts/lora-mesh-high-frequency-mqtt/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="零、一个看似自相矛盾的需求前面的 Mesh 系列文章反复强调了一件事：LoRa 带宽极低，单信道不到 6 kbps。在这个前提下，如果有人对你说——  &quot;我想在这个 LoRa Mesh 上跑 MQTT，10Hz 频率，大量消息。&quot;  你的第一反应大概率是：不可能。 但先别急。这个需求并非凭空想象——工业传感器、无人机遥测、车辆追踪、机器人状态上报，这些场景天然需要高频数据流。即">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-14T12:15:00.000Z">
+<meta property="article:modified_time" content="2026-05-31T09:49:42.192Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="MQTT">
+<meta property="article:tag" content="物联网">
+<meta property="article:tag" content="Mesh网络">
+<meta property="article:tag" content="LoRa">
+<meta property="article:tag" content="MQTT-SN">
+<meta property="article:tag" content="高频通信">
+<meta property="article:tag" content="序列化">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案",
+  "url": "https://hespethorn.github.io/posts/lora-mesh-high-frequency-mqtt/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-14T12:15:00.000Z",
+  "dateModified": "2026-05-31T09:49:42.192Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/lora-mesh-high-frequency-mqtt/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">514</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">557</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-06-14T12:15:00.000Z" title="Created 2026-06-14 20:15:00">2026-06-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="零、一个看似自相矛盾的需求"><a href="#零、一个看似自相矛盾的需求" class="headerlink" title="零、一个看似自相矛盾的需求"></a>零、一个看似自相矛盾的需求</h2><p>前面的 Mesh 系列文章反复强调了一件事：<strong>LoRa 带宽极低，单信道不到 6 kbps</strong>。在这个前提下，如果有人对你说——</p>
+<blockquote>
+<p>&quot;我想在这个 LoRa Mesh 上跑 MQTT，10Hz 频率，大量消息。&quot;</p>
+</blockquote>
+<p>你的第一反应大概率是：不可能。</p>
+<p>但先别急。这个需求并非凭空想象——<strong>工业传感器、无人机遥测、车辆追踪、机器人状态上报</strong>，这些场景天然需要高频数据流。即便在低带宽 Mesh 上，我们也可以通过一套组合策略让&quot;10Hz MQTT over LoRa&quot;在某些约束条件下变得可行。</p>
+<p>这篇文章不讲&quot;能不能&quot;，讲的是&quot;在什么条件下能，以及怎么做&quot;。</p>
+<h2 id="一、先算账：10Hz-到底要吃掉多少带宽"><a href="#一、先算账：10Hz-到底要吃掉多少带宽" class="headerlink" title="一、先算账：10Hz 到底要吃掉多少带宽"></a>一、先算账：10Hz 到底要吃掉多少带宽</h2><h3 id="1-1-标准-MQTT-在-LoRa-上的自杀式开销"><a href="#1-1-标准-MQTT-在-LoRa-上的自杀式开销" class="headerlink" title="1.1 标准 MQTT 在 LoRa 上的自杀式开销"></a>1.1 标准 MQTT 在 LoRa 上的自杀式开销</h3><p>一个最小化的 MQTT v3.1.1 PUBLISH 报文的结构：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">┌──────────────┬────────┬───────┬─────────┬──────────┐</span><br><span class="line">│ Fixed Header │ Topic  │ Msg ID│ Payload │ 总计     │</span><br><span class="line">│  2~5 字节    │ Len+N  │ 2字节 │   P     │          │</span><br><span class="line">└──────────────┴────────┴───────┴─────────┴──────────┘</span><br><span class="line"></span><br><span class="line">假设 Topic = &quot;sensor/temp/room1&quot; (19 字节), Payload = 4 字节(float)</span><br><span class="line">最小 PUBLISH 报文 ≈ 2 + 2 + 19 + 2 + 4 = 29 字节</span><br><span class="line"></span><br><span class="line">加上 QoS 1 的两轮 ACK：</span><br><span class="line">  PUBACK ≈ 4 字节</span><br><span class="line">  → 每次可靠传输 ≈ 29 + 4 = 33 字节</span><br></pre></td></tr></table></figure>
+
+<p>33 字节 × 8 bit&#x2F;字节 &#x3D; 264 bit。10 条&#x2F;秒 &#x3D; <strong>2640 bps</strong>。</p>
+<p>看起来不到 5.5 kbps 的一半？别急，这只是<strong>一条消息在空中的大小</strong>。在 Mesh 网络中：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Mesh 路由开销（以 Meshtastic 为例）：</span><br><span class="line">- 消息头: ~20 字节（源、目标、跳数、消息 ID）</span><br><span class="line">- 实际在空中传输: 33 + 20 = 53 字节</span><br><span class="line"></span><br><span class="line">加上洪泛：平均每个消息被转发 15 次（20 节点网络）</span><br><span class="line">空中总流量 = 53 × 8 × 10 × 15 = 63,600 bps ≈ 63.6 kbps</span><br></pre></td></tr></table></figure>
+
+<p><strong>63.6 kbps 的总空中流量需求 vs 5.5 kbps 的单信道容量——差距是 11.5 倍。</strong></p>
+<p>这就是为什么标准 MQTT + Meshtastic 洪泛 + 10Hz &#x3D; 网络瞬间崩溃。</p>
+<h3 id="1-2-在-Reticulum-路由模式下的改善"><a href="#1-2-在-Reticulum-路由模式下的改善" class="headerlink" title="1.2 在 Reticulum 路由模式下的改善"></a>1.2 在 Reticulum 路由模式下的改善</h3><p>Reticulum 的路由寻址替代洪泛后，同样的场景：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">平均跳数: 3（而非 15 次洪泛）</span><br><span class="line">空中总流量 = 53 × 8 × 10 × 3 = 12,720 bps ≈ 12.7 kbps</span><br><span class="line"></span><br><span class="line">仍然超出 5.5 kbps 约 2.3 倍。</span><br></pre></td></tr></table></figure>
+
+<p>结论：<strong>仅靠&#39;用 Reticulum 替代 Meshtastic&#39;还不足以支撑 10Hz。需要在协议栈的每一层做优化。</strong></p>
+<h2 id="二、第一刀：MQTT-SN，为低带宽而生"><a href="#二、第一刀：MQTT-SN，为低带宽而生" class="headerlink" title="二、第一刀：MQTT-SN，为低带宽而生"></a>二、第一刀：MQTT-SN，为低带宽而生</h2><h3 id="2-1-MQTT-SN-和标准-MQTT-的差异"><a href="#2-1-MQTT-SN-和标准-MQTT-的差异" class="headerlink" title="2.1 MQTT-SN 和标准 MQTT 的差异"></a>2.1 MQTT-SN 和标准 MQTT 的差异</h3><p>MQTT-SN（MQTT for Sensor Networks）是专门为低带宽、低功耗网络设计的变体。核心差异：</p>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>标准 MQTT</th>
+<th>MQTT-SN</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Topic 表示</strong></td>
+<td>完整字符串 <code>sensor/temp/room1</code></td>
+<td>2 字节 Topic ID</td>
+</tr>
+<tr>
+<td><strong>传输层</strong></td>
+<td>TCP（需要稳定连接）</td>
+<td>UDP（无连接）</td>
+</tr>
+<tr>
+<td><strong>QoS -1</strong></td>
+<td>无此模式</td>
+<td>预定义 Topic，无需注册</td>
+</tr>
+<tr>
+<td><strong>Keep Alive</strong></td>
+<td>PINGREQ&#x2F;PINGRESP 心跳</td>
+<td>GW 代为管理，终端可休眠</td>
+</tr>
+<tr>
+<td><strong>连接建立</strong></td>
+<td>三次握手 + CONNECT</td>
+<td>单包注册</td>
+</tr>
+<tr>
+<td><strong>最小 PUBLISH</strong></td>
+<td>~29 字节</td>
+<td><strong>~7 字节</strong></td>
+</tr>
+</tbody></table>
+<h3 id="2-2-MQTT-SN-最小报文拆解"><a href="#2-2-MQTT-SN-最小报文拆解" class="headerlink" title="2.2 MQTT-SN 最小报文拆解"></a>2.2 MQTT-SN 最小报文拆解</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">MQTT-SN PUBLISH (QoS -1, 预定义 Topic)：</span><br><span class="line">┌─────────┬──────────┬─────────┐</span><br><span class="line">│ Length  │  Flags   │ Payload │</span><br><span class="line">│ 1 字节  │ 1 字节   │   P     │</span><br><span class="line">└─────────┴──────────┴─────────┘</span><br><span class="line"></span><br><span class="line">Flags 字段包含:</span><br><span class="line">  - Topic ID Type: 2 bit (预定义 Topic ID = 无需注册)</span><br><span class="line">  - Topic ID: 10+ bit (可表示 1024+ 个预定义 Topic)</span><br><span class="line">  - QoS: 2 bit (设为 -1 时无 ACK)</span><br><span class="line">  - DUP/Retain: 各 1 bit</span><br><span class="line"></span><br><span class="line">总开销 = 2 字节（Length + Flags）！</span><br></pre></td></tr></table></figure>
+
+<p>对比标准 MQTT 的 29 字节 → <strong>减少 93% 的协议开销</strong>。</p>
+<h3 id="2-3-回到算账"><a href="#2-3-回到算账" class="headerlink" title="2.3 回到算账"></a>2.3 回到算账</h3><p>MQTT-SN 优化后：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">单条消息在空中: 7 字节(PUBLISH) + 22 字节(Mesh头) = 29 字节</span><br><span class="line">空中总流量(3跳路由) = 29 × 8 × 10 × 3 = 6,960 bps ≈ 7 kbps</span><br><span class="line"></span><br><span class="line">仍然超出 5.5 kbps 约 27%。</span><br></pre></td></tr></table></figure>
+
+<p>协议开销已经砍到极致，但 Mesh 路由转发仍然放大了流量。需要继续优化。</p>
+<h2 id="三、第二刀：批量打包——用时间换带宽"><a href="#三、第二刀：批量打包——用时间换带宽" class="headerlink" title="三、第二刀：批量打包——用时间换带宽"></a>三、第二刀：批量打包——用时间换带宽</h2><h3 id="3-1-从-每秒-10-条-到-每秒-1-批"><a href="#3-1-从-每秒-10-条-到-每秒-1-批" class="headerlink" title="3.1 从&quot;每秒 10 条&quot;到&quot;每秒 1 批&quot;"></a>3.1 从&quot;每秒 10 条&quot;到&quot;每秒 1 批&quot;</h3><p>10Hz 意味着每 100ms 一个采样点。如果应用能容忍 1 秒的延迟（对于大多数遥测场景完全可以接受），可以把 10 个采样点打包成一个批量消息：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">单条 PUBLISH（1 个采样点）→ 7 字节</span><br><span class="line">批量 PUBLISH（10 个采样点）→ 1 + 1 + 4×10 = 42 字节</span><br><span class="line"></span><br><span class="line">每秒发 1 条批量消息 vs 每秒发 10 条单点消息：</span><br><span class="line"></span><br><span class="line">单点方案: 29 × 10 × 3 = 870 字节/秒（空中）</span><br><span class="line">批量方案: (22 + 42) × 1 × 3 = 192 字节/秒（空中）</span><br><span class="line"></span><br><span class="line">空中流量减少 78%。</span><br><span class="line">192 × 8 = 1,536 bps — 仅占 5.5 kbps 的 28%</span><br></pre></td></tr></table></figure>
+
+<p>到了这里，10Hz 等效数据率在 3 跳 Mesh 上已经<strong>完全可行</strong>。</p>
+<h3 id="3-2-批量格式设计：Protobuf"><a href="#3-2-批量格式设计：Protobuf" class="headerlink" title="3.2 批量格式设计：Protobuf"></a>3.2 批量格式设计：Protobuf</h3><p>手工 struct 打包虽然紧凑，但缺乏可扩展性——加一个字段就得改解析逻辑。Protobuf 兼顾紧凑性和向后兼容，且生态成熟。</p>
+<figure class="highlight protobuf"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// sensor_batch.proto</span></span><br><span class="line">syntax = <span class="string">&quot;proto3&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">SensorBatch</span> &#123;</span><br><span class="line">  <span class="type">uint32</span> topic_id   = <span class="number">1</span>;  <span class="comment">// 预定义 Topic ID (0x01=温度, 0x02=湿度, ...)</span></span><br><span class="line">  <span class="type">double</span> start_time = <span class="number">2</span>;  <span class="comment">// 起始时间戳 (Unix 秒)</span></span><br><span class="line">  <span class="type">uint32</span> interval_ms = <span class="number">3</span>; <span class="comment">// 采样间隔 (毫秒, 10Hz → 100)</span></span><br><span class="line">  <span class="keyword">repeated</span> <span class="type">float</span> samples = <span class="number">4</span> [packed=<span class="literal">true</span>]; <span class="comment">// 采样值序列 (packed 避免每个值单独编码)</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>packed=true</code> 是关键：重复的 float 值不会被逐个 Tag+Value 编码，而是共享一个 Tag，后面跟一个紧凑的长度前缀 + 连续值——与 struct 手工打包的紧凑度几乎等同。</p>
+<p>编译与使用：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">protoc --python_out=. sensor_batch.proto</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sensor_batch_pb2 <span class="keyword">import</span> SensorBatch</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">pack_batch</span>(<span class="params">topic_id: <span class="built_in">int</span>, samples: <span class="built_in">list</span>[<span class="built_in">float</span>],</span></span><br><span class="line"><span class="params">               start_time: <span class="built_in">float</span>, interval_ms: <span class="built_in">int</span> = <span class="number">100</span></span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Protobuf 序列化，10 个采样点 ≈ 52 字节（比 struct 多 5 字节 Tag 开销）&quot;&quot;&quot;</span></span><br><span class="line">    batch = SensorBatch()</span><br><span class="line">    batch.topic_id = topic_id</span><br><span class="line">    batch.start_time = start_time</span><br><span class="line">    batch.interval_ms = interval_ms</span><br><span class="line">    batch.samples.extend(samples)  <span class="comment"># packed repeated, 紧凑编码</span></span><br><span class="line">    <span class="keyword">return</span> batch.SerializeToString()</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">unpack_batch</span>(<span class="params">data: <span class="built_in">bytes</span></span>) -&gt; SensorBatch:</span><br><span class="line">    batch = SensorBatch()</span><br><span class="line">    batch.ParseFromString(data)</span><br><span class="line">    <span class="keyword">return</span> batch</span><br></pre></td></tr></table></figure>
+
+<p>Protobuf 比手工 struct 多出约 5 字节的 Tag&#x2F;Varint 开销，换来的是：</p>
+<ul>
+<li><strong>模式演化</strong>：新增字段（如 <code>battery_voltage</code>）不破坏旧固件</li>
+<li><strong>跨语言</strong>：C++&#x2F;Python&#x2F;Java&#x2F;Go&#x2F;Rust 共享同一份 <code>.proto</code></li>
+<li><strong>生态工具</strong>：<code>protoc</code> 直接生成序列化&#x2F;反序列化代码，零手写解析器</li>
+</ul>
+<h3 id="3-3-进一步压缩：差分-Protobuf"><a href="#3-3-进一步压缩：差分-Protobuf" class="headerlink" title="3.3 进一步压缩：差分 Protobuf"></a>3.3 进一步压缩：差分 Protobuf</h3><p>如果连续采样值变化缓慢（温度、湿度），Protobuf 版本也可以与差分编码结合——单独定义一个精简 message：</p>
+<figure class="highlight protobuf"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// sensor_diff.proto</span></span><br><span class="line">syntax = <span class="string">&quot;proto3&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">SensorDiff</span> &#123;</span><br><span class="line">  <span class="type">uint32</span> topic_id   = <span class="number">1</span>;</span><br><span class="line">  <span class="type">double</span> start_time = <span class="number">2</span>;</span><br><span class="line">  <span class="type">uint32</span> interval_ms = <span class="number">3</span>;</span><br><span class="line">  <span class="type">sint32</span> base       = <span class="number">4</span>;  <span class="comment">// 首值 × scale, zigzag 编码</span></span><br><span class="line">  <span class="type">bytes</span>  deltas     = <span class="number">5</span>;  <span class="comment">// 后续差值 (每个 1 字节, int8)</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> struct</span><br><span class="line"><span class="keyword">from</span> sensor_diff_pb2 <span class="keyword">import</span> SensorDiff</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">diff_encode_proto</span>(<span class="params">topic_id: <span class="built_in">int</span>, samples: <span class="built_in">list</span>[<span class="built_in">float</span>],</span></span><br><span class="line"><span class="params">                      start_time: <span class="built_in">float</span>, scale: <span class="built_in">float</span> = <span class="number">100</span></span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;差分编码 + Protobuf，10 个采样点 ≈ 18 字节&quot;&quot;&quot;</span></span><br><span class="line">    msg = SensorDiff()</span><br><span class="line">    msg.topic_id = topic_id</span><br><span class="line">    msg.start_time = start_time</span><br><span class="line">    msg.interval_ms = <span class="number">100</span>  <span class="comment"># 10Hz</span></span><br><span class="line">    msg.base = <span class="built_in">int</span>(samples[<span class="number">0</span>] * scale)  <span class="comment"># sint32 zigzag</span></span><br><span class="line">    diffs = <span class="built_in">bytearray</span>()</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, <span class="built_in">len</span>(samples)):</span><br><span class="line">        diff = <span class="built_in">int</span>((samples[i] - samples[i-<span class="number">1</span>]) * scale)</span><br><span class="line">        diff = <span class="built_in">max</span>(-<span class="number">128</span>, <span class="built_in">min</span>(<span class="number">127</span>, diff))</span><br><span class="line">        diffs.append(diff &amp; <span class="number">0xFF</span>)  <span class="comment"># int8 → byte</span></span><br><span class="line">    msg.deltas = <span class="built_in">bytes</span>(diffs)</span><br><span class="line">    <span class="keyword">return</span> msg.SerializeToString()</span><br><span class="line"></span><br><span class="line"><span class="comment"># 批量消息: 22(Mesh头) + 18(Protobuf) = 40 字节</span></span><br><span class="line"><span class="comment"># 空中: 40 × 8 × 1 × 3 = 960 bps — 仅占 5.5 kbps 的 17%</span></span><br></pre></td></tr></table></figure>
+
+<p>极端优化下，10Hz 温度传感数据在 LoRa 上的空中占用不到 <strong>20% 的单信道容量</strong>。</p>
+<h2 id="四、第三刀：多信道并行——用频率换带宽"><a href="#四、第三刀：多信道并行——用频率换带宽" class="headerlink" title="四、第三刀：多信道并行——用频率换带宽"></a>四、第三刀：多信道并行——用频率换带宽</h2><h3 id="4-1-CN470-频段的可用信道"><a href="#4-1-CN470-频段的可用信道" class="headerlink" title="4.1 CN470 频段的可用信道"></a>4.1 CN470 频段的可用信道</h3><p>中国 LoRa CN470-510 频段有多个可用信道：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">CN470 上行信道（部分）：</span><br><span class="line">Channel 0:  470.3 MHz</span><br><span class="line">Channel 1:  470.5 MHz</span><br><span class="line">Channel 2:  470.7 MHz</span><br><span class="line">...</span><br><span class="line">Channel 7:  471.9 MHz</span><br><span class="line"></span><br><span class="line">共 8 个 125kHz 信道可用（受限于 LoRaWAN 规范定义，非 LoRaWAN 场景可自行规划）</span><br></pre></td></tr></table></figure>
+
+<p>如果同时使用 4 个信道，总容量就是 5.5 × 4 &#x3D; 22 kbps。</p>
+<h3 id="4-2-按优先级分信道"><a href="#4-2-按优先级分信道" class="headerlink" title="4.2 按优先级分信道"></a>4.2 按优先级分信道</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">信道分配策略（4 信道方案）：</span><br><span class="line"></span><br><span class="line">Ch 0 (470.3 MHz): 路由与网络管理（Reticulum Announce、路径探测）</span><br><span class="line">Ch 1 (470.5 MHz): 高优消息（紧急告警、控制指令，QoS 1）</span><br><span class="line">Ch 2 (470.7 MHz): 批量遥测上行（传感器数据，QoS -1，10Hz 批量）</span><br><span class="line">Ch 3 (470.9 MHz): 大文件/固件升级（低优先级，QoS -1，深夜传输）</span><br></pre></td></tr></table></figure>
+
+<p>在 Reticulum 中，每个接口可以绑定不同的 LoRa 模块：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Reticulum 多信道配置</span></span><br><span class="line">interfaces:</span><br><span class="line">  <span class="comment"># 管理信道 - Heltec V3 #1</span></span><br><span class="line">  - <span class="built_in">type</span>: RNodeInterface</span><br><span class="line">    frequency: <span class="number">470300000</span>  <span class="comment"># 470.3 MHz</span></span><br><span class="line">    bandwidth: <span class="number">125000</span></span><br><span class="line">    spreading_factor: <span class="number">7</span></span><br><span class="line">    name: <span class="string">&quot;Ch0-Control&quot;</span></span><br><span class="line">  </span><br><span class="line">  <span class="comment"># 遥测信道 - Heltec V3 #2</span></span><br><span class="line">  - <span class="built_in">type</span>: RNodeInterface</span><br><span class="line">    frequency: <span class="number">470700000</span>  <span class="comment"># 470.7 MHz</span></span><br><span class="line">    bandwidth: <span class="number">125000</span></span><br><span class="line">    spreading_factor: <span class="number">7</span></span><br><span class="line">    name: <span class="string">&quot;Ch2-Telemetry&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>硬件成本增加：每增加一个信道，多加一个 Heltec V3（35 元）+ 天线（5 元）&#x3D; 40 元。4 信道方案总硬件增量 120 元——极为廉价。</p>
+<h2 id="五、端到端架构：从传感器到云端的完整链路"><a href="#五、端到端架构：从传感器到云端的完整链路" class="headerlink" title="五、端到端架构：从传感器到云端的完整链路"></a>五、端到端架构：从传感器到云端的完整链路</h2><h3 id="5-1-整体架构"><a href="#5-1-整体架构" class="headerlink" title="5.1 整体架构"></a>5.1 整体架构</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">[传感器节点群] (10Hz 采样)</span><br><span class="line">    │</span><br><span class="line">    │ MQTT-SN PUBLISH (批量, QoS -1)</span><br><span class="line">    │ 通过 Reticulum Mesh (470.7 MHz 遥测信道)</span><br><span class="line">    ↓</span><br><span class="line">[MQTT-SN Gateway] (Orange Pi + Heltec V3 × 2)</span><br><span class="line">    │</span><br><span class="line">    │ ① 接收 MQTT-SN 批量包</span><br><span class="line">    │ ② 解包、校验、时序重建</span><br><span class="line">    │ ③ 转换为标准 MQTT (QoS 1)</span><br><span class="line">    │ ④ 通过互联网/Wi-Fi 上行到云端 MQTT Broker</span><br><span class="line">    ↓</span><br><span class="line">[EMQX / Mosquitto Broker] (云端)</span><br><span class="line">    │</span><br><span class="line">    ↓</span><br><span class="line">[数据消费者] (InfluxDB / Grafana / 控制台)</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-Gateway-节点核心代码"><a href="#5-2-Gateway-节点核心代码" class="headerlink" title="5.2 Gateway 节点核心代码"></a>5.2 Gateway 节点核心代码</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">MQTT-SN over Reticulum Gateway</span></span><br><span class="line"><span class="string">运行在 Orange Pi 上，桥接 LoRa Mesh 和互联网 MQTT Broker</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">import</span> paho.mqtt.client <span class="keyword">as</span> mqtt</span><br><span class="line"><span class="keyword">import</span> RNS</span><br><span class="line"><span class="keyword">from</span> sensor_batch_pb2 <span class="keyword">import</span> SensorBatch</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---- 配置 ----</span></span><br><span class="line">MESH_TOPIC_MAP = &#123;</span><br><span class="line">    <span class="number">0x01</span>: <span class="string">&quot;sensor/temperature/batch&quot;</span>,</span><br><span class="line">    <span class="number">0x02</span>: <span class="string">&quot;sensor/humidity/batch&quot;</span>,</span><br><span class="line">    <span class="number">0x03</span>: <span class="string">&quot;sensor/gps/batch&quot;</span>,</span><br><span class="line">    <span class="number">0x10</span>: <span class="string">&quot;control/relay/command&quot;</span>,</span><br><span class="line">&#125;</span><br><span class="line">MQTT_BROKER = <span class="string">&quot;192.168.1.100&quot;</span>  <span class="comment"># 本地或云端 Broker</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># ---- MQTT 上行客户端 ----</span></span><br><span class="line">mqtt_client = mqtt.Client()</span><br><span class="line">mqtt_client.connect(MQTT_BROKER, <span class="number">1883</span>)</span><br><span class="line">mqtt_client.loop_start()</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---- Reticulum 接收回调 ----</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">on_mesh_packet</span>(<span class="params">message, packet</span>):</span><br><span class="line">    batch = SensorBatch()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        batch.ParseFromString(message)</span><br><span class="line">    <span class="keyword">except</span>:</span><br><span class="line">        <span class="keyword">return</span>  <span class="comment"># Protobuf 解析失败，丢弃</span></span><br><span class="line">    </span><br><span class="line">    topic_name = MESH_TOPIC_MAP.get(batch.topic_id)</span><br><span class="line">    <span class="keyword">if</span> topic_name <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment"># 拆分为标准 MQTT，Protobuf 序列化作为 payload</span></span><br><span class="line">    <span class="keyword">for</span> i, value <span class="keyword">in</span> <span class="built_in">enumerate</span>(batch.samples):</span><br><span class="line">        ts = batch.start_time + i * batch.interval_ms / <span class="number">1000.0</span></span><br><span class="line">        <span class="comment"># MQTT payload 仍用 Protobuf，消费者端统一解析</span></span><br><span class="line">        <span class="keyword">from</span> sensor_batch_pb2 <span class="keyword">import</span> SensorPoint</span><br><span class="line">        point = SensorPoint()</span><br><span class="line">        point.timestamp = ts</span><br><span class="line">        point.value = value</span><br><span class="line">        mqtt_client.publish(topic_name, point.SerializeToString(), qos=<span class="number">1</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---- 启动 Reticulum ----</span></span><br><span class="line">reticulum = RNS.Reticulum()</span><br><span class="line">identity = RNS.Identity()</span><br><span class="line"></span><br><span class="line">mesh_iface = reticulum.get_interfaces()[<span class="number">1</span>]  <span class="comment"># Ch2-Telemetry</span></span><br><span class="line">mesh_iface.on_packet = on_mesh_packet</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;[Gateway] MQTT-SN → MQTT Bridge running (Protobuf)...&quot;</span>)</span><br><span class="line"><span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">    time.sleep(<span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+
+<p>Mesh 内和 MQTT 上行全程使用 Protobuf，云端消费者（InfluxDB&#x2F;Grafana）通过同一份 <code>.proto</code> 生成的代码反序列化，无需任何文本解析。</p>
+<h3 id="5-3-传感器节点代码"><a href="#5-3-传感器节点代码" class="headerlink" title="5.3 传感器节点代码"></a>5.3 传感器节点代码</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">传感器节点：每 100ms 采样，每秒批量发送一次</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">import</span> random</span><br><span class="line"><span class="keyword">import</span> RNS</span><br><span class="line"><span class="keyword">from</span> sensor_batch_pb2 <span class="keyword">import</span> SensorBatch</span><br><span class="line"></span><br><span class="line">reticulum = RNS.Reticulum()</span><br><span class="line">identity = RNS.Identity()</span><br><span class="line">destination = RNS.Destination(</span><br><span class="line">    identity, RNS.Destination.OUT, RNS.Destination.SINGLE,</span><br><span class="line">    <span class="string">&quot;mqtt_sn_gateway&quot;</span>, <span class="string">&quot;telemetry_batch&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">TOPIC_TEMP = <span class="number">0x01</span></span><br><span class="line">BATCH_SIZE = <span class="number">10</span></span><br><span class="line">SAMPLE_INTERVAL = <span class="number">0.1</span>  <span class="comment"># 100ms</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">    <span class="comment"># 构造 Protobuf 批量消息</span></span><br><span class="line">    batch = SensorBatch()</span><br><span class="line">    batch.topic_id = TOPIC_TEMP</span><br><span class="line">    batch.start_time = time.time()</span><br><span class="line">    batch.interval_ms = <span class="built_in">int</span>(SAMPLE_INTERVAL * <span class="number">1000</span>)  <span class="comment"># 100ms</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(BATCH_SIZE):</span><br><span class="line">        value = <span class="number">25.0</span> + random.uniform(-<span class="number">0.5</span>, <span class="number">0.5</span>)</span><br><span class="line">        batch.samples.append(value)</span><br><span class="line">        time.sleep(SAMPLE_INTERVAL)</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># 序列化并发送</span></span><br><span class="line">    RNS.Packet(destination, batch.SerializeToString()).send()</span><br><span class="line">    <span class="comment"># 1 秒循环，无需额外延时</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="六、总结：10Hz-MQTT-over-LoRa-Mesh-的可行性矩阵"><a href="#六、总结：10Hz-MQTT-over-LoRa-Mesh-的可行性矩阵" class="headerlink" title="六、总结：10Hz MQTT over LoRa Mesh 的可行性矩阵"></a>六、总结：10Hz MQTT over LoRa Mesh 的可行性矩阵</h2><table>
+<thead>
+<tr>
+<th>优化策略</th>
+<th align="center">单条消息大小</th>
+<th align="center">空中流量(3跳)</th>
+<th align="center">占信道容量</th>
+<th align="center">可行性</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>标准 MQTT + 洪泛</td>
+<td align="center">33 字节</td>
+<td align="center">63.6 kbps</td>
+<td align="center"><strong>1156%</strong></td>
+<td align="center">✗</td>
+</tr>
+<tr>
+<td>标准 MQTT + 路由</td>
+<td align="center">33 字节</td>
+<td align="center">12.7 kbps</td>
+<td align="center"><strong>231%</strong></td>
+<td align="center">✗</td>
+</tr>
+<tr>
+<td>MQTT-SN + 路由</td>
+<td align="center">7 字节</td>
+<td align="center">7.0 kbps</td>
+<td align="center"><strong>127%</strong></td>
+<td align="center">△ 临界</td>
+</tr>
+<tr>
+<td><strong>MQTT-SN + 批量</strong></td>
+<td align="center">42 字节(批)</td>
+<td align="center"><strong>1.5 kbps</strong></td>
+<td align="center"><strong>28%</strong></td>
+<td align="center">✓</td>
+</tr>
+<tr>
+<td>+ 差分量化和多信道</td>
+<td align="center">20 字节(批)</td>
+<td align="center"><strong>0.7 kbps</strong></td>
+<td align="center"><strong>4%</strong></td>
+<td align="center">✓ 充裕</td>
+</tr>
+</tbody></table>
+<p><strong>最终答案</strong>：在 Reticulum 路由模式 + MQTT-SN 协议 + 批量打包 + 差分编码的组合策略下，10Hz 等效数据率在 3 跳 LoRa Mesh 上完全可行，且留有充裕的信道余量给其他流量。</p>
+<h3 id="关键约束条件（必须满足）"><a href="#关键约束条件（必须满足）" class="headerlink" title="关键约束条件（必须满足）"></a>关键约束条件（必须满足）</h3><ol>
+<li><strong>延迟容忍 ≥ 1 秒</strong>：批量打包带来了 1 秒的端到端延迟（采完 10 个点才发）</li>
+<li><strong>QoS 0 或 -1</strong>：高频遥测不能用 QoS 1（每条消息都需要 ACK），必须接受偶尔的丢包</li>
+<li><strong>Protobuf 序列化</strong>：放弃 JSON&#x2F;文本，全程 Protobuf——Mesh 内和 MQTT 上行共用同一份 <code>.proto</code> 定义</li>
+<li><strong>路由模式，非洪泛</strong>：必须用 Reticulum 或 MeshCore，不能用 Meshtastic 的默认洪泛</li>
+<li><strong>Topic 预定义</strong>：MQTT-SN 的 Topic ID 需要在 Gateway 和传感器端预先约定</li>
+</ol>
+<h3 id="如果不满足这些条件怎么办？"><a href="#如果不满足这些条件怎么办？" class="headerlink" title="如果不满足这些条件怎么办？"></a>如果不满足这些条件怎么办？</h3><ul>
+<li>如果<strong>必须 QoS 1 可靠传输</strong>，把频率降到 2Hz 以下</li>
+<li>如果<strong>必须 JSON 格式</strong>，把频率降到 1Hz 以下，并启用 GZIP 压缩</li>
+<li>如果<strong>必须用 Meshtastic（洪泛）</strong>，把频率降到 0.2Hz 以下（每 5 秒一条）</li>
+<li>如果<strong>必须 &lt; 100ms 延迟</strong>，放弃 LoRa，改用 Wi-Fi Mesh 或私有 LTE</li>
+</ul>
+<p>低频 Mesh 通信和传统互联网之间有一条宽阔的工程鸿沟——<strong>跨越鸿沟的不是任何单一技术，而是协议选择、数据压缩、批量策略和信道规划的合力。</strong></p>
+<hr>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/lora-mesh-high-frequency-mqtt/">https://hespethorn.github.io/posts/lora-mesh-high-frequency-mqtt/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/MQTT/">MQTT</a><a class="post-meta__tags" href="/tags/%E7%89%A9%E8%81%94%E7%BD%91/">物联网</a><a class="post-meta__tags" href="/tags/Mesh%E7%BD%91%E7%BB%9C/">Mesh网络</a><a class="post-meta__tags" href="/tags/LoRa/">LoRa</a><a class="post-meta__tags" href="/tags/MQTT-SN/">MQTT-SN</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E9%A2%91%E9%80%9A%E4%BF%A1/">高频通信</a><a class="post-meta__tags" href="/tags/%E5%BA%8F%E5%88%97%E5%8C%96/">序列化</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">514</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">557</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">69</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-14T12:15:00.000Z" title="Created 2026-06-14 20:15:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-07T12:15:00.000Z" title="Created 2026-06-07 20:15:00">2026-06-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-06-01T12:30:00.000Z" title="Created 2026-06-01 20:30:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-31T12:30:00.000Z" title="Created 2026-05-31 20:30:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-25T12:30:00.000Z" title="Created 2026-05-25 20:30:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-13T12:17:00.000Z" title="Created 2026-05-13 20:17:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-15T12:45:00.000Z" title="Created 2026-04-15 20:45:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-12T12:45:00.000Z" title="Created 2026-04-12 20:45:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-14T12:15:00.000Z" title="Created 2026-06-14 20:15:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-07T12:15:00.000Z" title="Created 2026-06-07 20:15:00">2026-06-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-06-01T12:30:00.000Z" title="Created 2026-06-01 20:30:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-31T12:30:00.000Z" title="Created 2026-05-31 20:30:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-25T12:30:00.000Z" title="Created 2026-05-25 20:30:00">2026-05-25</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leetcode/">LeetCode</a><a href="/tags/Python/">Python</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/GO/">GO</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/English/">English</a></li><li><a href="/categories/热门导读/">热门导读</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
