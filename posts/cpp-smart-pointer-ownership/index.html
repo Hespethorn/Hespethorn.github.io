@@ -1,0 +1,556 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot; | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、&quot;C++ 的魅力在于手动控制内存&quot;&quot;智能指针是黑盒，C++ 的魅力在于可以直接控制内存的分配和释放。&quot; 这句话你一定在某个技术群、某条知乎评论、或者某次 code review 中看到过。说出这句话的人，通常带着一种&quot;真正的 C++ 程序员不用智能指针&quot;的骄傲。 但这句话把两个不同的东西混为一谈了：&quot;控制力&quot;和&amp;q">
+<meta property="og:type" content="article">
+<meta property="og:title" content="C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;">
+<meta property="og:url" content="https://hespethorn.github.io/posts/cpp-smart-pointer-ownership/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、&quot;C++ 的魅力在于手动控制内存&quot;&quot;智能指针是黑盒，C++ 的魅力在于可以直接控制内存的分配和释放。&quot; 这句话你一定在某个技术群、某条知乎评论、或者某次 code review 中看到过。说出这句话的人，通常带着一种&quot;真正的 C++ 程序员不用智能指针&quot;的骄傲。 但这句话把两个不同的东西混为一谈了：&quot;控制力&quot;和&amp;q">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-10T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-06-05T03:00:20.784Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="智能指针">
+<meta property="article:tag" content="内存管理">
+<meta property="article:tag" content="所有权">
+<meta property="article:tag" content="RAII">
+<meta property="article:tag" content="unique_ptr">
+<meta property="article:tag" content="最佳实践">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "C++ 智能指针之争：问题不是\"用哪个\"，而是\"谁拥有这个对象\"",
+  "url": "https://hespethorn.github.io/posts/cpp-smart-pointer-ownership/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-10T12:30:00.000Z",
+  "dateModified": "2026-06-05T03:00:20.784Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/cpp-smart-pointer-ownership/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'C++ 智能指针之争：问题不是"用哪个"，而是"谁拥有这个对象"',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">535</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">586</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">71</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 技术博客</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类导航</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签索引</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 资源收藏</span></a></div><div class="menus_item"><a class="site-page" href="/%E7%88%B6%E4%BA%B2%E5%86%99%E7%9A%84%E4%B8%8E%E5%AD%90%E4%B9%A6/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-06-10T12:30:00.000Z" title="Created 2026-06-10 20:30:00">2026-06-10</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>6mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、-C-的魅力在于手动控制内存"><a href="#一、-C-的魅力在于手动控制内存" class="headerlink" title="一、&quot;C++ 的魅力在于手动控制内存&quot;"></a>一、&quot;C++ 的魅力在于手动控制内存&quot;</h2><p>&quot;智能指针是黑盒，C++ 的魅力在于可以直接控制内存的分配和释放。&quot;</p>
+<p>这句话你一定在某个技术群、某条知乎评论、或者某次 code review 中看到过。说出这句话的人，通常带着一种&quot;真正的 C++ 程序员不用智能指针&quot;的骄傲。</p>
+<p>但这句话把两个不同的东西混为一谈了：&quot;控制力&quot;和&quot;手动执行&quot;。</p>
+<p><strong>真正的控制力，是你知道每个对象归谁管、什么时候销毁。至于销毁的动作是谁执行——你的右手敲下 delete，还是 unique_ptr 的析构函数——那只是实现细节。</strong></p>
+<h2 id="二、同一个项目，两种裸指针"><a href="#二、同一个项目，两种裸指针" class="headerlink" title="二、同一个项目，两种裸指针"></a>二、同一个项目，两种裸指针</h2><p>在我最近修复的一个 MQTT 控制服务里，同一个代码库中同时存在两种裸指针用法：一种导致了真实的 bug，另一种是最佳实践。差别不在&quot;裸不裸&quot;，在于&quot;所有权清不清晰&quot;。</p>
+<h3 id="案例-A：脆弱的裸指针"><a href="#案例-A：脆弱的裸指针" class="headerlink" title="案例 A：脆弱的裸指针"></a>案例 A：脆弱的裸指针</h3><p><code>AisNmeaParseApi.cpp</code> 中解析 AIS 消息的代码：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ais_vdm_decode_payload — 解析函数</span></span><br><span class="line"><span class="function"><span class="type">bool</span> <span class="title">ais_vdm_decode_payload</span><span class="params">(<span class="type">const</span> AisVdmSentence&amp; vdm_sentence,</span></span></span><br><span class="line"><span class="params"><span class="function">                            AisVdmMessage** message)</span> </span>&#123;    <span class="comment">// 双裸指针</span></span><br><span class="line">    *message = <span class="literal">nullptr</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// ... 解析逻辑 ...</span></span><br><span class="line">    <span class="keyword">switch</span> (msg_type) &#123;</span><br><span class="line">        <span class="keyword">case</span> <span class="number">1</span>: &#123;</span><br><span class="line">            <span class="keyword">auto</span>* m = <span class="keyword">new</span> <span class="built_in">AisVdmMessage_1_2_3</span>();          <span class="comment">// 手动 new</span></span><br><span class="line">            <span class="keyword">if</span> (!<span class="built_in">parse</span>(s6, m)) &#123; <span class="keyword">delete</span> m; <span class="keyword">return</span> <span class="literal">false</span>; &#125; <span class="comment">// 失败路径手动 delete</span></span><br><span class="line">            *message = m;                                  <span class="comment">// 所有权丢给调用方</span></span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">case</span> <span class="number">5</span>: &#123;</span><br><span class="line">            <span class="keyword">auto</span>* m = <span class="keyword">new</span> <span class="built_in">AisVdmMessage_5</span>();</span><br><span class="line">            <span class="keyword">if</span> (!<span class="built_in">parse</span>(s6, m)) &#123; <span class="keyword">delete</span> m; <span class="keyword">return</span> <span class="literal">false</span>; &#125; <span class="comment">// 又是手动 delete</span></span><br><span class="line">            *message = m;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// ... 还有 3 个 case，每个都要手写 delete ...</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// AisNmeaProcessor.cpp — 调用方</span></span><br><span class="line">AisVdmMessage* msg_ptr = <span class="literal">nullptr</span>;</span><br><span class="line"><span class="keyword">if</span> (!<span class="built_in">ais_vdm_process_message</span>(raw, &amp;msg_ptr, _aisFrag))</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line"><span class="keyword">if</span> (!msg_ptr)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line"><span class="function">std::unique_ptr&lt;AisVdmMessage&gt; <span class="title">msg</span><span class="params">(msg_ptr)</span></span>;  <span class="comment">// 调用方也觉得不安全，赶紧包一层</span></span><br></pre></td></tr></table></figure>
+
+<p>这段代码有 6 个 <code>new</code>，散布在 5 个 <code>case</code> 分支中。每个分支都有独立的失败路径，每条失败路径必须手写 <code>delete</code>。</p>
+<p>如果一个新人加了一个 <code>case 6</code>，忘记在失败路径写 <code>delete</code>？泄漏。如果中间某处抛了异常？泄漏。调用方忘了包 <code>unique_ptr</code>？泄漏。调用方包了 <code>unique_ptr</code>，但中间某层函数提前 return 了？泄漏。</p>
+<p><strong>这不是&quot;精细控制&quot;，这是&quot;人为制造泄漏点&quot;。</strong></p>
+<p>修复后：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">bool</span> <span class="title">ais_vdm_decode_payload</span><span class="params">(<span class="type">const</span> AisVdmSentence&amp; vdm_sentence,</span></span></span><br><span class="line"><span class="params"><span class="function">                            std::unique_ptr&lt;AisVdmMessage&gt;&amp; message)</span> </span>&#123;</span><br><span class="line">    message.<span class="built_in">reset</span>();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">switch</span> (msg_type) &#123;</span><br><span class="line">        <span class="keyword">case</span> <span class="number">1</span>: &#123;</span><br><span class="line">            <span class="keyword">auto</span> m = std::<span class="built_in">make_unique</span>&lt;AisVdmMessage_1_2_3&gt;();</span><br><span class="line">            <span class="keyword">if</span> (!<span class="built_in">parse</span>(s6, m.<span class="built_in">get</span>())) &#123; <span class="keyword">return</span> <span class="literal">false</span>; &#125;  <span class="comment">// 失败，m 自动析构</span></span><br><span class="line">            message = std::<span class="built_in">move</span>(m);                      <span class="comment">// 所有权显式转移</span></span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// ... 其他 case 同理，不再需要手动 delete ...</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 调用方</span></span><br><span class="line">std::unique_ptr&lt;AisVdmMessage&gt; msg;</span><br><span class="line"><span class="keyword">if</span> (!<span class="built_in">ais_vdm_process_message</span>(raw, msg, _aisFrag))</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line"><span class="comment">// msg 直接可用，无需再包一层</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>所有权从创建点就用 <code>unique_ptr</code> 管理，在任何执行路径下都一致：成功 → 移动给调用方；失败 → 自动析构。</strong></p>
+<h3 id="案例-B：安全的裸指针"><a href="#案例-B：安全的裸指针" class="headerlink" title="案例 B：安全的裸指针"></a>案例 B：安全的裸指针</h3><p>同一个项目里，<code>MainNode</code> 的这几个裸指针完全没有问题：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MainNode</span> &#123;</span><br><span class="line">    BeiDou* _beidouDevice = <span class="literal">nullptr</span>;  <span class="comment">// 指向北斗设备</span></span><br><span class="line">    ZD* _zdDevice = <span class="literal">nullptr</span>;          <span class="comment">// 指向 ZD 设备</span></span><br><span class="line">    SSPC* _sspcDevice = <span class="literal">nullptr</span>;      <span class="comment">// 指向 SSPC 设备</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>这些指针指向的是什么？通过 <code>DeviceManager::getInstance().getDevice&lt;T&gt;(name)</code> 获取的对象。追进去看：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</span></span><br><span class="line"><span class="function">T* <span class="title">DeviceManager::getDevice</span><span class="params">(<span class="type">const</span> std::string&amp; device_name)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> it = devices_.<span class="built_in">find</span>(device_name);</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">dynamic_cast</span>&lt;T*&gt;(it-&gt;second);  <span class="comment">// it-&gt;second 是 Device*</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 注册时：</span></span><br><span class="line"><span class="keyword">auto</span>&amp; inst = T::<span class="built_in">getInstance</span>();  <span class="comment">// Singleton&lt;T&gt; — 静态局部变量</span></span><br><span class="line">Device* dev = &amp;inst;            <span class="comment">// 取静态对象的地址</span></span><br><span class="line">devices_[device_name] = dev;</span><br></pre></td></tr></table></figure>
+
+<p>这些设备对象是 <code>Singleton&lt;T&gt;</code> 的静态实例，生命周期是整个程序。<code>MainNode</code> 只是&quot;借用&quot;它们来读取数据，不拥有、不负责销毁。</p>
+<p><strong>裸指针在这里是正确的——因为它准确传达了&quot;非所有权引用&quot;的语义。</strong> 如果换成 <code>shared_ptr</code>，反而会误导读者：难道 MainNode 参与了设备对象的生命周期管理？</p>
+<h2 id="三、真正的问题：你来回答"><a href="#三、真正的问题：你来回答" class="headerlink" title="三、真正的问题：你来回答"></a>三、真正的问题：你来回答</h2><p>同一个项目，裸指针有时是 bug，有时是最佳实践。差别不在指针类型，在这一个问题：</p>
+<blockquote>
+<p><strong>这段代码里，谁拥有这个对象？</strong></p>
+</blockquote>
+<ul>
+<li><p><code>AisVdmMessage</code>：<code>decode_payload</code> 创建，调用方接收。所有权从被调用方<strong>转移</strong>到调用方。所以应该用 <code>unique_ptr</code> 显式标注这个转移。</p>
+</li>
+<li><p><code>BeiDou</code> 设备：<code>Singleton&lt;T&gt;</code> 拥有，<code>DeviceManager</code> 索引，<code>MainNode</code> 借用。<code>MainNode</code> 不拥有，所以裸指针。</p>
+</li>
+</ul>
+<p>你不需要在每一次写 <code>new</code> 的时候问自己&quot;这里我该用 <code>unique_ptr</code> 还是裸指针&quot;。你只需要问：<strong>谁创建、谁销毁、有没有共享。</strong></p>
+<p>如果这三个问题你能回答清楚，指针类型自然就明确了。</p>
+<h2 id="四、决策框架"><a href="#四、决策框架" class="headerlink" title="四、决策框架"></a>四、决策框架</h2><table>
+<thead>
+<tr>
+<th>你创建了对象？</th>
+<th>你负责销毁？</th>
+<th>别人也共享？</th>
+<th>用什么</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>是</td>
+<td>是</td>
+<td>否</td>
+<td><code>unique_ptr</code></td>
+<td>工厂函数返回新对象，调用方独占</td>
+</tr>
+<tr>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+<td><code>shared_ptr</code></td>
+<td>多个模块持有同一配置对象</td>
+</tr>
+<tr>
+<td>否</td>
+<td>否</td>
+<td>—</td>
+<td>裸指针 &#x2F; 引用</td>
+<td>观察者模式、缓存指向静态单例的指针</td>
+</tr>
+<tr>
+<td>是（特殊内存）</td>
+<td>是</td>
+<td>否</td>
+<td>placement new &#x2F; 自定义删除器</td>
+<td>内存池、共享内存、GPU 显存</td>
+</tr>
+<tr>
+<td>跨 DLL 边界</td>
+<td>—</td>
+<td>—</td>
+<td>裸指针 + 工厂销毁函数</td>
+<td>ABI 兼容性要求</td>
+</tr>
+</tbody></table>
+<p><strong>关键判断不是&quot;这个指针类型叫什么&quot;，而是&quot;谁创建、谁销毁、有没有共享&quot;。</strong></p>
+<p>框架的使用方法：</p>
+<ol>
+<li>看一眼你的代码，找到所有 <code>new</code>。</li>
+<li>问：这个 <code>new</code> 出来的对象，谁负责 <code>delete</code>？</li>
+<li>如果答案&quot;不明确&quot;或&quot;看情况&quot;——那就是 bug 埋藏的地方。</li>
+<li>如果答案明确——unique_ptr（独占）、shared_ptr（共享）、裸指针（借用），选哪一个自然就知道了。</li>
+</ol>
+<h2 id="五、-智能指针是黑盒-的幻觉"><a href="#五、-智能指针是黑盒-的幻觉" class="headerlink" title="五、&quot;智能指针是黑盒&quot;的幻觉"></a>五、&quot;智能指针是黑盒&quot;的幻觉</h2><p>说 <code>unique_ptr</code> 是黑盒的人，通常有一个隐含假设：手动 <code>new</code>&#x2F;<code>delete</code> 比 <code>unique_ptr</code> 更&quot;可控&quot;。</p>
+<p>但实际项目里——</p>
+<p>对象经历 3 层调用链，从 <code>decode_payload</code> 到 <code>process_message</code> 到 <code>processRaw</code>，每一层都可能提前 return、都可能抛异常、都可能被新来的同事插入一个分支。你觉得你能追踪每一条路径上的 <code>delete</code>？</p>
+<p><strong>unique_ptr 的析构是确定性的、可预测的——离开作用域就释放。</strong> 这等价于你在作用域末尾写了一个永远不会被跳过的 <code>delete</code>。这不是&quot;黑盒&quot;，这是&quot;编译器帮你执行了你本来就应该写的 delete&quot;。</p>
+<p>编译器不会忘，你会。</p>
+<h2 id="六、C-真正的魅力"><a href="#六、C-真正的魅力" class="headerlink" title="六、C++ 真正的魅力"></a>六、C++ 真正的魅力</h2><p>C++ 的魅力不是&quot;可以手动管理每一字节&quot;。</p>
+<p>C++ 的魅力是：<strong>你可以选择用什么样的抽象来管理资源。</strong></p>
+<ul>
+<li>Rust 强制你使用所有权系统——<code>unique_ptr</code> 的 Rust 版本叫 <code>Box</code>，而且你没得选。</li>
+<li>C 完全不管——你手上只有 <code>malloc</code> 和 <code>free</code>，爱怎么用怎么用。</li>
+<li>C++ 在中间——给你 <code>unique_ptr</code>、<code>shared_ptr</code>、裸指针、placement new、自定义分配器，但<strong>让你自己选</strong>。</li>
+</ul>
+<p>选择什么不反映你对语言的熟悉程度，反映你对正在解决的问题的理解深度。</p>
+<p>用 <code>unique_ptr</code> 不是说&quot;我不懂手动内存管理&quot;，而是说&quot;我分析了这段代码的所有权关系，结论是这个对象应该被独占拥有，所以我选择用 <code>unique_ptr</code> 来让编译器替我执行这件机械的事，把我的精力留给更重要的设计决策&quot;。</p>
+<p><strong>C++ 不强迫你做对的事。它只是给你足够的工具，等你做错的时候，让 Valgrind 来告诉你。</strong></p>
+<h2 id="七、一个简单的习惯"><a href="#七、一个简单的习惯" class="headerlink" title="七、一个简单的习惯"></a>七、一个简单的习惯</h2><p>下次写 <code>new</code> 的时候，停一秒，回答三个问题：</p>
+<ol>
+<li>谁拥有这个对象？（哪个模块、哪个类、哪个函数）</li>
+<li>它什么时候被销毁？（请求结束？程序退出？引用计数归零？）</li>
+<li>销毁操作由谁触发？是显式调用，还是自动析构？</li>
+</ol>
+<p>如果你答不出第 1 个——停下来，先想清楚设计。<br>如果你答得出第 1 个但答不出第 2、3 个——用 <code>unique_ptr</code>，让编译器帮你答。<br>如果你全部答得出——裸指针还是智能指针，你自然知道。</p>
+<p>这不是语法问题，是设计问题。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/cpp-smart-pointer-ownership/">https://hespethorn.github.io/posts/cpp-smart-pointer-ownership/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/">智能指针</a><a class="post-meta__tags" href="/tags/%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/">内存管理</a><a class="post-meta__tags" href="/tags/%E6%89%80%E6%9C%89%E6%9D%83/">所有权</a><a class="post-meta__tags" href="/tags/RAII/">RAII</a><a class="post-meta__tags" href="/tags/unique-ptr/">unique_ptr</a><a class="post-meta__tags" href="/tags/%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5/">最佳实践</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">535</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">586</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">71</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-service-shutdown-order/" title="你的 C++ 服务 stop() 顺序很可能有问题">你的 C++ 服务 stop() 顺序很可能有问题</a><time datetime="2026-06-10T12:44:32.000Z" title="Created 2026-06-10 20:44:32">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-smart-pointer-ownership/" title="C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;">C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;</a><time datetime="2026-06-10T12:30:00.000Z" title="Created 2026-06-10 20:30:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-10T12:30:00.000Z" title="Created 2026-06-10 20:30:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-08T12:15:00.000Z" title="Created 2026-06-08 20:15:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-05T12:15:00.000Z" title="Created 2026-06-05 20:15:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-06-01T12:30:00.000Z" title="Created 2026-06-01 20:30:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-31T12:30:00.000Z" title="Created 2026-05-31 20:30:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-25T12:30:00.000Z" title="Created 2026-05-25 20:30:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-20T13:23:00.000Z" title="Created 2026-05-20 21:23:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-13T12:17:00.000Z" title="Created 2026-05-13 20:17:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-15T12:45:00.000Z" title="Created 2026-04-15 20:45:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-12T12:45:00.000Z" title="Created 2026-04-12 20:45:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-service-shutdown-order/" title="你的 C++ 服务 stop() 顺序很可能有问题">你的 C++ 服务 stop() 顺序很可能有问题</a><time datetime="2026-06-10T12:44:32.000Z" title="Created 2026-06-10 20:44:32">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-smart-pointer-ownership/" title="C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;">C++ 智能指针之争：问题不是&quot;用哪个&quot;，而是&quot;谁拥有这个对象&quot;</a><time datetime="2026-06-10T12:30:00.000Z" title="Created 2026-06-10 20:30:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-10T12:30:00.000Z" title="Created 2026-06-10 20:30:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-08T12:15:00.000Z" title="Created 2026-06-08 20:15:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d4e5f6a7/" title="青石渠的管水人">青石渠的管水人</a><time datetime="2026-06-08T02:00:00.000Z" title="Created 2026-06-08 10:00:00">2026-06-08</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Leetcode/">LeetCode</a><a href="/tags/Python/">Python</a></li><li><a href="/tags/C++/">C++</a><a href="/tags/GO/">GO</a></li><li><a href="/tags/Linux/">Linux</a><a href="/tags/English/">English</a></li><li><a href="/categories/热门导读/">热门导读</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly/source/js/search/local-search.min.js"></script></div></div></body></html>
