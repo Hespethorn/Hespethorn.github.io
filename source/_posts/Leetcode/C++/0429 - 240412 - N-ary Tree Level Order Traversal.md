@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - tree
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 541cfd3d
 date: 2023-12-22 20:47:00
 ---

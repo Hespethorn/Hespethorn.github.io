@@ -7,7 +7,7 @@ tags:
   - 函数
 categories:
   - C-Code
-series: Leecode
+series: Leetcode-Cpp
 abbrlink: 57fc8873
 date: 2023-03-11 19:21:00
 ---

@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - 动态规划
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: fc74f62
 date: 2023-05-30 21:33:00
 ---

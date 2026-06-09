@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - Stack
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 64e2f268
 date: 2024-03-26 19:01:00
 ---

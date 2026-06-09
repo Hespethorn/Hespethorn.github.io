@@ -4,7 +4,7 @@ tags:
   - queue
 categories:
   - Lists
-series: Leecode
+series: Leetcode-Cpp
 abbrlink: ab971fff
 date: 2023-03-14 20:47:00
 ---

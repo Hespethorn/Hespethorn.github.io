@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - 双指针
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 277ebfd
 date: 2023-06-24 21:33:00
 ---

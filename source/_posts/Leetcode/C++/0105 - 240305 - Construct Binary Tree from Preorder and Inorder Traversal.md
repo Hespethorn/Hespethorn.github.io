@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - 哈希表
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: e37153b2
 date: 2023-08-21 21:40:00
 ---

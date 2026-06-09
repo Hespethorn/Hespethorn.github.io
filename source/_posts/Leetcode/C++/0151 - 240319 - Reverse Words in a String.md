@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - String
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: ef2e4aa2
 date: 2023-10-01 19:57:00
 ---

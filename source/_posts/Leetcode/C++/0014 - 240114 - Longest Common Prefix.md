@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - string
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: fe879b15
 date: 2023-02-14 22:25:00
 ---

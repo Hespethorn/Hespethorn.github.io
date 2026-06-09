@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - 动态规划
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 1eceaa5c
 date: 2023-05-25 20:12:00
 ---

@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - 贪心算法
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 3465f1c0
 date: 2023-05-08 19:44:00
 ---

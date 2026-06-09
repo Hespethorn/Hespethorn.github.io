@@ -6,7 +6,7 @@ tags:
 categories:
   - Leetcode
   - 双指针
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: '18417049'
 date: 2024-03-15 23:26:00
 ---

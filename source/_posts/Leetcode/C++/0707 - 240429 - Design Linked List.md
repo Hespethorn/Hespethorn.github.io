@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - List
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: fb67fadc
 date: 2024-02-20 19:30:00
 ---

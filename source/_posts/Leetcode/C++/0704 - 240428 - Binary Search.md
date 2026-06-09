@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - 二分查找
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 34d48a6b
 date: 2024-02-18 21:53:00
 ---

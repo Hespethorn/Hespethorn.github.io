@@ -6,7 +6,7 @@ tags:
 categories:
   - Leetcode
   - 二分查找
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 80ebb657
 date: 2023-01-15 23:12:00
 ---

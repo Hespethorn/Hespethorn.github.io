@@ -5,7 +5,7 @@ tags:
 categories:
   - Leetcode
   - List
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: b31fb8df
 date: 2023-03-19 19:32:00
 ---

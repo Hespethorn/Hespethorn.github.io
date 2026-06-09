@@ -8,7 +8,7 @@ tags:
   - 整数溢出
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp-Python
 abbrlink: 'f2a3b4d5'
 date: 2024-02-06 22:17:00
 ---

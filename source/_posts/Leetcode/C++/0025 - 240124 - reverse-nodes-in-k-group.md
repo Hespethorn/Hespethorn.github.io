@@ -4,7 +4,7 @@ tags:
   - C++
 categories:
   - List
-series: Leecode
+series: Leetcode-Cpp
 abbrlink: '769e4480'
 date: 2023-03-21 19:36:00
 ---

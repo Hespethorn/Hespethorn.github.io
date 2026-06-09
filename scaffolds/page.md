@@ -9,7 +9,7 @@ tags:
 categories:
   - C-Code
   - Data Structures and Algorithms
-series: Leecode
+series: leetcode
 abbrlink: 
 
 ---

@@ -6,7 +6,7 @@ tags:
 categories:
   - Leetcode
   - 递归
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: eed004f4
 date: 2023-10-22 22:18:00
 ---

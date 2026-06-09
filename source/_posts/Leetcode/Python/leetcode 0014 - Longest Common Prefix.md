@@ -7,7 +7,7 @@ tags:
   - 二分查找
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp-Python
 abbrlink: 'longest-common-prefix'
 date: 2024-02-16 20:55:00
 ---

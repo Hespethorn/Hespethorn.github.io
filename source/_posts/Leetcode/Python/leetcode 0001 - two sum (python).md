@@ -5,7 +5,7 @@ tags:
   - python
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp-Python
 abbrlink: a1b472a7
 date: 2024-01-02 19:23:00
 ---

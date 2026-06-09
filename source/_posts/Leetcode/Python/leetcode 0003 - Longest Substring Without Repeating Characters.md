@@ -7,7 +7,7 @@ tags:
   - 滑动窗口
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp-Python
 abbrlink: '3a5f8e01'
 date: 2024-01-12 20:45:00
 ---

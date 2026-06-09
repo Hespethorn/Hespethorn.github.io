@@ -7,7 +7,7 @@ tags:
   - 模拟
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp-Python
 abbrlink: 'c7d8e4a1'
 date: 2024-01-27 20:12:00
 ---
