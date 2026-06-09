@@ -12,7 +12,7 @@ categories:
   - 文章
 series: 文章
 abbrlink: lora-mesh-high-frequency-mqtt
-date: 2026-06-08 20:15:00
+date: 2026-06-08
 ---
 
 ## 零、一个看似自相矛盾的需求

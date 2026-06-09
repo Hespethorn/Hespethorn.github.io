@@ -10,9 +10,9 @@ tags:
   - 字符串
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'b2c6d9f3'
-date: 2024-01-22 23:11:00
+date: 2024-01-22
 ---
 
 # [5. Longest Palindromic Substring](https://leetcode.com/problems/longest-palindromic-substring/)

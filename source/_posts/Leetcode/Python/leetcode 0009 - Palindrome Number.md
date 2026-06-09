@@ -8,9 +8,9 @@ tags:
   - 双指针
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'c9d2e7f8'
-date: 2024-02-11 20:45:00
+date: 2024-02-11
 ---
 
 # [9. Palindrome Number](https://leetcode.com/problems/palindrome-number/)

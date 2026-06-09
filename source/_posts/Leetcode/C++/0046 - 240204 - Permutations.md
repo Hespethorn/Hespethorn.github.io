@@ -7,7 +7,7 @@ categories:
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: bffc8823
-date: 2023-05-01 22:41:00
+date: 2023-05-01
 ---
 
 ## [46. Permutations](https://leetcode.cn/problems/permutations/)

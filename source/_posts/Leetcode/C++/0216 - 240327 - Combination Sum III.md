@@ -7,7 +7,7 @@ categories:
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: 51ba5778
-date: 2023-10-30 22:01:00
+date: 2023-10-30
 ---
 
 ## [216. Combination Sum III](https://leetcode.cn/problems/combination-sum-iii/)

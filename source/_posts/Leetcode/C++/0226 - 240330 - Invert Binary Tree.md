@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: e977e474
-date: 2023-11-08 21:46:00
+date: 2023-11-08
 ---
 
 ## [226. Invert Binary Tree](https://leetcode.cn/problems/invert-binary-tree/)

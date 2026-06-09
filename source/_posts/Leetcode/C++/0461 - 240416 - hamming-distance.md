@@ -7,7 +7,7 @@ categories:
   - Leetcode
 series: Leetcode-Cpp
 abbrlink: '42330e94'
-date: 2024-01-10 20:24:00
+date: 2024-01-10
 ---
 
 ## [461. 汉明距离](https://leetcode.cn/problems/hamming-distance/)

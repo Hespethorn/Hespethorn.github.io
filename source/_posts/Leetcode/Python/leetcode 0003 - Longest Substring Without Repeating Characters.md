@@ -7,9 +7,9 @@ tags:
   - 滑动窗口
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: '3a5f8e01'
-date: 2024-01-12 20:45:00
+date: 2024-01-12
 ---
 
 # [3. Longest Substring Without Repeating Characters](https://leetcode.com/problems/longest-substring-without-repeating-characters/)

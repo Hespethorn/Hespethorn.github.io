@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: 3464d813
-date: 2024-02-12 20:33:54
+date: 2024-02-12
 ---
 
 Python的函数定义使用`def`关键字，与C++等语言不同，Python不使用大括号来标记函数体，而是依靠缩进来区分代码块。本文将详细介绍Python函数定义的方式和特点。

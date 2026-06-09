@@ -6,7 +6,7 @@ categories:
   - List
 series: Leetcode-Cpp
 abbrlink: '769e4480'
-date: 2023-03-21 19:36:00
+date: 2023-03-21
 ---
 
 ## [25. K 个一组翻转链表](https://leetcode.cn/problems/reverse-nodes-in-k-group/)

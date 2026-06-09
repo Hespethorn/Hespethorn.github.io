@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: 6f73d8d8
-date: 2024-01-02 19:47:00
+date: 2024-01-02
 ---
 
 Python是一种简单易学的编程语言，其基础语法非常直观。本文将详细介绍Python中的print函数使用、input函数输入以及注释的使用方法。

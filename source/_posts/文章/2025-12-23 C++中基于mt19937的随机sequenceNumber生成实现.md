@@ -7,7 +7,7 @@ categories:
   - Foundational Syntax and Core Concepts
 series: Foundational Syntax and Core Concepts
 abbrlink: 393e9a0a
-date: 2025-12-23 21:01:09
+date: 2025-12-23
 ---
 
 在网络通信、分布式系统、数据标识等场景中，sequenceNumber（序列号）是一个高频出现的核心元素。一个高质量的序列号生成方案需要满足随机性、唯一性（在一定范围内）、高性能等特性。

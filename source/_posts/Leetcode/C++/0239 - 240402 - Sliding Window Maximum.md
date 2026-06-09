@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: 8e61f05c
-date: 2023-11-19 20:21:00
+date: 2023-11-19
 ---
 
 ## [239. Sliding Window Maximum](https://leetcode.cn/problems/sliding-window-maximum/)

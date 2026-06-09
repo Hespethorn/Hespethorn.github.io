@@ -10,7 +10,7 @@ categories:
   - 文章
 series: 技术文章
 abbrlink: 2b3c4d5e
-date: 2026-02-15 10:00:00
+date: 2026-02-15
 ---
 
 ## 一、什么是 Claude Skills？

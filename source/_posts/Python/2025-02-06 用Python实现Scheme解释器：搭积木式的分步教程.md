@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-scheme-interpreter-tutorial
-date: 2025-02-06 20:27:15
+date: 2025-02-06
 ---
 
 ## 一、引言

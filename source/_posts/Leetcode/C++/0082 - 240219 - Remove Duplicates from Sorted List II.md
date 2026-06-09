@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 277ebfd
-date: 2023-06-24 21:33:00
+date: 2023-06-24
 ---
 
 ## [82. Remove Duplicates from Sorted List II](https://leetcode.cn/problems/remove-duplicates-from-sorted-list-ii/)

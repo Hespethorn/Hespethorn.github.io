@@ -7,7 +7,7 @@ categories:
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: '574072e1'
-date: 2023-06-17 22:22:00
+date: 2023-06-17
 ---
 
 ## [77. Combinations](https://leetcode.cn/problems/combinations/)

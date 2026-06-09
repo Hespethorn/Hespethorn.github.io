@@ -9,7 +9,7 @@ categories:
 series: C++
 abbrlink: ea55cb67
 title: C++ 中使用splice( )函数实现LRU算法
-date: 2024-06-21 23:04:15
+date: 2024-06-21
 ---
 
 # 导言

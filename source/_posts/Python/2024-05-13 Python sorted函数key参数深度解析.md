@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-sorted-key-parameter
-date: 2024-05-13 21:11:35
+date: 2024-05-13
 ---
 
 在Python中，sorted函数是一个强大的排序工具，而其中的key参数更是其最核心、最灵活的功能之一。本文将深入解析key参数的工作原理和使用技巧，帮助你在各种场景下优雅地实现排序需求。

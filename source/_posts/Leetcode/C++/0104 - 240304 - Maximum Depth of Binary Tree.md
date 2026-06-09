@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 9c415c5b
-date: 2023-08-17 19:21:00
+date: 2023-08-17
 ---
 
 ## [104. Maximum Depth of Binary Tree](https://leetcode.cn/problems/maximum-depth-of-binary-tree/)

@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-repr-vs-fstring
-date: 2024-12-26 21:42:19
+date: 2024-12-26
 ---
 
 ## 一、引言：字符串的两种面孔

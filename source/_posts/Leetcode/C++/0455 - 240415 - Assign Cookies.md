@@ -7,7 +7,7 @@ categories:
   - 贪心算法
 series: Leetcode-Cpp
 abbrlink: 3e66e07f
-date: 2024-01-05 23:16:00
+date: 2024-01-05
 ---
 
 ## [455. Assign Cookies](https://leetcode.cn/problems/assign-cookies/)

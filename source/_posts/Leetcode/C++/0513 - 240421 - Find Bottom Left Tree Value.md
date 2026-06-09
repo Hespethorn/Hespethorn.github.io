@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 72cf0114
-date: 2024-01-22 19:27:00
+date: 2024-01-22
 ---
 
 ## [513. Find Bottom Left Tree Value](https://leetcode.cn/problems/find-bottom-left-tree-value/)

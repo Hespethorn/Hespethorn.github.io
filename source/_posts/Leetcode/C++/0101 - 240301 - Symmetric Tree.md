@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: df366c05
-date: 2023-08-05 19:10:00
+date: 2023-08-05
 ---
 
 ## [101. Symmetric Tree](https://leetcode.cn/problems/symmetric-tree/)

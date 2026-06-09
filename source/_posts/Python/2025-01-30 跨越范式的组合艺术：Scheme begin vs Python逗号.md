@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-comma-vs-scheme-begin
-date: 2025-01-30 21:19:08
+date: 2025-01-30
 ---
 
 ## 一、核心定义与直觉

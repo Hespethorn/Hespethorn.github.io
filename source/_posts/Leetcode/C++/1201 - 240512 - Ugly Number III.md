@@ -7,7 +7,7 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: 267b35b5
-date: 2024-04-09 23:02:00
+date: 2024-04-09
 ---
 
 # [1201. Ugly Number III](https://leetcode.com/problems/ugly-number-iii/)

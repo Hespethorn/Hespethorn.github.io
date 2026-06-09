@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 8b3a0d01
-date: 2024-02-25 23:12:00
+date: 2024-02-25
 ---
 
 ## [825. Friends Of Appropriate Ages](https://leetcode.cn/problems/friends-of-appropriate-ages/)

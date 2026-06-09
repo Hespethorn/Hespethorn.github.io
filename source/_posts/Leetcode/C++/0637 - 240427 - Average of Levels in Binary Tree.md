@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 790b344d
-date: 2024-02-14 19:52:00
+date: 2024-02-14
 ---
 
 ## [637. Average of Levels in Binary Tree](https://leetcode.cn/problems/average-of-levels-in-binary-tree/)

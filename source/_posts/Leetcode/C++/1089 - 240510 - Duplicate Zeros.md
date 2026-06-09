@@ -8,7 +8,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 5ddd6610
-date: 2024-04-01 20:49:00
+date: 2024-04-01
 ---
 
 # [1089. Duplicate Zeros](https://leetcode.com/problems/duplicate-zeros/)

@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 8a031859
-date: 2023-11-29 21:03:00
+date: 2023-11-29
 ---
 
 ## [287. Find the Duplicate Number](https://leetcode.cn/problems/find-the-duplicate-number/)

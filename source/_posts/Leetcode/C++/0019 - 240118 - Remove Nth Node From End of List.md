@@ -7,7 +7,7 @@ categories:
   - List
 series: Leetcode-Cpp
 abbrlink: e0bb65fe
-date: 2023-03-01 22:21:00
+date: 2023-03-01
 ---
 
 ## [19. Remove Nth Node From End of List](https://leetcode.cn/problems/remove-nth-node-from-end-of-list/)

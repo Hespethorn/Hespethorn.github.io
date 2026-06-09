@@ -11,7 +11,7 @@ categories:
   - 文章
 series: 文章
 abbrlink: companies-graph-of-algorithms
-date: 2026-05-25 20:30:00
+date: 2026-05-25
 ---
 
 ## 一、核心命题：一切皆算法

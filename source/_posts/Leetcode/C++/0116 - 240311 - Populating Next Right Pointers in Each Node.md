@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 42c77b0c
-date: 2023-09-07 20:27:00
+date: 2023-09-07
 ---
 
 ## [116. Populating Next Right Pointers in Each Node](https://leetcode.cn/problems/populating-next-right-pointers-in-each-node/)

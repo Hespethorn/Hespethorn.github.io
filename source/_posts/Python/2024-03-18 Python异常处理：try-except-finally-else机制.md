@@ -11,7 +11,7 @@ categories:
   - Python
 series: Python
 abbrlink: 16a1976e
-date: 2024-03-18 23:30:52
+date: 2024-03-18
 ---
 
 Python的异常处理机制是一种强大的错误处理方式，使用try、except、finally和else关键字来捕获和处理程序运行过程中的错误。本文将详细介绍Python异常处理的各种用法。

@@ -7,7 +7,7 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: b1e67904
-date: 2023-02-04 22:03:00
+date: 2023-02-04
 ---
 
 # [11. Container With Most Water](https://leetcode.com/problems/container-with-most-water/)

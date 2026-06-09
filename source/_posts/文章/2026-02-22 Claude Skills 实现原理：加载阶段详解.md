@@ -10,7 +10,7 @@ categories:
   - 文章
 series: 技术文章
 abbrlink: 3c4d5e6f
-date: 2026-02-22 10:00:00
+date: 2026-02-22
 ---
 
 ## 一、从命令行到 Skill 加载

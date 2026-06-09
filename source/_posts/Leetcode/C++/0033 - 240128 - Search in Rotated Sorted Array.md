@@ -8,7 +8,7 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: a491ad2e
-date: 2023-04-06 20:19:00
+date: 2023-04-06
 ---
 
 # [33. Search in Rotated Sorted Array](https://leetcode.com/problems/search-in-rotated-sorted-array/)

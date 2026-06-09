@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-scheme-quote-explained
-date: 2025-02-20 22:31:19
+date: 2025-02-20
 ---
 
 ## 一、核心概念：求值规则

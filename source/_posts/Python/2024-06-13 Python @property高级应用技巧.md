@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-property-advanced-usage
-date: 2024-06-13 22:00:01
+date: 2024-06-13
 ---
 
 ## 一、数据校验与约束

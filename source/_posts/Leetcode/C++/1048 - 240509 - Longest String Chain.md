@@ -7,7 +7,7 @@ categories:
   - 递归
 series: Leetcode-Cpp
 abbrlink: 694b7d2
-date: 2024-03-30 19:04:00
+date: 2024-03-30
 ---
 
 ## [1048. Longest String Chain](https://leetcode.com/problems/longest-string-chain/)

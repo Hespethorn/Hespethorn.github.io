@@ -7,9 +7,9 @@ tags:
   - 排序
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: c8d9f3e2
-date: 2024-01-17 20:45:00
+date: 2024-01-17
 ---
 
 # [15. 3Sum](https://leetcode.com/problems/3sum/)

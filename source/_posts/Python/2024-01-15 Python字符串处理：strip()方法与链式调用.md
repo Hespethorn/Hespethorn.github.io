@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: c9d4403c
-date: 2024-01-15 23:11:50
+date: 2024-01-15
 ---
 
 Python的字符串方法是非常强大的工具，其中`strip()`系列方法是处理用户输入和字符串清洗时最常用的函数之一。本文将详细介绍Python字符串的`strip()`方法以及其他常用的字符串处理方法。

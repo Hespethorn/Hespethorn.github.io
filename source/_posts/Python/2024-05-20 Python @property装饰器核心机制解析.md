@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-property-decorator-core
-date: 2024-05-20 21:50:02
+date: 2024-05-20
 ---
 
 ## 引言

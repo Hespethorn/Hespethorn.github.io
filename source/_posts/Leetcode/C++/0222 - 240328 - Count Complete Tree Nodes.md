@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 8b563592
-date: 2023-11-01 19:28:00
+date: 2023-11-01
 ---
 
 ## [222. Count Complete Tree Nodes](https://leetcode.cn/problems/count-complete-tree-nodes/)

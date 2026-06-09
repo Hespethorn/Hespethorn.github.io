@@ -8,7 +8,7 @@ tags:
 categories: Linux
 series: Linux
 abbrlink: ae1b13b2
-date: 2023-02-09 20:37:13
+date: 2023-02-09
 ---
 
 ### 一、`pthread` 库概述

@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: b659dbb2
-date: 2024-03-23 22:27:00
+date: 2024-03-23
 ---
 
 ## [1023. Camelcase Matching](https://leetcode.com/problems/camelcase-matching/)

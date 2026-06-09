@@ -7,9 +7,9 @@ tags:
   - 整数溢出
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'e1f2a3c4'
-date: 2024-02-01 21:35:00
+date: 2024-02-01
 ---
 
 # [7. Reverse Integer](https://leetcode.com/problems/reverse-integer/)

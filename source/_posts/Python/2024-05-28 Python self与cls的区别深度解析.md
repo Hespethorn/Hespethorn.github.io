@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-self-vs-cls
-date: 2024-05-28 20:55:05
+date: 2024-05-28
 ---
 
 ## 一、核心区别对比

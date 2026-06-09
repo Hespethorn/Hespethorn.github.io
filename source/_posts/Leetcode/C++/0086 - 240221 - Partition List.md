@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 1110ab66
-date: 2023-07-02 19:27:00
+date: 2023-07-02
 ---
 
 ## [86. Partition List](https://leetcode.cn/problems/partition-list/)

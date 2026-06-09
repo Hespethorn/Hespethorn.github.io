@@ -9,10 +9,10 @@ categories:
   - 字符串
 series: Leetcode-Cpp
 abbrlink: d9e0f5b2
-date: 2023-01-17 21:10:00
+date: 2023-01-17
 ---
 
-------
+
 
 # [6. Zigzag Conversion](https://leetcode.com/problems/zigzag-conversion/)
 
@@ -243,4 +243,4 @@ public:
 
 **推荐方向模拟法**：代码逻辑与人对 Z 字形的直觉完全一致——"向下走到底，再向上走到顶"，三句话讲清。直接索引法的周期公式虽然优雅，但面试中容易因下标计算失误写出 bug。
 
-------
+

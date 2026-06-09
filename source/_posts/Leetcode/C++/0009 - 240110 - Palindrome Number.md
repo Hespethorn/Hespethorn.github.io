@@ -7,7 +7,7 @@ categories:
   - string
 series: Leetcode-Cpp
 abbrlink: 7f1b9ffc
-date: 2023-01-29 20:48:00
+date: 2023-01-29
 ---
 
 # [9. Palindrome Number](https://leetcode.com/problems/palindrome-number/)

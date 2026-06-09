@@ -7,7 +7,7 @@ categories:
   - 贪心算法
 series: Leetcode-Cpp
 abbrlink: 3465f1c0
-date: 2023-05-08 19:44:00
+date: 2023-05-08
 ---
 
 ## [53. Maximum Subarray](https://leetcode.cn/problems/maximum-subarray/)

@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: ad3b6ff4
-date: 2023-07-26 22:33:00
+date: 2023-07-26
 ---
 
 ## [98. Validate Binary Search Tree](https://leetcode.cn/problems/validate-binary-search-tree/)

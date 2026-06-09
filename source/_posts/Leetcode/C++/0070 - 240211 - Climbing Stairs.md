@@ -7,7 +7,7 @@ categories:
   - 动态规划
 series: Leetcode-Cpp
 abbrlink: 1eceaa5c
-date: 2023-05-25 20:12:00
+date: 2023-05-25
 ---
 
 # [70. Climbing Stairs](https://leetcode.com/problems/climbing-stairs/)

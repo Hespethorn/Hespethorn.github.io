@@ -8,9 +8,9 @@ tags:
   - 递归
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'regex-matching-dp'
-date: 2024-02-17 20:47:00
+date: 2024-02-17
 ---
 
 # [10. Regular Expression Matching](https://leetcode.com/problems/regular-expression-matching/)

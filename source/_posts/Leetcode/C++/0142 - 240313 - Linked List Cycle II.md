@@ -7,7 +7,7 @@ categories:
   - List
 series: Leetcode-Cpp
 abbrlink: 501d35ad
-date: 2023-09-13 21:13:00
+date: 2023-09-13
 ---
 
 ## [142. Linked List Cycle II](https://leetcode.cn/problems/linked-list-cycle-ii/)

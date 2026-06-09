@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-match-vs-cpp-switch-vs-scheme-cond
-date: 2025-01-23 20:47:33
+date: 2025-01-23
 ---
 
 ## 一、基础语法与形态对比

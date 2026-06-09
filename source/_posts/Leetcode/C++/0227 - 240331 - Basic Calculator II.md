@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: cb0c2dcd
-date: 2023-11-12 20:15:00
+date: 2023-11-12
 ---
 
 ## [227. Basic Calculator II](https://leetcode.cn/problems/basic-calculator-ii/)

@@ -5,7 +5,7 @@ tags:
 categories: Essays
 series: 个人文章
 abbrlink: fcebd492
-date: 2022-12-19 21:18:11
+date: 2022-12-19
 ---
 
 ## 一、个人成长的七个普遍原则

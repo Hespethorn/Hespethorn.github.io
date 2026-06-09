@@ -8,7 +8,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-str-format-deep-dive
-date: 2025-01-09 21:33:47
+date: 2025-01-09
 ---
 
 ## 一、引言：从"老式"到"新式"的进化

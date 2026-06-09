@@ -8,7 +8,7 @@ categories:
   - Foundational Syntax and Core Concepts
 series: C++
 abbrlink: a9e5787b
-date: 2024-10-20 22:00:06
+date: 2024-10-20
 ---
 ## 一、std::function —— 可调用对象的 "万能容器"
 

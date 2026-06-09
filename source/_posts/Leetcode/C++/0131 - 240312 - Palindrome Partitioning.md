@@ -7,7 +7,7 @@ categories:
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: f9b1fe92
-date: 2023-09-09 21:14:00
+date: 2023-09-09
 ---
 
 ## [131. Palindrome Partitioning](https://leetcode.cn/problems/palindrome-partitioning/)

@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 559d22c1
-date: 2023-03-29 22:31:00
+date: 2023-03-29
 ---
 
 # [27. Remove Element](https://leetcode.com/problems/remove-element/)

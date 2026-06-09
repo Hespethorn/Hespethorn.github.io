@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: 1276b97d
-date: 2024-01-05 21:23:00
+date: 2024-01-05
 ---
 
 Python的f-string是一种强大的字符串格式化方式，它允许在字符串中直接嵌入表达式。本文将详细介绍f-string的用法和特点。

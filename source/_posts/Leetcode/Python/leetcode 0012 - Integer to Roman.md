@@ -8,9 +8,9 @@ tags:
   - match-case
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'integer-to-roman'
-date: 2024-02-27 20:51:00
+date: 2024-02-27
 ---
 
 # [12. Integer to Roman](https://leetcode.com/problems/integer-to-roman/)

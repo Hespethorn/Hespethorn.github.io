@@ -7,7 +7,7 @@ categories:
   - string
 series: Leetcode-Cpp
 abbrlink: 1daf065e
-date: 2023-01-20 21:21:00
+date: 2023-01-20
 ---
 
 # [7. Reverse Integer](https://leetcode.com/problems/reverse-integer/)

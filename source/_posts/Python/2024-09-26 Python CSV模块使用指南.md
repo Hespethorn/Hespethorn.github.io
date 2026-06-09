@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-csv-module-guide
-date: 2024-09-26 20:03:50
+date: 2024-09-26
 ---
 
 ## 一、什么是CSV？

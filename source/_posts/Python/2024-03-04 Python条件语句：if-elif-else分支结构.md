@@ -11,7 +11,7 @@ categories:
   - Python
 series: Python
 abbrlink: 70c320a5
-date: 2024-03-04 19:55:55
+date: 2024-03-04
 ---
 
 Python的条件语句用于根据不同的条件执行不同的代码块。本文将详细介绍Python中if、elif、else条件语句的使用方法。

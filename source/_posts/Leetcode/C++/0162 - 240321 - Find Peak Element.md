@@ -7,10 +7,10 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: 5783eb6c
-date: 2023-10-09 23:07:00
+date: 2023-10-09
 ---
 
-------
+
 
 # [162. Find Peak Element](https://leetcode.com/problems/find-peak-element/)
 

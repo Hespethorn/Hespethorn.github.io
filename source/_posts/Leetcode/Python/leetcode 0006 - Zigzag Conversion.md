@@ -7,9 +7,9 @@ tags:
   - 模拟
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'c7d8e4a1'
-date: 2024-01-27 20:12:00
+date: 2024-01-27
 ---
 
 # [6. Zigzag Conversion](https://leetcode.com/problems/zigzag-conversion/)

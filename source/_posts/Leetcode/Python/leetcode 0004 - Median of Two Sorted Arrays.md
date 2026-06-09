@@ -7,9 +7,9 @@ tags:
   - 双指针
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: '4b6e9c02'
-date: 2024-01-17 22:18:00
+date: 2024-01-17
 ---
 
 # [4. Median of Two Sorted Arrays](https://leetcode.com/problems/median-of-two-sorted-arrays/)

@@ -7,7 +7,7 @@ categories:
   - 矩阵
 series: Leetcode-Cpp
 abbrlink: 876d5341
-date: 2023-05-04 23:15:00
+date: 2023-05-04
 ---
 
 ## [48. Rotate Image](https://leetcode.cn/problems/rotate-image/)

@@ -7,7 +7,7 @@ categories:
   - 动态规划
 series: Leetcode-Cpp
 abbrlink: fc74f62
-date: 2023-05-30 21:33:00
+date: 2023-05-30
 ---
 
 ## [72. Edit Distance](https://leetcode.cn/problems/edit-distance/)

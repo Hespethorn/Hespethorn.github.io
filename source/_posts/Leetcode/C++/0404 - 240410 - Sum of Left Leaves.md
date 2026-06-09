@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 93483f08
-date: 2023-12-15 22:20:00
+date: 2023-12-15
 ---
 
 ## [404. Sum of Left Leaves](https://leetcode.cn/problems/sum-of-left-leaves/)

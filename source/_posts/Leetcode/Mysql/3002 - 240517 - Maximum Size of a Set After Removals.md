@@ -7,7 +7,7 @@ categories:
   - Hash
 series: Leetcode-Cpp-Mysql
 abbrlink: d384b331
-date: 2024-04-28 20:57:00
+date: 2024-04-28
 ---
 
 ## [3002. Maximum Size of a Set After Removals](https://leetcode.cn/problems/maximum-size-of-a-set-after-removals/)

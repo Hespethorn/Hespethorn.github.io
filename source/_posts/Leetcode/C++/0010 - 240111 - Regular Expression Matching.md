@@ -7,7 +7,7 @@ categories:
   - 动态规划
 series: Leetcode-Cpp
 abbrlink: b8d9b34
-date: 2023-02-01 19:20:00
+date: 2023-02-01
 ---
 
 ## [10. Regular Expression Matching](https://leetcode.cn/problems/regular-expression-matching/)

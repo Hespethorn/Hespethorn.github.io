@@ -7,7 +7,7 @@ categories:
   - 哈希表
 series: Leetcode-Cpp
 abbrlink: 3be42325
-date: 2023-06-03 21:26:00
+date: 2023-06-03
 ---
 
 # [73. Set Matrix Zeroes](https://leetcode.com/problems/set-matrix-zeroes/)

@@ -7,7 +7,7 @@ categories:
   - 哈希表
 series: Leetcode-Cpp
 abbrlink: e37153b2
-date: 2023-08-21 21:40:00
+date: 2023-08-21
 ---
 
 # [105. Construct Binary Tree from Preorder and Inorder Traversal](https://leetcode.com/problems/construct-binary-tree-from-preorder-and-inorder-traversal/)

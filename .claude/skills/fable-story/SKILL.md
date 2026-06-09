@@ -35,7 +35,7 @@ categories:
   - 寓言故事
 series: 寓言故事
 abbrlink: <8位随机hex>
-date: <当前日期和时间，格式 YYYY-MM-DD HH:MM:00，如 2026-06-08 15:30:00>
+date: <当前日期，格式 YYYY-MM-DD，如 2026-06-08>
 ---
 ```
 

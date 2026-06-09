@@ -5,9 +5,9 @@ tags:
   - 递归
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: '63048128'
-date: 2024-01-07 21:07:00
+date: 2024-01-07
 ---
 
 # [2. Add Two Numbers](https://leetcode.com/problems/add-two-numbers/)

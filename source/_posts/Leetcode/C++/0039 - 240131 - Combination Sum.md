@@ -7,7 +7,7 @@ categories:
   - null
 series: Leetcode-Cpp
 abbrlink: 1af886ae
-date: 2023-04-15 22:56:00
+date: 2023-04-15
 ---
 
 ## [39. Combination Sum](https://leetcode.cn/problems/combination-sum/)

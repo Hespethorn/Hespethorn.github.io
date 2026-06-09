@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: a5569a6f
-date: 2023-09-28 20:26:00
+date: 2023-09-28
 ---
 
 ## [150. Evaluate Reverse Polish Notation](https://leetcode.cn/problems/evaluate-reverse-polish-notation/)

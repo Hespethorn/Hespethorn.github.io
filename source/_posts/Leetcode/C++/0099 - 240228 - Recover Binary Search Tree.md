@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: b20ae183
-date: 2023-07-28 19:49:00
+date: 2023-07-28
 ---
 
 ## [99. Recover Binary Search Tree](https://leetcode.cn/problems/recover-binary-search-tree/)

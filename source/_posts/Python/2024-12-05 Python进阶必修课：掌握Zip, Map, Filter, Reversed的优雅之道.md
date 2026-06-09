@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-zip-map-filter-reversed
-date: 2024-12-05 20:33:17
+date: 2024-12-05
 ---
 
 ## 一、引言：告别冗长的 For 循环

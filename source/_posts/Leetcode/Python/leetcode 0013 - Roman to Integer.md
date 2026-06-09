@@ -7,9 +7,9 @@ tags:
   - 字符串
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'roman-to-integer-py'
-date: 2024-03-04 20:53:00
+date: 2024-03-04
 ---
 
 # [13. Roman to Integer](https://leetcode.com/problems/roman-to-integer/)

@@ -17,7 +17,7 @@ argument-hint: <题号. 题目名>
 
 ## 日期规则
 
-日期从 2024.01.02 开始，每篇新文章比上一篇晚 5 天，时间随机在 19:00 - 23:30。
+日期从 2024.01.02 开始，每篇新文章比上一篇晚 5 天。
 
 ## Front-matter 模板
 
@@ -32,7 +32,7 @@ categories:
   - Leetcode
 series: Leetcode
 abbrlink:
-date: YYYY-MM-DD HH:MM:00
+date: YYYY-MM-DD
 ---
 ```
 

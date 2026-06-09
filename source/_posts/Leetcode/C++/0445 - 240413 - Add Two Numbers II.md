@@ -7,7 +7,7 @@ categories:
   - null
 series: Leetcode-Cpp
 abbrlink: ae61c030
-date: 2023-12-27 20:07:00
+date: 2023-12-27
 ---
 
 ## [445. Add Two Numbers II](https://leetcode.cn/problems/add-two-numbers-ii/)

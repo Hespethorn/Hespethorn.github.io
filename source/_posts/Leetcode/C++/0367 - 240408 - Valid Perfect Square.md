@@ -7,7 +7,7 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: daa261f7
-date: 2023-12-09 21:01:00
+date: 2023-12-09
 ---
 
 # [367. Valid Perfect Square](https://leetcode.cn/problems/valid-perfect-square/)

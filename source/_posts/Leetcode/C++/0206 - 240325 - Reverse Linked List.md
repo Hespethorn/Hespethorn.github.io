@@ -8,7 +8,7 @@ categories:
   - 递归
 series: Leetcode-Cpp
 abbrlink: eed004f4
-date: 2023-10-22 22:18:00
+date: 2023-10-22
 ---
 
 # [206. Reverse Linked List](https://leetcode.com/problems/reverse-linked-list/description/)

@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 541cfd3d
-date: 2023-12-22 20:47:00
+date: 2023-12-22
 ---
 
 ## [429. N-ary Tree Level Order Traversal](https://leetcode.cn/problems/n-ary-tree-level-order-traversal/)

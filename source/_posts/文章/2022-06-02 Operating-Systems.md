@@ -8,7 +8,7 @@ tags:
 categories: Operating-Systems
 series: Operating-Systems
 abbrlink: e308a55d
-date: 2022-06-02 23:41:05
+date: 2022-06-02
 swiper_index: 1
 description: If you give someone a program,you will frustrate them for a day; if you teach them how to program,you will frustrate them for a lifetime.
 ---

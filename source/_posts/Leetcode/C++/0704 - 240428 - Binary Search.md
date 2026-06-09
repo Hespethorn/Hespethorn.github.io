@@ -7,7 +7,7 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: 34d48a6b
-date: 2024-02-18 21:53:00
+date: 2024-02-18
 ---
 
 # [704. Binary Search](https://leetcode.cn/problems/binary-search/)

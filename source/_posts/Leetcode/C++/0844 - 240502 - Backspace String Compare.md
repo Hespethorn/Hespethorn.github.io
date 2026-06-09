@@ -8,7 +8,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: d9f37d2f
-date: 2024-03-01 21:53:00
+date: 2024-03-01
 ---
 
 # [844. Backspace String Compare](https://leetcode.com/problems/backspace-string-compare/)

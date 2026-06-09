@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 2cbb7af4
-date: 2023-11-23 21:10:00
+date: 2023-11-23
 ---
 
 ## [257. Binary Tree Paths](https://leetcode.cn/problems/binary-tree-paths/)

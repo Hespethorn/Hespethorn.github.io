@@ -11,7 +11,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-testing-pytest
-date: 2024-04-22 21:02:54
+date: 2024-04-22
 ---
 
 Python提供了多种测试工具，其中pytest是最流行的单元测试框架之一。本文将介绍Python中的assert语句以及pytest框架的基本用法。

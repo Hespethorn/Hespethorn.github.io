@@ -12,7 +12,7 @@ categories:
   - 文章
 series: 文章
 abbrlink: mesh-networks-meshtastic-reticulum
-date: 2026-05-31 20:30:00
+date: 2026-05-31
 ---
 
 ## 一、一个 ISP 老板的"觉醒"

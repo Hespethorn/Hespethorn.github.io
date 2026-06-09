@@ -5,9 +5,9 @@ tags:
   - 递归
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: 92a3ae0a
-date: 2023-01-04 22:07:00
+date: 2023-01-04
 ---
 
 # [2. Add Two Numbers](https://leetcode.com/problems/add-two-numbers/)
@@ -44,7 +44,7 @@ Output: [8,9,9,9,0,0,0,1]
 
 给定两个逆序存储数字各位的非空链表（如 `2->4->3` 表示 342），将这两个数相加并以链表形式返回结果。假设两数除 0 外无前导零，需处理进位情况。
 
-------
+
 
 ## 解题思路
 
@@ -85,7 +85,7 @@ Output: [8,9,9,9,0,0,0,1]
 - **内存管理**：使用 `calloc` 自动初始化节点值为 0，避免手动设置。
 - **鲁棒性**：明确处理内存分配失败的情况（返回 NULL）。
 
-------
+
 
 ## 代码实现
 

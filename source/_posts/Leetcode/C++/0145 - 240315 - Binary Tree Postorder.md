@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: '60640130'
-date: 2023-09-18 22:21:00
+date: 2023-09-18
 ---
 
 ## [145. Binary Tree Postorder Traversal](https://leetcode.cn/problems/binary-tree-postorder-traversal/)

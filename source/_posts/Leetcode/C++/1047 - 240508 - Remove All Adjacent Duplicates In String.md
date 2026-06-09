@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: 64e2f268
-date: 2024-03-26 19:01:00
+date: 2024-03-26
 ---
 
 ## [1047. Remove All Adjacent Duplicates In String](https://leetcode.cn/problems/remove-all-adjacent-duplicates-in-string/)

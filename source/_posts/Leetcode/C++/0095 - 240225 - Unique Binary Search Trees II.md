@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: 40fcd2a9
-date: 2023-07-19 21:28:00
+date: 2023-07-19
 ---
 
 ## [95. Unique Binary Search Trees II](https://leetcode.cn/problems/unique-binary-search-trees-ii/)

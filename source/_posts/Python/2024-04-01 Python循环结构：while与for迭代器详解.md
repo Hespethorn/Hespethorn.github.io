@@ -12,7 +12,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-loops-while-for
-date: 2024-04-01 20:05:11
+date: 2024-04-01
 ---
 
 Python提供了两种主要的循环结构：while循环和for循环。本文将详细介绍这两种循环的使用方法，以及range()迭代器的使用。

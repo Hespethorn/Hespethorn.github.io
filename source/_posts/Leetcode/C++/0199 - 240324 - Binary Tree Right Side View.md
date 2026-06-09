@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: c12f9af1
-date: 2023-10-17 20:18:00
+date: 2023-10-17
 ---
 
 ## [199. Binary Tree Right Side View](https://leetcode.cn/problems/binary-tree-right-side-view/)

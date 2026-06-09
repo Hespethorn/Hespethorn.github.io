@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: ed1ccd43
-date: 2023-05-27 21:49:00
+date: 2023-05-27
 ---
 
 ## [71. Simplify Path](https://leetcode.cn/problems/simplify-path/)

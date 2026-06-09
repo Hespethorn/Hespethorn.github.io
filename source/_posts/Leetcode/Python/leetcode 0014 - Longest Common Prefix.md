@@ -7,9 +7,9 @@ tags:
   - 二分查找
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'longest-common-prefix'
-date: 2024-02-16 20:55:00
+date: 2024-02-16
 ---
 
 # [14. Longest Common Prefix](https://leetcode.com/problems/longest-common-prefix/)

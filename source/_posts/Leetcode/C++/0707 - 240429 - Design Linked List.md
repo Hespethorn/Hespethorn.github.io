@@ -7,7 +7,7 @@ categories:
   - List
 series: Leetcode-Cpp
 abbrlink: fb67fadc
-date: 2024-02-20 19:30:00
+date: 2024-02-20
 ---
 
 ## [707. Design Linked List](https://leetcode.cn/problems/design-linked-list/)

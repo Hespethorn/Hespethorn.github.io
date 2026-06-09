@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 7048cf13
-date: 2024-02-06 20:30:00
+date: 2024-02-06
 ---
 
 ## [611. Valid Triangle Number](https://leetcode.cn/problems/valid-triangle-number/)

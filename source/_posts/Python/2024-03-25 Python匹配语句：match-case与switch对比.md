@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: a51cdce
-date: 2024-03-25 20:03:05
+date: 2024-03-25
 ---
 
 Python 3.10引入了match语句，这是一种强大的模式匹配机制，类似于其他语言中的switch语句，但功能更加强大。本文将详细介绍Python中match语句的用法。

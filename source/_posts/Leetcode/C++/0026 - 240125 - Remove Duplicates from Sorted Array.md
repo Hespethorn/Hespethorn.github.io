@@ -8,7 +8,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 43f159fc
-date: 2023-03-24 21:26:00
+date: 2023-03-24
 ---
 
 # [26. Remove Duplicates from Sorted Array](https://leetcode.com/problems/remove-duplicates-from-sorted-array/)

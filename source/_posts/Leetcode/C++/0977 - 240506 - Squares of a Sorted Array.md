@@ -8,7 +8,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: 67872dc4
-date: 2024-03-19 20:08:00
+date: 2024-03-19
 ---
 
 ## [977. Squares of a Sorted Array](https://leetcode.com/problems/squares-of-a-sorted-array/)

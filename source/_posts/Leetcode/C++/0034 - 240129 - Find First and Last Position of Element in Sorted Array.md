@@ -8,7 +8,7 @@ categories:
   - 二分查找
 series: Leetcode-Cpp
 abbrlink: f2c6559a
-date: 2023-04-08 22:35:00
+date: 2023-04-08
 ---
 
 # [34. Find First and Last Position of Element in Sorted Array](https://leetcode.com/problems/find-first-and-last-position-of-element-in-sorted-array/)

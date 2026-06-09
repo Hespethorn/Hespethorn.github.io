@@ -7,7 +7,7 @@ categories:
   - 哈希表
 series: Leetcode-Cpp
 abbrlink: ad2ee4f4
-date: 2023-02-09 20:29:00
+date: 2023-02-09
 ---
 
 # [12. Integer to Roman](https://leetcode.com/problems/integer-to-roman/)

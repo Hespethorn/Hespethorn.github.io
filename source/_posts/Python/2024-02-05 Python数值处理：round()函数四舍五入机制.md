@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: 8e1546a3
-date: 2024-02-05 19:30:55
+date: 2024-02-05
 ---
 
 Python的`round()`函数是处理浮点数四舍五入的重要工具。本文将详细介绍`round()`函数的使用方法以及常见的精度问题。

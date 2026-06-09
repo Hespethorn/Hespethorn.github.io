@@ -7,7 +7,7 @@ categories:
   - STL
 series: STL
 abbrlink: 7334dfaa
-date: 2024-11-11 21:58:04
+date: 2024-11-11
 ---
 ## 一、Vector 整体结构与 allocator 定位
 

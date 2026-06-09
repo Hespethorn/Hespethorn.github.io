@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-yield-return-yield-from
-date: 2024-12-19 22:17:45
+date: 2024-12-19
 ---
 
 ## 一、引言：打破"一次性"函数的诅咒

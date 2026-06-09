@@ -6,7 +6,7 @@ categories:
   - MySQL
 series: MySQL
 abbrlink: f77ba2fa
-date: 2025-05-10 22:09:42
+date: 2025-05-10
 ---
 ## MySQL 锁机制：数据库事务中的数据一致性保障
 

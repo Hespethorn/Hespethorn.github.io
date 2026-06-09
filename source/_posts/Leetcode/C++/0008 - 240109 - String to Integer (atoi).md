@@ -7,7 +7,7 @@ categories:
   - string
 series: Leetcode-Cpp
 abbrlink: '513e9683'
-date: 2023-01-24 21:06:00
+date: 2023-01-24
 ---
 
 # [8. String to Integer (atoi)](https://leetcode.com/problems/string-to-integer-atoi/)

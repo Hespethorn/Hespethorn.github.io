@@ -8,7 +8,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: '18417049'
-date: 2024-03-15 23:26:00
+date: 2024-03-15
 ---
 
 ## [922. Sort Array By Parity II](https://leetcode.cn/problems/sort-array-by-parity-ii/)

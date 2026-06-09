@@ -7,7 +7,7 @@ categories:
   - List
 series: Leetcode-Cpp
 abbrlink: b31fb8df
-date: 2023-03-19 19:32:00
+date: 2023-03-19
 ---
 
 ## [24. Swap Nodes in Pairs](https://leetcode.cn/problems/swap-nodes-in-pairs/)

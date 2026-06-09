@@ -6,7 +6,7 @@ categories:
   - Lists
 series: Leetcode-Cpp
 abbrlink: ab971fff
-date: 2023-03-14 20:47:00
+date: 2023-03-14
 ---
 
 ## [23. 合并 K 个升序链表](https://leetcode.cn/problems/merge-k-sorted-lists/)

@@ -10,7 +10,7 @@ categories:
   - 文章
 series: 文章
 abbrlink: rstp-evolution-from-stp
-date: 2026-05-13 20:17:00
+date: 2026-05-13
 ---
 
 ## 一、网络冗余的"双刃剑"

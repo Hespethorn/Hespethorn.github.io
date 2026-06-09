@@ -9,7 +9,7 @@ categories:
   - C-Code
 series: Leetcode-Cpp
 abbrlink: 57fc8873
-date: 2023-03-11 19:21:00
+date: 2023-03-11
 ---
 
 # [22. Generate Parentheses](https://leetcode.com/problems/generate-parentheses/)

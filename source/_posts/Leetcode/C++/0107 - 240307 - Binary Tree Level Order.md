@@ -7,7 +7,7 @@ categories:
   - tree
 series: Leetcode-Cpp
 abbrlink: b92a5eaf
-date: 2023-08-26 21:27:00
+date: 2023-08-26
 ---
 
 ## [107. Binary Tree Level Order Traversal II](https://leetcode.cn/problems/binary-tree-level-order-traversal-ii/)

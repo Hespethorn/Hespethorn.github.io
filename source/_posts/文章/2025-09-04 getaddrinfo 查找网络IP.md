@@ -7,7 +7,7 @@ categories:
   - Foundational Syntax and Core Concepts
 series: Foundational Syntax and Core Concepts
 abbrlink: 70d59293
-date: 2025-09-04 23:45:17
+date: 2025-09-04
 ---
 
 ## 一、网络地址解析的必要性

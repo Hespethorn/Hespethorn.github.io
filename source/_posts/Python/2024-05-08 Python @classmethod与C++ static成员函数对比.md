@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-classmethod-vs-cpp-static
-date: 2024-05-08 20:00:05
+date: 2024-05-08
 ---
 
 ## 一、引言：一个跨语言的困惑

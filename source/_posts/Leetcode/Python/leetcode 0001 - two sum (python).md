@@ -5,9 +5,9 @@ tags:
   - python
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: a1b472a7
-date: 2024-01-02 19:23:00
+date: 2024-01-02
 ---
 
 # [1. Two Sum](https://leetcode.com/problems/two-sum/)

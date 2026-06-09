@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: d17a61c7
-date: 2024-02-26 20:14:33
+date: 2024-02-26
 ---
 
 在Python编程中，全局变量和局部变量的作用域是一个重要的概念。本文将详细介绍Python中全局变量的使用，以及如何通过`global`关键字在函数内部修改全局变量。

@@ -6,12 +6,12 @@ tags:
 categories:
   - Leetcode
   - 二分查找
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: bde3b15b
-date: 2023-01-13 22:20:00
+date: 2023-01-13
 ---
 
-------
+
 
 # [4. Median of Two Sorted Arrays](https://leetcode.com/problems/median-of-two-sorted-arrays/)
 
@@ -100,7 +100,7 @@ You may assume **nums1** and **nums2** cannot be both empty.
 - **时间复杂度**：*O*(*k*)，其中 *k*=(*m*+*n*+1)/2，最坏情况下需要遍历一半元素。
 - **空间复杂度**：*O*(1)，仅使用常数级额外空间。
 
-------
+
 
 ## 代码实现
 

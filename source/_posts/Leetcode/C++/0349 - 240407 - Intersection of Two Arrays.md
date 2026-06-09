@@ -7,7 +7,7 @@ categories:
   - Hash
 series: Leetcode-Cpp
 abbrlink: 21b9229c
-date: 2023-12-06 23:12:00
+date: 2023-12-06
 ---
 
 ## [349. Intersection of Two Arrays](https://leetcode.cn/problems/intersection-of-two-arrays/)

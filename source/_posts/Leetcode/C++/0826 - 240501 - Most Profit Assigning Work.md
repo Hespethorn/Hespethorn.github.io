@@ -7,7 +7,7 @@ categories:
   - 双指针
 series: Leetcode-Cpp
 abbrlink: edc6927a
-date: 2024-02-27 22:10:00
+date: 2024-02-27
 ---
 
 ## [826. Most Profit Assigning Work](https://leetcode.cn/problems/most-profit-assigning-work/)

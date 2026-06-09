@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: b38cba9d
-date: 2023-11-06 20:06:00
+date: 2023-11-06
 ---
 
 ## [225. Implement Stack using Queues](https://leetcode.com/problems/implement-stack-using-queues/)

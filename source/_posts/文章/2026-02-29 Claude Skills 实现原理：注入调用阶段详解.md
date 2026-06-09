@@ -10,7 +10,7 @@ categories:
   - 文章
 series: 技术文章
 abbrlink: 4d5e6f7g
-date: 2026-02-29 10:00:00
+date: 2026-02-29
 ---
 
 ## 一、从用户请求到 Skill 执行

@@ -8,9 +8,9 @@ tags:
   - 数组
 categories:
   - Leetcode
-series: Leetcode-Cpp-Python
+series: Leetcode-Python
 abbrlink: 'container-with-most-water'
-date: 2024-02-22 20:49:00
+date: 2024-02-22
 ---
 
 # [11. Container With Most Water](https://leetcode.com/problems/container-with-most-water/)

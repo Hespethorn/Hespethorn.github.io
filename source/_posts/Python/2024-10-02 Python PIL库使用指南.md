@@ -9,7 +9,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-pil-library-guide
-date: 2024-10-02 20:11:51
+date: 2024-10-02
 ---
 
 ## 一、什么是PIL？

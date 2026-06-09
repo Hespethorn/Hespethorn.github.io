@@ -7,7 +7,7 @@ categories:
   - Leetcode
 series: Leetcode-Cpp
 abbrlink: e19faaa2
-date: 2023-01-08 21:56:00
+date: 2023-01-08
 ---
 
 # [3. Longest Substring Without Repeating Characters](https://leetcode.com/problems/longest-substring-without-repeating-characters/)
@@ -95,7 +95,7 @@ Explanation: The answer is "wke", with the length of 3.
 
 - 该方法适用于明确知道输入字符集范围的情况，能有效节省内存空间，但通用性相对较差。如果输入字符串可能包含其他字符（如大写字母、数字、符号等），则不适用。
 
-------
+
 
 ## 代码实现
 

@@ -7,7 +7,7 @@ categories:
   - 哈希表
 series: Leetcode-Cpp
 abbrlink: 1156fe0d
-date: 2023-02-26 22:23:00
+date: 2023-02-26
 ---
 
 # [17. Letter Combinations of a Phone Number](https://leetcode.com/problems/letter-combinations-of-a-phone-number/)

@@ -9,7 +9,7 @@ categories:
   - Linux Internals
 series: Linux Internals
 abbrlink: 5ab37a67
-date: 2025-11-23 19:20:00
+date: 2025-11-23
 ---
 
 在 Linux 系统运维与开发中，服务管理是核心基础能力之一。从早期的 SysV init 到如今主流的 systemd，服务管理机制经历了颠覆性的变革。作为工程师，理解二者的设计差异、systemd 的核心架构以及其与内核的交互逻辑，不仅能提升日常运维效率，更能在服务调优、故障排查中直击本质。

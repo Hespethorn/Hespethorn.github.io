@@ -7,7 +7,7 @@ categories:
   - 动态规划
 series: Leetcode-Cpp
 abbrlink: 99808cc9
-date: 2024-01-20 22:50:00
+date: 2024-01-20
 ---
 
 # [509. Fibonacci Number](https://leetcode.ccn/problems/fibonacci-number/)

@@ -6,7 +6,7 @@ tags:
 categories:
   - 编译
 abbrlink: a795a26a
-date: 2025-12-30 20:11:21
+date: 2025-12-30
 ---
 
 在大型工程项目中，跨平台兼容性、功能灰度发布、Debug/Release模式区分是绕不开的需求。很多开发者会下意识想用if/else来处理这些场景，但实际上预处理指令`#ifndef/#else/#endif`才是更专业的选择。

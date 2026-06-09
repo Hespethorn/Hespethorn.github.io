@@ -7,7 +7,7 @@ categories:
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: 3b1f13b1
-date: 2023-04-19 19:46:00
+date: 2023-04-19
 ---
 
 ## [40. Combination Sum II](https://leetcode.cn/problems/combination-sum-ii/)

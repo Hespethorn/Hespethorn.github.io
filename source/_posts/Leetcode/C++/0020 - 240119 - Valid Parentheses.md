@@ -7,7 +7,7 @@ categories:
   - Stack
 series: Leetcode-Cpp
 abbrlink: f8df0d33
-date: 2023-03-04 21:01:00
+date: 2023-03-04
 ---
 
 ## [20. Valid Parentheses](https://leetcode.cn/problems/valid-parentheses/)
