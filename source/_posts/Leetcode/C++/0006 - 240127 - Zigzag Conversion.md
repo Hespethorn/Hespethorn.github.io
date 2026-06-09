@@ -7,7 +7,7 @@ tags:
 categories:
   - Leetcode
   - 字符串
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: d9e0f5b2
 date: 2023-01-17 21:10:00
 ---

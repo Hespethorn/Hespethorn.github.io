@@ -5,7 +5,7 @@ tags:
   - Hash Table
 categories:
   - Leetcode
-series: Leetcode
+series: Leetcode-Cpp
 abbrlink: e19faaa2
 date: 2023-01-08 21:56:00
 ---
