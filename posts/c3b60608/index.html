@@ -1,0 +1,669 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>交叉编译深度解析——从工具链到 CMake 的完整实战 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="那个周四下午，CI 流水线已经跑了 47 分钟还没结束。我打开日志一看，QEMU 里模拟的 ARM 编译器正在以大约 1&#x2F;20 的原生速度吭哧吭哧地编译我们的 C++ 项目。一个 make -j4 在 x86 服务器上 3 分钟搞定的事，在模拟环境里变成了一个多小时。这不是第一次了——但这是我们决定把所有 ARM 构建全部切到交叉编译的那一天。 交叉编译不是新鲜事物，但很多人对它的理解停">
+<meta property="og:type" content="article">
+<meta property="og:title" content="交叉编译深度解析——从工具链到 CMake 的完整实战">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c3b60608/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="那个周四下午，CI 流水线已经跑了 47 分钟还没结束。我打开日志一看，QEMU 里模拟的 ARM 编译器正在以大约 1&#x2F;20 的原生速度吭哧吭哧地编译我们的 C++ 项目。一个 make -j4 在 x86 服务器上 3 分钟搞定的事，在模拟环境里变成了一个多小时。这不是第一次了——但这是我们决定把所有 ARM 构建全部切到交叉编译的那一天。 交叉编译不是新鲜事物，但很多人对它的理解停">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-17T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-06-10T13:21:18.409Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CMake">
+<meta property="article:tag" content="工具链">
+<meta property="article:tag" content="嵌入式">
+<meta property="article:tag" content="交叉编译">
+<meta property="article:tag" content="C&#x2F;C++">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "交叉编译深度解析——从工具链到 CMake 的完整实战",
+  "url": "https://hespethorn.github.io/posts/c3b60608/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-17T16:00:00.000Z",
+  "dateModified": "2026-06-10T13:21:18.409Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c3b60608/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '交叉编译深度解析——从工具链到 CMake 的完整实战',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">551</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">611</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">交叉编译深度解析——从工具链到 CMake 的完整实战</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">交叉编译深度解析——从工具链到 CMake 的完整实战</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>那个周四下午，CI 流水线已经跑了 47 分钟还没结束。我打开日志一看，QEMU 里模拟的 ARM 编译器正在以大约 1&#x2F;20 的原生速度吭哧吭哧地编译我们的 C++ 项目。一个 <code>make -j4</code> 在 x86 服务器上 3 分钟搞定的事，在模拟环境里变成了一个多小时。这不是第一次了——但这是我们决定把所有 ARM 构建全部切到交叉编译的那一天。</p>
+<p>交叉编译不是新鲜事物，但很多人对它的理解停留在&quot;装个交叉编译器然后改一下 <code>CC</code> 变量&quot;的水平。真正动手时会发现：头文件找不到、链接器报奇怪的错误、configure 脚本在各种检测中翻车。这篇文章要做的，是把交叉编译的<strong>完整链条</strong>拆开——从工具链三元组到 sysroot，从 CMake toolchain file 到容器化构建，每一步都有可复现的命令和踩过的坑。</p>
+<h2 id="一、先搞清楚一个核心事实"><a href="#一、先搞清楚一个核心事实" class="headerlink" title="一、先搞清楚一个核心事实"></a>一、先搞清楚一个核心事实</h2><p>交叉编译的本质一句话：<strong>编译器和目标平台之间隔着一个 ABI 鸿沟，你要做的所有事情都是在桥接这条鸿沟。</strong></p>
+<p>很多人以为交叉编译就是&quot;换一个编译器&quot;。不是。编译器只是产生目标平台指令的那一环。真正麻烦的是这四件事：</p>
+<table>
+<thead>
+<tr>
+<th align="left">问题</th>
+<th align="left">为什么麻烦</th>
+<th align="left">表现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>目标平台的头文件</strong></td>
+<td align="left"><code>/usr/include</code> 是你宿主机的，不能直接用</td>
+<td align="left"><code>fatal error: stdio.h: No such file or directory</code></td>
+</tr>
+<tr>
+<td align="left"><strong>目标平台的库</strong></td>
+<td align="left"><code>libc.so</code>、<code>libpthread.so</code> 都是宿主机的</td>
+<td align="left">链接时报 undefined reference 或 wrong ELF class</td>
+</tr>
+<tr>
+<td align="left"><strong>构建系统的探测逻辑</strong></td>
+<td align="left"><code>./configure</code> 会编译并运行测试程序</td>
+<td align="left">能编译但无法运行，配置检测全部失败</td>
+</tr>
+<tr>
+<td align="left"><strong>运行时行为差异</strong></td>
+<td align="left"><code>sizeof(long)</code>、字节序、页大小可能不同</td>
+<td align="left">编译通过但运行时崩溃</td>
+</tr>
+</tbody></table>
+<p>这四个问题中，前两个靠 sysroot 解决，第三个靠正确的工具链变量和 cache 文件，第四个只能靠对目标平台的了解。下面逐个击破。</p>
+<h2 id="二、工具链三元组——名字里藏着一切"><a href="#二、工具链三元组——名字里藏着一切" class="headerlink" title="二、工具链三元组——名字里藏着一切"></a>二、工具链三元组——名字里藏着一切</h2><p>交叉编译器通常长这样：<code>aarch64-linux-gnu-gcc</code>。这个名字不是一个随意的标签，它精确描述了三件事，而且顺序是固定的：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">架构-供应商-系统(ABI)</span><br><span class="line">aarch64-linux-gnu</span><br></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th align="left">组成部分</th>
+<th align="left">含义</th>
+<th align="left">常见取值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>架构</strong></td>
+<td align="left">CPU 指令集</td>
+<td align="left"><code>aarch64</code>、<code>armv7l</code>、<code>riscv64</code>、<code>x86_64</code>、<code>mips</code></td>
+</tr>
+<tr>
+<td align="left"><strong>供应商</strong></td>
+<td align="left">工具链提供方，实际影响很小</td>
+<td align="left"><code>linux</code>、<code>apple</code>、<code>unknown</code></td>
+</tr>
+<tr>
+<td align="left"><strong>系统&#x2F;ABI</strong></td>
+<td align="left">操作系统 + C 库 + ABI 约定</td>
+<td align="left"><code>gnu</code>(glibc)、<code>musl</code>、<code>android</code>、<code>gnueabihf</code>(ARM 硬浮点)</td>
+</tr>
+</tbody></table>
+<p>重点在第三段。<code>gnueabihf</code> 里的 <code>hf</code> 表示硬浮点（hard-float）——浮点参数通过 FPU 寄存器传递；没有 <code>hf</code> 则是软浮点，通过整数寄存器传递。两者<strong>二进制不兼容</strong>。如果你把硬浮点的 <code>.so</code> 链接到软浮点的程序上，链接器会给你一个含义模糊的&quot;incompatible&quot;错误。</p>
+<p>ARM 上尤其容易搞混，因为 ARM 的 ABI 变体太多：</p>
+<table>
+<thead>
+<tr>
+<th align="left">三元组后缀</th>
+<th align="left">浮点方式</th>
+<th align="left">适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>gnueabi</code></td>
+<td align="left">软浮点</td>
+<td align="left">无 FPU 的老旧 ARM 芯片</td>
+</tr>
+<tr>
+<td align="left"><code>gnueabihf</code></td>
+<td align="left">硬浮点</td>
+<td align="left">Cortex-A 系列，带 VFP&#x2F;NEON</td>
+</tr>
+<tr>
+<td align="left"><code>musleabi</code></td>
+<td align="left">软浮点 + musl</td>
+<td align="left">极小体积的嵌入式 Linux</td>
+</tr>
+<tr>
+<td align="left"><code>musleabihf</code></td>
+<td align="left">硬浮点 + musl</td>
+<td align="left">需要硬浮点性能 + 小体积</td>
+</tr>
+</tbody></table>
+<p><strong>判断原则：如果你在给 Raspberry Pi 4（Cortex-A72）或更新的 ARM 板子编译，选 <code>gnueabihf</code>。不确定时，到你目标设备的 <code>/lib</code> 下找一个 <code>.so</code> 文件跑 <code>readelf -h</code>，看 Flags 字段有没有 <code>hard-float ABI</code>。</strong></p>
+<p>有了正确的工具链，接下来要解决的是——编译器怎么找到目标平台的文件。</p>
+<h2 id="三、Sysroot——交叉编译中最被低估的概念"><a href="#三、Sysroot——交叉编译中最被低估的概念" class="headerlink" title="三、Sysroot——交叉编译中最被低估的概念"></a>三、Sysroot——交叉编译中最被低估的概念</h2><p>sysroot 是一个目录，它<strong>模拟了目标平台的根文件系统</strong>。编译器在 sysroot 下找头文件和库，而不是在宿主机的 <code>/usr/include</code> 和 <code>/usr/lib</code> 下找。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">sysroot/</span><br><span class="line">├── usr/</span><br><span class="line">│   ├── include/       ← 目标平台的头文件</span><br><span class="line">│   │   ├── stdio.h</span><br><span class="line">│   │   └── ...</span><br><span class="line">│   └── lib/           ← 目标平台的库</span><br><span class="line">│       ├── libc.so</span><br><span class="line">│       ├── libpthread.so</span><br><span class="line">│       ├── crt1.o     ← 关键：启动代码</span><br><span class="line">│       └── ...</span><br><span class="line">└── lib/               ← 系统级库（ld-linux.so 等）</span><br></pre></td></tr></table></figure>
+
+<h3 id="获取-sysroot-的三种方式"><a href="#获取-sysroot-的三种方式" class="headerlink" title="获取 sysroot 的三种方式"></a>获取 sysroot 的三种方式</h3><table>
+<thead>
+<tr>
+<th align="left">方式</th>
+<th align="left">做法</th>
+<th align="left">适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>从目标设备复制</strong></td>
+<td align="left"><code>rsync -avz raspberrypi:/lib /sysroot/lib</code></td>
+<td align="left">已有运行中的目标设备</td>
+</tr>
+<tr>
+<td align="left"><strong>使用工具链自带</strong></td>
+<td align="left">Linaro、ARM 官方工具链通常自带</td>
+<td align="left">标准开发</td>
+</tr>
+<tr>
+<td align="left"><strong>用构建系统生成</strong></td>
+<td align="left">Buildroot&#x2F;Yocto 编译时自动产出</td>
+<td align="left">嵌入式 Linux 发行版定制</td>
+</tr>
+</tbody></table>
+<p>第一种最简单直接，也是我推荐初次尝试的做法。插一句：不要只复制 <code>/usr/lib</code>，<code>/lib</code> 下的 <code>ld-linux-*.so</code> 和 <code>crt*.o</code> 缺一个就会在链接阶段翻车。建议整根复制：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 从 Raspberry Pi 拉取完整 sysroot（Pi 上需开启 SSH）</span></span><br><span class="line">rsync -avz --copy-links \</span><br><span class="line">  pi@192.168.1.100:/lib \</span><br><span class="line">  pi@192.168.1.100:/usr/include \</span><br><span class="line">  pi@192.168.1.100:/usr/lib \</span><br><span class="line">  ~/rpi-sysroot/</span><br></pre></td></tr></table></figure>
+
+<p><code>--copy-links</code> 很关键——目标设备上的库符号链接指向具体版本（如 <code>libc.so -&gt; libc-2.31.so</code>），不用这个参数复制过来的是死链接，链接器找不到真实文件。</p>
+<h3 id="验证-sysroot-是否正确"><a href="#验证-sysroot-是否正确" class="headerlink" title="验证 sysroot 是否正确"></a>验证 sysroot 是否正确</h3><p>拿到 sysroot 后，用一行命令验证：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 编译一个最小程序，指定 sysroot</span></span><br><span class="line">aarch64-linux-gnu-gcc --sysroot=<span class="variable">$HOME</span>/rpi-sysroot \</span><br><span class="line">  -x c - &lt;&lt;&lt; <span class="string">&#x27;int main()&#123;return 0;&#125;&#x27;</span> -o /tmp/test_arm</span><br><span class="line"></span><br><span class="line"><span class="comment"># 检查产物是否是 ARM 二进制</span></span><br><span class="line">file /tmp/test_arm</span><br><span class="line"><span class="comment"># 输出应为: ELF 64-bit LSB executable, ARM aarch64, ...</span></span><br></pre></td></tr></table></figure>
+
+<p>如果 <code>file</code> 输出显示 <code>ARM aarch64</code>，说明工具链和 sysroot 都对齐了。如果链接阶段报 <code>cannot find /lib/ld-linux-aarch64.so.1</code>，说明 sysroot 残缺——检查你是否漏了 <code>/lib</code> 下的动态链接器。</p>
+<h2 id="四、CMake-工具链文件——一次配置，永远告别手动设变量"><a href="#四、CMake-工具链文件——一次配置，永远告别手动设变量" class="headerlink" title="四、CMake 工具链文件——一次配置，永远告别手动设变量"></a>四、CMake 工具链文件——一次配置，永远告别手动设变量</h2><p>手工传 <code>--sysroot</code>、<code>-I</code>、<code>-L</code> 只适合验证阶段。真项目必须用 CMake toolchain file。它把目标平台的所有信息写进一个文件，之后 <code>cmake -DCMAKE_TOOLCHAIN_FILE=...</code> 一行搞定。</p>
+<p>以下是一个可直接用于 Raspberry Pi 4（aarch64）的 toolchain 文件：</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># rpi4-toolchain.cmake</span></span><br><span class="line"><span class="comment"># 用法: cmake -DCMAKE_TOOLCHAIN_FILE=rpi4-toolchain.cmake -B build</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 目标系统</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSTEM_NAME Linux)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSTEM_PROCESSOR aarch64)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 工具链前缀——编译器就是 $&#123;前缀&#125;gcc，链接器就是 $&#123;前缀&#125;ld</span></span><br><span class="line"><span class="keyword">set</span>(TOOLCHAIN_PREFIX /usr/bin/aarch64-linux-gnu)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_C_COMPILER   <span class="variable">$&#123;TOOLCHAIN_PREFIX&#125;</span>-gcc)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_CXX_COMPILER <span class="variable">$&#123;TOOLCHAIN_PREFIX&#125;</span>-g++)</span><br><span class="line"></span><br><span class="line"><span class="comment"># sysroot：关键！覆盖默认的头文件和库搜索路径</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSROOT /home/user/rpi-sysroot)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 告诉 cmake 不要尝试运行编译出的程序来探测系统能力</span></span><br><span class="line"><span class="comment"># 这是交叉编译下最重要的一个变量——不设这行，绝大多数 cmake 检测会失败</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_CROSSCOMPILING <span class="keyword">TRUE</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 跳过 try_run：只编译不运行</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 指定 pkg-config 搜索路径（很多库依赖 pkg-config 提供编译选项）</span></span><br><span class="line"><span class="keyword">set</span>(ENV&#123;PKG_CONFIG_PATH&#125; <span class="string">&quot;$&#123;CMAKE_SYSROOT&#125;/usr/lib/aarch64-linux-gnu/pkgconfig&quot;</span>)</span><br><span class="line"><span class="keyword">set</span>(ENV&#123;PKG_CONFIG_SYSROOT_DIR&#125; <span class="string">&quot;$&#123;CMAKE_SYSROOT&#125;&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查找程序时只在 sysroot 内找，不要找到宿主机的程序</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)</span><br></pre></td></tr></table></figure>
+
+<p>最后四个 <code>CMAKE_FIND_ROOT_PATH_MODE_*</code> 值得展开说一下：</p>
+<table>
+<thead>
+<tr>
+<th align="left">变量</th>
+<th align="left">取值</th>
+<th align="left">含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>PROGRAM</code></td>
+<td align="left"><code>NEVER</code></td>
+<td align="left">不找宿主机的程序（如代码生成器应该在宿主机编译）</td>
+</tr>
+<tr>
+<td align="left"><code>LIBRARY</code></td>
+<td align="left"><code>ONLY</code></td>
+<td align="left">只从 sysroot 找库</td>
+</tr>
+<tr>
+<td align="left"><code>INCLUDE</code></td>
+<td align="left"><code>ONLY</code></td>
+<td align="left">只从 sysroot 找头文件</td>
+</tr>
+<tr>
+<td align="left"><code>PACKAGE</code></td>
+<td align="left"><code>ONLY</code></td>
+<td align="left">只从 sysroot 找 CMake 包配置</td>
+</tr>
+</tbody></table>
+<p><code>PROGRAM</code> 设 <code>NEVER</code> 有一个重要的含义：如果你的项目在构建时需要运行一个<strong>宿主机上的代码生成工具</strong>（比如 protobuf 编译器、自定义的 IDL 处理器），你需要<strong>单独为宿主机编译它</strong>，而不是在交叉编译时连带它一起编译。实践中可以把这类工具拆成独立的 CMake 子项目，先 native 编译安装，再交叉编译主项目时通过 <code>find_program</code> 找到它。</p>
+<h3 id="配置和构建"><a href="#配置和构建" class="headerlink" title="配置和构建"></a>配置和构建</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">cmake -DCMAKE_TOOLCHAIN_FILE=rpi4-toolchain.cmake \</span><br><span class="line">      -DCMAKE_BUILD_TYPE=Release \</span><br><span class="line">      -B build/rpi4</span><br><span class="line"></span><br><span class="line">cmake --build build/rpi4 -j$(<span class="built_in">nproc</span>)</span><br></pre></td></tr></table></figure>
+
+<p>如果你的 CMakeLists.txt 写得规范（使用 <code>find_package</code> 而不是硬编码路径），切到交叉编译通常只需要这一个 toolchain 文件。额外需要关心的只是目标平台的依赖库是否都已存在于 sysroot 中。</p>
+<h2 id="五、Autotools-和-Makefile-的交叉编译——老项目的生存指南"><a href="#五、Autotools-和-Makefile-的交叉编译——老项目的生存指南" class="headerlink" title="五、Autotools 和 Makefile 的交叉编译——老项目的生存指南"></a>五、Autotools 和 Makefile 的交叉编译——老项目的生存指南</h2><p>不是所有项目都用了 CMake。大量 C 基础设施（OpenSSL、libffi、zlib 等）还在用 autotools 或手写 Makefile。它们不认 CMake toolchain file，你得用环境变量告诉它们一切。</p>
+<h3 id="Autotools（configure-脚本）"><a href="#Autotools（configure-脚本）" class="headerlink" title="Autotools（configure 脚本）"></a>Autotools（configure 脚本）</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 三个关键环境变量</span></span><br><span class="line"><span class="built_in">export</span> CC=aarch64-linux-gnu-gcc</span><br><span class="line"><span class="built_in">export</span> CXX=aarch64-linux-gnu-g++</span><br><span class="line"><span class="built_in">export</span> AR=aarch64-linux-gnu-ar</span><br><span class="line"></span><br><span class="line"><span class="comment"># configure 参数</span></span><br><span class="line">./configure \</span><br><span class="line">  --host=aarch64-linux-gnu \    <span class="comment"># 目标平台三元组</span></span><br><span class="line">  --prefix=/usr \               <span class="comment"># 安装前缀（进入 sysroot 的路径）</span></span><br><span class="line">  --with-sysroot=<span class="variable">$HOME</span>/rpi-sysroot</span><br><span class="line"></span><br><span class="line">make -j$(<span class="built_in">nproc</span>)</span><br><span class="line">make install DESTDIR=<span class="variable">$HOME</span>/rpi-sysroot  <span class="comment"># 安装进 sysroot</span></span><br></pre></td></tr></table></figure>
+
+<p><code>--host</code> 和 <code>--build</code> 的区别经常让人搞混：</p>
+<table>
+<thead>
+<tr>
+<th align="left">参数</th>
+<th align="left">含义</th>
+<th align="left">什么时候需要显式指定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><code>--build</code></td>
+<td align="left">当前编译发生的机器（宿主机）</td>
+<td align="left">configure 通常能自动检测，一般不用设</td>
+</tr>
+<tr>
+<td align="left"><code>--host</code></td>
+<td align="left">产物将要运行的机器（目标）</td>
+<td align="left"><strong>交叉编译必须设</strong>，否则 configure 不知道你在交叉编译</td>
+</tr>
+<tr>
+<td align="left"><code>--target</code></td>
+<td align="left">编译器本身产出的代码跑在什么机器上</td>
+<td align="left"><strong>只在编译编译器时用</strong>（如编译交叉 GCC 本身）</td>
+</tr>
+</tbody></table>
+<p>绝大多数情况你只需要设 <code>--host</code>。设了它之后，configure 会知道你交叉编译，跳过那些需要运行程序的探测。</p>
+<h3 id="手写-Makefile"><a href="#手写-Makefile" class="headerlink" title="手写 Makefile"></a>手写 Makefile</h3><p>手写 Makefile 的交叉编译支持通常靠变量约定：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">make CC=aarch64-linux-gnu-gcc \</span><br><span class="line">     CXX=aarch64-linux-gnu-g++ \</span><br><span class="line">     AR=aarch64-linux-gnu-ar \</span><br><span class="line">     CFLAGS=<span class="string">&quot;--sysroot=<span class="variable">$HOME</span>/rpi-sysroot&quot;</span> \</span><br><span class="line">     LDFLAGS=<span class="string">&quot;--sysroot=<span class="variable">$HOME</span>/rpi-sysroot&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>不规范的 Makefile 可能硬编码了 <code>gcc</code> 而不是用 <code>$(CC)</code> 变量，这种只能改 Makefile 或者用 <code>PATH</code> 欺骗：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 不优雅但有效：临时覆盖 PATH</span></span><br><span class="line"><span class="built_in">export</span> PATH=/usr/arm-toolchain/bin:<span class="variable">$PATH</span></span><br><span class="line"><span class="comment"># 然后创建一个名为 gcc 的符号链接指向交叉编译器</span></span><br></pre></td></tr></table></figure>
+
+<p>老实说，遇到硬编码编译器的 Makefile，我的建议是：<strong>花 30 分钟给它写个 CMakeLists.txt，比跟它较劲三小时强。</strong></p>
+<h2 id="六、容器化交叉编译——CI-环境的终极方案"><a href="#六、容器化交叉编译——CI-环境的终极方案" class="headerlink" title="六、容器化交叉编译——CI 环境的终极方案"></a>六、容器化交叉编译——CI 环境的终极方案</h2><p>在 CI 流水线里，你不会想在每个 runner 上手动装工具链和 sysroot。容器化是正道。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Dockerfile.cross-arm64</span></span><br><span class="line"><span class="keyword">FROM</span> debian:bookworm</span><br><span class="line"></span><br><span class="line"><span class="comment"># 安装 ARM64 交叉工具链</span></span><br><span class="line"><span class="keyword">RUN</span><span class="language-bash"> dpkg --add-architecture arm64 &amp;&amp; \</span></span><br><span class="line"><span class="language-bash">    apt update &amp;&amp; \</span></span><br><span class="line"><span class="language-bash">    apt install -y \</span></span><br><span class="line"><span class="language-bash">        crossbuild-essential-arm64 \</span></span><br><span class="line"><span class="language-bash">        cmake make \</span></span><br><span class="line"><span class="language-bash">        <span class="comment"># 目标平台的运行时库（这部分会成为 sysroot 的一部分）</span></span></span><br><span class="line">        libstdc++<span class="number">6</span>:arm64 \</span><br><span class="line">        libc6-dev:arm64 \</span><br><span class="line">        libssl-dev:arm64</span><br><span class="line"></span><br><span class="line"><span class="comment"># 编译器自动安装在 /usr/bin/aarch64-linux-gnu-*</span></span><br><span class="line"><span class="comment"># 库和头文件在 /usr/lib/aarch64-linux-gnu/ 和 /usr/include/</span></span><br><span class="line"><span class="comment"># Debian 的多架构体系已经天然形成了一个 sysroot</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">ENV</span> PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig</span><br></pre></td></tr></table></figure>
+
+<p>Debian&#x2F;Ubuntu 的 <code>multiarch</code> 体系是交叉编译的神器。<code>apt install libssl-dev:arm64</code> 会把 ARM64 版本的 libssl 头文件和库装到正确的位置，和宿主 x86_64 的文件互不干扰。你的 sysroot 就是根目录本身——编译器通过三元组前缀自动找到正确的架构子目录。</p>
+<p>配套的 CMake toolchain file 可以精简很多：</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Debian cross toolchain —— 极简版</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSTEM_NAME Linux)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSTEM_PROCESSOR aarch64)</span><br><span class="line"></span><br><span class="line"><span class="keyword">set</span>(CMAKE_C_COMPILER   aarch64-linux-gnu-gcc)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Debian multiarch 下不需要单独指定 sysroot</span></span><br><span class="line"><span class="comment"># 编译器自己知道去 /usr/lib/aarch64-linux-gnu/ 找</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">set</span>(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)</span><br></pre></td></tr></table></figure>
+
+<p>配合 CI 使用：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># .github/workflows/build-arm.yml</span></span><br><span class="line"><span class="attr">build-arm64:</span></span><br><span class="line">  <span class="attr">runs-on:</span> <span class="string">ubuntu-latest</span></span><br><span class="line">  <span class="attr">container:</span></span><br><span class="line">    <span class="attr">image:</span> <span class="string">my-cross-arm64:latest</span></span><br><span class="line">  <span class="attr">steps:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">uses:</span> <span class="string">actions/checkout@v4</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">run:</span> <span class="string">cmake</span> <span class="string">-DCMAKE_TOOLCHAIN_FILE=cmake/debian-cross-arm64.cmake</span> <span class="string">-B</span> <span class="string">build</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">run:</span> <span class="string">cmake</span> <span class="string">--build</span> <span class="string">build</span> <span class="string">-j$(nproc)</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">run:</span> <span class="string">file</span> <span class="string">build/myapp</span></span><br><span class="line">      <span class="comment"># 输出应包含 ARM aarch64</span></span><br></pre></td></tr></table></figure>
+
+<p>这套方案的优势是 sysroot 管理完全交给了包管理器——<code>apt install</code> 什么，编译器就能找到什么。不用手动 rsync、不用手动解压 tar 包，依赖关系 apt 帮你理清楚。</p>
+<h2 id="七、五个我踩过的坑"><a href="#七、五个我踩过的坑" class="headerlink" title="七、五个我踩过的坑"></a>七、五个我踩过的坑</h2><p><strong>1. <code>try_run</code> 失败不一定是坏事——但你要知道它为什么失败。</strong></p>
+<p>CMake 在做 <code>check_c_source_runs</code> 时会尝试编译+运行。交叉编译下运行必然失败，但 CMake 会把&quot;运行失败&quot;等同于&quot;功能不支持&quot;，导致 <code>HAVE_PTHREAD</code> 之类的宏被错误定义为 0。用 <code>CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY</code> 让它只编译不运行，然后用 cache 文件手动指定你已经知道的平台能力。</p>
+<p><strong>2. 静态链接时 <code>crt0.o</code> 架构不匹配。</strong></p>
+<p>如果你选择静态链接（<code>-static</code>），链接器会找一个叫 <code>crt0.o</code> 或 <code>crt1.o</code> 的启动文件。如果你混用了宿主机和目标的 crt 文件，链接没问题，但程序跑不起来。确保 <code>--sysroot</code> 正确，或者用 <code>gcc -print-sysroot</code> 确认编译器实际在用什么 sysroot。</p>
+<p><strong>3. <code>pkg-config</code> 悄悄找到了宿主机的 <code>.pc</code> 文件。</strong></p>
+<p>交叉编译的经典翻车场景：你忘了设 <code>PKG_CONFIG_SYSROOT_DIR</code>，<code>pkg-config --cflags openssl</code> 返回的是 <code>/usr/include</code> 而不是 sysroot 下的路径。编译不报错，但链接时发现二进制混合了两种架构的代码。你必须<strong>同时</strong>设 <code>PKG_CONFIG_PATH</code> 和 <code>PKG_CONFIG_SYSROOT_DIR</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">export</span> PKG_CONFIG_PATH=/sysroot/usr/lib/aarch64-linux-gnu/pkgconfig</span><br><span class="line"><span class="built_in">export</span> PKG_CONFIG_SYSROOT_DIR=/sysroot</span><br><span class="line"><span class="comment"># 然后验证：</span></span><br><span class="line">pkg-config --cflags openssl</span><br><span class="line"><span class="comment"># 输出路径应该以 /sysroot 开头，而不是 /</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>4. <code>sizeof()</code> 相关的宏在交叉编译下是猜的。</strong></p>
+<p>autotools 的 <code>AC_CHECK_SIZEOF</code> 和 CMake 的 <code>check_type_size</code> 在交叉编译下编译了测试程序但没法运行，只能猜测。如果你的代码依赖 <code>sizeof(void*)</code> 或 <code>sizeof(long)</code>，建议手工在 cache 文件或 CMake 中指定——或者更根本地，用 <code>uintptr_t</code> 代替 <code>long</code>，用固定宽度整数类型消除平台差异。</p>
+<p><strong>5. Go 和 Rust 的交叉编译比 C&#x2F;C++ 简单一个数量级。</strong></p>
+<p>这不是坑，是一个提醒。如果你开始一个新项目且需要交叉编译，Go 的 <code>GOOS=linux GOARCH=arm64 go build</code> 和 Rust 的 <code>cargo build --target aarch64-unknown-linux-gnu</code> 几乎零配置。它们自带 sysroot（标准库静态编译进产物）且不依赖系统 C 库（Go 完全自举，Rust 用 musl 可去掉 glibc 依赖）。在某些场景下，换语言比折腾工具链更划算。</p>
+<p><strong>交叉编译真正的门槛从来不是编译器本身，而是你对&quot;一个程序从源码到可执行文件到底依赖了什么&quot;这件事的理解深度。工具链只是镜子，照出你知识链上的每一处模糊。</strong></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c3b60608/">https://hespethorn.github.io/posts/c3b60608/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CMake/">CMake</a><a class="post-meta__tags" href="/tags/%E5%B7%A5%E5%85%B7%E9%93%BE/">工具链</a><a class="post-meta__tags" href="/tags/%E5%B5%8C%E5%85%A5%E5%BC%8F/">嵌入式</a><a class="post-meta__tags" href="/tags/%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91/">交叉编译</a><a class="post-meta__tags" href="/tags/C-C/">C/C++</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">551</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">611</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-code-refactoring-dialogue/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-assisted-debugging-misconception/" title="AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的">AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-09T16:00:00.000Z" title="Created 2026-06-10 00:00:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-07T16:00:00.000Z" title="Created 2026-06-08 00:00:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-24T16:00:00.000Z" title="Created 2026-05-25 00:00:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-14T16:00:00.000Z" title="Created 2026-04-15 00:00:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-11T16:00:00.000Z" title="Created 2026-04-12 00:00:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e3f5a7b1/" title="git pull 与 git pull --rebase 的差异">git pull 与 git pull --rebase 的差异</a><time datetime="2026-06-14T16:00:00.000Z" title="Created 2026-06-15 00:00:00">2026-06-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-code-refactoring-dialogue/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d4e5f6a7/" title="青石渠的管水人">青石渠的管水人</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>

@@ -1,0 +1,609 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>一次与 AI 的代码重构对话实录：十一个决策如何成形 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、起点代码库主体为 C++，约 2000 行核心业务逻辑，运行在 ARM 嵌入式和 x86 双平台上，通过 MQTT 与无人机通信，串口与多个外设交互。我在这个项目上工作了一年，近期整理出一份架构重构计划（Strand + Offload 模式），但缺少外部视角的校验。 我将代码库和重构计划一并提交给 AI，要求其以独立视角进行全面审查。AI 的初始动作是并行扫描目录结构、核心文件、依赖关系和">
+<meta property="og:type" content="article">
+<meta property="og:title" content="一次与 AI 的代码重构对话实录：十一个决策如何成形">
+<meta property="og:url" content="https://hespethorn.github.io/posts/ai-code-refactoring-dialogue/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、起点代码库主体为 C++，约 2000 行核心业务逻辑，运行在 ARM 嵌入式和 x86 双平台上，通过 MQTT 与无人机通信，串口与多个外设交互。我在这个项目上工作了一年，近期整理出一份架构重构计划（Strand + Offload 模式），但缺少外部视角的校验。 我将代码库和重构计划一并提交给 AI，要求其以独立视角进行全面审查。AI 的初始动作是并行扫描目录结构、核心文件、依赖关系和">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-13T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-06-10T13:21:18.409Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="多线程">
+<meta property="article:tag" content="MQTT">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="设计模式">
+<meta property="article:tag" content="代码重构">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="嵌入式">
+<meta property="article:tag" content="串口通信">
+<meta property="article:tag" content="人机协作">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "一次与 AI 的代码重构对话实录：十一个决策如何成形",
+  "url": "https://hespethorn.github.io/posts/ai-code-refactoring-dialogue/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-13T16:00:00.000Z",
+  "dateModified": "2026-06-10T13:21:18.409Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/ai-code-refactoring-dialogue/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '一次与 AI 的代码重构对话实录：十一个决策如何成形',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">551</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">611</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">一次与 AI 的代码重构对话实录：十一个决策如何成形</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">一次与 AI 的代码重构对话实录：十一个决策如何成形</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、起点"><a href="#一、起点" class="headerlink" title="一、起点"></a>一、起点</h2><p>代码库主体为 C++，约 2000 行核心业务逻辑，运行在 ARM 嵌入式和 x86 双平台上，通过 MQTT 与无人机通信，串口与多个外设交互。我在这个项目上工作了一年，近期整理出一份架构重构计划（Strand + Offload 模式），但缺少外部视角的校验。</p>
+<p>我将代码库和重构计划一并提交给 AI，要求其以独立视角进行全面审查。AI 的初始动作是并行扫描目录结构、核心文件、依赖关系和 CMake 构建系统，在五分钟内建立起对代码库的整体理解。</p>
+<hr>
+<h2 id="二、第一轮：信息差暴露"><a href="#二、第一轮：信息差暴露" class="headerlink" title="二、第一轮：信息差暴露"></a>二、第一轮：信息差暴露</h2><p>AI 输出了涵盖十个维度的架构评估报告——线程模型、瓶颈识别、改进方案、组件交互优化、可扩展性增强、第三方库集成策略、UAV&#x2F;UAVNode 关注点分离、SystemFactory 设计模式改进、实施路线图、风险矩阵。</p>
+<p>覆盖全面，但有三处与实际情况不符：</p>
+<blockquote>
+<ol>
+<li>计算卸载方案中 <code>ComputePool</code> 的设计是冗余的。项目已引入 ZLMediaKit，其内置的 <code>WorkThreadPool</code> 可直接复用。</li>
+<li>第三方库仅有 x86 预编译版本，而目标平台为 ARM，跨架构编译的管理策略未被考虑。</li>
+<li>设备配置中 <code>enable</code> 字段的语义需要明确——实际含义为「是否通过串口通信」，而 <code>link</code> 才表示「是否启用设备」。此外，设备通过 MQTT 通信时 topic 命名已有固定约定，不需要在配置中重复声明。</li>
+</ol>
+</blockquote>
+<p>这三个偏差指向同一个根因：AI 在通用性假设下给出方案，没有利用已有基础设施的信息。ZLMediaKit 的线程池已在项目中完成初始化，方案中却重新设计了一个——这是典型的「未审查已有代码即开始设计」的问题。但造成这一偏差的直接原因是我在第一轮输入中未提供 ZLMediaKit 的相关上下文。</p>
+<p><strong>结论</strong>：向 AI 提交已有项目的审查任务时，必须将项目的基础设施信息——已引入的库、已有的约定、目标平台的约束——作为上下文一并输入。信息差越大，AI 的输出偏离实际情况的概率越高。</p>
+<hr>
+<h2 id="三、第二轮：校准方向"><a href="#三、第二轮：校准方向" class="headerlink" title="三、第二轮：校准方向"></a>三、第二轮：校准方向</h2><p>我向 AI 确认了三个前提：</p>
+<ul>
+<li>计算卸载直接复用 <code>WorkThreadPool</code>，计算线程仅读取数据副本，结果通过 Strand 回帖到主业务线程。</li>
+<li>Build 脚本不加后缀对应本地编译，加 <code>_x86</code> 或 <code>_arm</code> 后缀对应交叉编译。</li>
+<li>设备 topic 约定为 <code>&#123;设备名&#125;_pub</code> 和 <code>&#123;设备名&#125;_sub</code>，这是团队已有共识，无需在配置中重复声明。</li>
+</ul>
+<p>在上述信息被消化后，AI 提出了两个新的审视点：StateMachine 全局单例是否应该调整？EmergencyFactory 如何融入新的 Strand 线程模型？</p>
+<p>这两个问题触及了架构的核心——状态管理和组件生命周期——在我原先的设计中恰好是被遗漏的维度。AI 的优势在此体现：它能将局部方案放入更大的设计模式图谱中对照，识别出人容易忽略的边界。</p>
+<hr>
+<h2 id="四、第三轮：抽象层级的跃迁"><a href="#四、第三轮：抽象层级的跃迁" class="headerlink" title="四、第三轮：抽象层级的跃迁"></a>四、第三轮：抽象层级的跃迁</h2><p>当 AI 建议「设备传输层应显式声明 <code>transport: serial</code> 或 <code>transport: mqtt</code>，而非使用一个语义含混的布尔值」时，这条建议触发了一个更关键的抽象：</p>
+<blockquote>
+<p>是否考虑统一的 ITransport 接口？不同传输方式仅在注册和发送路径上不同，解析逻辑是一致的。</p>
+</blockquote>
+<p>这个方向改变了整个设计。重新审视代码后，发现 <code>SerialDevice</code> 基类内部混杂了三层逻辑：串口读写（传输层）、帧边界检测（帧提取层）、NMEA 协议解析（业务层）。其中帧提取和解析与传输方式无关，却被耦合在 <code>SerialDevice</code> 中。</p>
+<p><strong>结论</strong>：AI 的具体建议未必是最优解——它的更大价值在于触发思考。一条看似细节的建议，结合人对代码的深度理解，可能引出比原建议更根本的设计改进。人机协作中，AI 提供催化，人完成合成。</p>
+<hr>
+<h2 id="五、第四轮：用数据终结设计争议"><a href="#五、第四轮：用数据终结设计争议" class="headerlink" title="五、第四轮：用数据终结设计争议"></a>五、第四轮：用数据终结设计争议</h2><p>本轮涉及整个审查中最关键的线程模型决策——消息解析的位置。</p>
+<p>两种候选方案：</p>
+<ul>
+<li><strong>解析在 I&#x2F;O 线程</strong>：延迟低，各设备天然并行，但 MQTT 回调中解析会阻塞网络线程。</li>
+<li><strong>解析在 Strand 线程</strong>：网络线程永不阻塞，但所有设备的解析变为串行。</li>
+</ul>
+<p>AI 倾向于 Strand 方案（职责更清晰），我最初倾向于 I&#x2F;O 方案（延迟更低）。争论的突破口来自性能数据：AIS 高频场景下（每秒上百条消息），单条解析耗时约 200μs。若在 MQTT 回调中解析，累计阻塞 <code>mosquitto_loop</code> 约 10ms，将导致 broker 端消息积压，反而增加端到端延迟。</p>
+<p>数据使得决策方向清晰化：</p>
+<blockquote>
+<p>I&#x2F;O 线程的唯一职责为读字节、push、返回。解析统一在 Strand 执行。</p>
+</blockquote>
+<p>最终形成明确的分层原则：<strong>I&#x2F;O 线程仅做 I&#x2F;O，Strand 线程处理全部业务逻辑</strong>。读&#x2F;解分离。</p>
+<p><strong>结论</strong>：技术决策不应基于「哪个更优雅」，而应基于瓶颈数据。AI 擅长枚举选项和分析利弊，但性能数据只能来自人对系统的测量。数据 + AI 的模式匹配能力 &#x3D; 最快路径收敛到正确方案。</p>
+<hr>
+<h2 id="六、第五轮：业务语义决定数据结构"><a href="#六、第五轮：业务语义决定数据结构" class="headerlink" title="六、第五轮：业务语义决定数据结构"></a>六、第五轮：业务语义决定数据结构</h2><p>我提出了消息积压场景的处理需求：积压时应丢弃最早的消息，保证最新消息入队。</p>
+<p>AI 的初始设计是 RingBuffer 满时返回 false（丢弃最新）。但传感器数据流的业务语义与通用队列不同——AIS 船只位置、GPS 坐标、IMU 读数的最新值永远比 100ms 前的旧值具有更高的决策价值。</p>
+<p>在明确业务语义后，AI 对比了 <code>RingBuffer</code>（lock-free SPSC）和 <code>mutex + deque</code> 两种实现，最终锁定 <code>RingBuffer</code> 配合 <code>drop-oldest</code> 语义，并补充了 <code>_dropped</code> 原子计数器用于生产环境的可观测性监控。</p>
+<p><strong>结论</strong>：数据结构的选型不只取决于算法复杂度，更取决于业务语义。AI 提供默认实现方案，人根据业务需求判断默认方案是否适用——若不适用，反馈原因，AI 即可针对性调整。业务语义由人定义，实现方案由 AI 匹配。</p>
+<hr>
+<h2 id="七、第六轮：帧格式统一的边界"><a href="#七、第六轮：帧格式统一的边界" class="headerlink" title="七、第六轮：帧格式统一的边界"></a>七、第六轮：帧格式统一的边界</h2><p>AI 提问：「是否考虑为所有数据加上统一的帧头帧尾，然后统一通过 NMEA 工厂解析？」</p>
+<p>统一帧格式是一个表面吸引力很强的方案——解析层可以极度简化。但检查实际设备后，约束条件否决了这一方案：</p>
+<table>
+<thead>
+<tr>
+<th>设备</th>
+<th>帧格式</th>
+<th>格式来源</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>定位设备I</td>
+<td><code>!,...</code></td>
+<td>NMEA 行业标准，硬件固件固定</td>
+</tr>
+<tr>
+<td>定位设备II</td>
+<td><code>$CC...</code></td>
+<td>硬件厂商固定格式</td>
+</tr>
+<tr>
+<td>CoolingSystem</td>
+<td><code>0x4C 0x51 ...</code></td>
+<td>固定 4 字节帧，含 CRC8</td>
+</tr>
+</tbody></table>
+<p>每种设备已有固定的帧格式，且均来自硬件固件，不可修改。在此约束下，再叠加一层统一帧头是冗余设计。</p>
+<p>在获得上述约束信息后，AI 将方向调整为：<strong>不统一帧格式，而统一帧提取接口</strong>。<code>FrameExtractor</code> 支持多种帧格式（NMEA &#x2F; Delimited &#x2F; FixedLength &#x2F; PassThrough），对上暴露一致的回调接口。</p>
+<p><strong>结论</strong>：面对「格式不统一」的问题，直觉解法是「强制统一」。但工程约束（硬件固件不可改）往往使这一路径不可行。更务实的策略是承认多样性，在软件层通过统一接口做适配。将约束条件完整提供给 AI，它能在约束内找到最优的统一层级。</p>
+<hr>
+<h2 id="八、第七轮：分层的粒度判断"><a href="#八、第七轮：分层的粒度判断" class="headerlink" title="八、第七轮：分层的粒度判断"></a>八、第七轮：分层的粒度判断</h2><p>我向 AI 确认：CAN 通信是否纳入 FrameExtractor 体系统一处理？</p>
+<p>结论是不纳入。CAN 与串口的根本区别在于：CAN 控制器在硬件层面已完成了帧定界（CAN ID + DLC + data），<code>socket.read()</code> 返回的即为完整帧。<code>FrameExtractor</code> 的核心职责是「从字节流中定位帧边界」——而 CAN 不存在此问题。</p>
+<p>但 CAN 设备和串口设备在「获得完整帧之后」的处理路径完全一致：解析 payload → 写入状态。统一的层级不在帧提取，而在解析到状态写入这一段。CAN 通过 <code>PassThrough</code> 模式接入，绕过帧查找，在下一层汇合。</p>
+<p><strong>结论</strong>：分层统一需要有明确的边界判断。每向上推进一层，都需要独立评估：该层在所有传输方式下是否有统一的必要和可能？AI 负责梳理出清晰的分层结构，人负责逐层判断统一的适用性。</p>
+<hr>
+<h2 id="九、第八轮：从运行时派发到编译期路由"><a href="#九、第八轮：从运行时派发到编译期路由" class="headerlink" title="九、第八轮：从运行时派发到编译期路由"></a>九、第八轮：从运行时派发到编译期路由</h2><p>当前 NmeaFactory 的实现为字符串匹配调度器：提取 NMEA sentence 前缀的后三个字符，在注册表中查找，创建对应 Processor 实例，调用虚函数。每一帧都要触发一次完整的字符串解析和哈希表查找。</p>
+<p>核心问题在于：<strong>运行时字符串匹配的错误只能在运行时暴露</strong>。Ais 设备必然输出 VDM 语句，BeiDou 必然输出 RMC&#x2F;GGA——这些对应关系在编译期已确定，不应通过运行时字符串解析来决策。</p>
+<p>AI 的分析更进一步：不仅 NmeaFactory 应移除，Processor 基类和虚函数继承体系也应一并去除——编译期确定的类型关系不需要运行时的多态开销。</p>
+<p>随之产生的问题是：解析函数的调度方式——编译期直接分支还是路由表？</p>
+<ul>
+<li><strong>直接分支</strong>：每个设备的 ParseMessage 中使用 if&#x2F;else，实现简单但存在重复。</li>
+<li><strong>设备级路由表</strong>：更具结构性，但路由逻辑仍分散在各设备中。</li>
+<li><strong>Strand 集中路由</strong>：将路由决策提升至与 FrameExtractor 同一层，Device 完全不需要 ParseMessage，仅需声明 RouteTable。</li>
+</ul>
+<p>最终选择了集中路由方案。Device 类的规模从 50–200 行缩减为 5–10 行——<code>getRouteTable()</code> 返回一个编译期常量表。</p>
+<p><strong>结论</strong>：AI 在识别设计异味（运行时字符串派发、不必要的虚函数继承）上表现出高灵敏度。但「替代方案选哪个」——路由表还是直接调用、分散还是集中——依赖于人对系统全局的理解。AI 枚举选项并分析利弊，人基于系统约束做出选择。</p>
+<hr>
+<h2 id="十、第九轮：部署模型决定设计模式"><a href="#十、第九轮：部署模型决定设计模式" class="headerlink" title="十、第九轮：部署模型决定设计模式"></a>十、第九轮：部署模型决定设计模式</h2><p>在方案接近收敛时，AI 提出了一个更根本的问题：是否放弃全局单例，改用 Context 指针显式传递依赖？</p>
+<p>两种模式的对比：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Singleton</th>
+<th>Context</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>调用复杂度</td>
+<td>低，全局访问</td>
+<td>需传递指针</td>
+</tr>
+<tr>
+<td>依赖可见性</td>
+<td>隐式</td>
+<td>显式</td>
+</tr>
+<tr>
+<td>可测试性</td>
+<td>差</td>
+<td>好</td>
+</tr>
+<tr>
+<td>多实例支持</td>
+<td>不支持</td>
+<td>支持</td>
+</tr>
+<tr>
+<td>改动范围</td>
+<td>无</td>
+<td>27 个调用点 + 7 个构造函数</td>
+</tr>
+</tbody></table>
+<p>在本项目的部署模型下——单 UAV 部署、每种设备唯一实例、无并行测试需求——引入 Context 的收益为零，成本却涉及 27 个调用点签名变更和 7 个类的构造函数重构。选择 Singleton 是务实的。</p>
+<p>AI 在确认部署模型后未继续坚持原建议，而是补充了一个风险提示：如果未来需要支持多 UAV 部署，全局单例将是最先需要拆除的部分。</p>
+<p><strong>结论</strong>：教科书将「全局单例」标记为反模式，但这一判断有其适用前提。部署模型是评估设计模式适用性的关键变量——在单实例、单部署的场景下，Singleton 的成本收益比优于 Context。对 AI 提供的任何「最佳实践」建议，都应放入项目的具体约束中重新评估。</p>
+<hr>
+<h2 id="十一、最终方案"><a href="#十一、最终方案" class="headerlink" title="十一、最终方案"></a>十一、最终方案</h2><p>经过十轮对话，方案收敛为十一项设计决策：</p>
+<ol>
+<li>线程模型：Strand 单业务线程 + N×I&#x2F;O 线程（仅负责阻塞 read + push）</li>
+<li>消息积压：RingBuffer drop-oldest 语义 + <code>_dropped</code> 原子计数器用于可观测性</li>
+<li>计算卸载：复用 ZLToolKit WorkThreadPool</li>
+<li>Transport 抽象：ITransport 接口统一 Serial &#x2F; MQTT &#x2F; CAN 三种实现</li>
+<li>帧格式：FrameExtractor 多格式适配，不强制统一帧头</li>
+<li>CAN 处理：PassThrough 模式接入，硬件已定帧</li>
+<li>解析线程：I&#x2F;O 线程只 push，Strand 线程集中解析</li>
+<li>路由方式：RouteTable 集中路由，Device 仅声明路由表</li>
+<li>工厂移除：NmeaFactory 删除，改为命名空间直达解析</li>
+<li>设备配置：yaml 驱动，声明 transport + framing + routes</li>
+<li>构建脚本：build.sh（本地）&#x2F; build_x86.sh &#x2F; build_arm.sh</li>
+</ol>
+<hr>
+<h2 id="十二、回顾"><a href="#十二、回顾" class="headerlink" title="十二、回顾"></a>十二、回顾</h2><p><strong>角色互补</strong>：人掌握业务上下文——设备行为、部署环境、已有基础设施、硬件约束。AI 提供模式知识——Strand、SPSC、ITransport、集中路由——但不假设这些模式一定适用，最终适用性判断由人完成。</p>
+<p><strong>迭代收敛</strong>：十一项决策无一项在第一轮即确定。每项都经历了「提议 → 质疑 → 调整 → 收敛」的循环。ComputePool 方案因忽略已有基础设施被推翻，统一帧头方案因硬件约束被推翻，解析线程的定位经历两次调整才收敛。</p>
+<p><strong>AI 提问的价值</strong>：「是否考虑统一的 ITransport」「路由还是直接编译」「Singleton 还是 Context」——这些提问是推动方案深化的关键节点。AI 在正确的抽象层级提出问题，促使人的模糊直觉被转化为清晰的技术决策。</p>
+<p><strong>数据终结争论</strong>：设计争议不应靠观点对决来解决。在「解析在哪做」的讨论中，AIS 高频场景下 MQTT 回调阻塞 10ms 的具体数据使选择显而易见。数据 + AI 的模式知识 &#x3D; 高效收敛。</p>
+<p><strong>人的判断不可替代</strong>：AI 在整个过程中未做出任何最终决策。它提供选项、分析利弊、提出质疑——但每个选择均由人根据系统约束做出。技术决策的上下文——明天要在 ARM 板子上部署、后续可能新增设备类型、未来可能交接给其他维护者——这些信息不在代码中，但决定了每个决策的方向。</p>
+<hr>
+<blockquote>
+<p>代码重构不是人写代码、AI 检查结果的过程。它是一场对话——每轮都可能推翻上一轮的假设，每一步都在逼近更准确的设计。</p>
+<p>AI 的角色不是替代人做决策，而是作为对话者，持续追问假设、补充知识盲区、枚举候选方案。最终的选择权和责任始终在人。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/ai-code-refactoring-dialogue/">https://hespethorn.github.io/posts/ai-code-refactoring-dialogue/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/">多线程</a><a class="post-meta__tags" href="/tags/MQTT/">MQTT</a><a class="post-meta__tags" href="/tags/AI/">AI</a><a class="post-meta__tags" href="/tags/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F/">设计模式</a><a class="post-meta__tags" href="/tags/%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84/">代码重构</a><a class="post-meta__tags" href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/">架构设计</a><a class="post-meta__tags" href="/tags/%E5%B5%8C%E5%85%A5%E5%BC%8F/">嵌入式</a><a class="post-meta__tags" href="/tags/%E4%B8%B2%E5%8F%A3%E9%80%9A%E4%BF%A1/">串口通信</a><a class="post-meta__tags" href="/tags/%E4%BA%BA%E6%9C%BA%E5%8D%8F%E4%BD%9C/">人机协作</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">551</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">611</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-code-refactoring-dialogue/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-assisted-debugging-misconception/" title="AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的">AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-09T16:00:00.000Z" title="Created 2026-06-10 00:00:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-07T16:00:00.000Z" title="Created 2026-06-08 00:00:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-24T16:00:00.000Z" title="Created 2026-05-25 00:00:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-14T16:00:00.000Z" title="Created 2026-04-15 00:00:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-11T16:00:00.000Z" title="Created 2026-04-12 00:00:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e3f5a7b1/" title="git pull 与 git pull --rebase 的差异">git pull 与 git pull --rebase 的差异</a><time datetime="2026-06-14T16:00:00.000Z" title="Created 2026-06-15 00:00:00">2026-06-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-code-refactoring-dialogue/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d4e5f6a7/" title="青石渠的管水人">青石渠的管水人</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
