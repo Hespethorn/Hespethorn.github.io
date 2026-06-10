@@ -10,7 +10,7 @@ categories:
   - Leetcode
 series: Leetcode-Python
 abbrlink: 'container-with-most-water'
-date: 2024-02-22
+date: 2024-02-21
 ---
 
 # [11. Container With Most Water](https://leetcode.com/problems/container-with-most-water/)

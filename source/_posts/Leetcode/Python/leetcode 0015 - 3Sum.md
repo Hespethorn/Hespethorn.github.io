@@ -9,7 +9,7 @@ categories:
   - Leetcode
 series: Leetcode-Python
 abbrlink: c8d9f3e2
-date: 2024-01-17
+date: 2024-03-12
 ---
 
 # [15. 3Sum](https://leetcode.com/problems/3sum/)

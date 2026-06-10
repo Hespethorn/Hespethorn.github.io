@@ -10,7 +10,7 @@ categories:
   - Leetcode
 series: Leetcode-Python
 abbrlink: 'regex-matching-dp'
-date: 2024-02-17
+date: 2024-02-16
 ---
 
 # [10. Regular Expression Matching](https://leetcode.com/problems/regular-expression-matching/)

@@ -9,7 +9,7 @@ categories:
   - Leetcode
 series: Leetcode-Python
 abbrlink: 'longest-common-prefix'
-date: 2024-02-16
+date: 2024-03-07
 ---
 
 # [14. Longest Common Prefix](https://leetcode.com/problems/longest-common-prefix/)

@@ -9,7 +9,7 @@ categories:
   - Leetcode
 series: Leetcode-Python
 abbrlink: 'roman-to-integer-py'
-date: 2024-03-04
+date: 2024-03-02
 ---
 
 # [13. Roman to Integer](https://leetcode.com/problems/roman-to-integer/)
