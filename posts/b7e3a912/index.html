@@ -1,0 +1,573 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="借助 AI 在 30 分钟内定位并修复了三个偶发性崩溃问题。本文复盘整个排查过程，记录诊断思路和修复方案。  一、背景项目是一个基于 ZLMediaKit 的嵌入式多媒体客户端，运行在 ARM 平台上。最近重构了 RTSP 服务管理代码后，程序同时出现三个症状：  偶尔 double-free 崩溃（ARM 和 x86 都有） ARM 启动即段错误，x86 却正常 RTSP 服务无法正常退出（卡">
+<meta property="og:type" content="article">
+<meta property="og:title" content="一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁">
+<meta property="og:url" content="https://hespethorn.github.io/posts/b7e3a912/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="借助 AI 在 30 分钟内定位并修复了三个偶发性崩溃问题。本文复盘整个排查过程，记录诊断思路和修复方案。  一、背景项目是一个基于 ZLMediaKit 的嵌入式多媒体客户端，运行在 ARM 平台上。最近重构了 RTSP 服务管理代码后，程序同时出现三个症状：  偶尔 double-free 崩溃（ARM 和 x86 都有） ARM 启动即段错误，x86 却正常 RTSP 服务无法正常退出（卡">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-11T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-06-12T07:13:12.660Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="多线程">
+<meta property="article:tag" content="调试">
+<meta property="article:tag" content="ELF">
+<meta property="article:tag" content="RTSP">
+<meta property="article:tag" content="ZLMediaKit">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁",
+  "url": "https://hespethorn.github.io/posts/b7e3a912/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-11T16:00:00.000Z",
+  "dateModified": "2026-06-12T07:13:12.660Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/b7e3a912/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">561</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">622</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-06-11T16:00:00.000Z" title="Created 2026-06-12 00:00:00">2026-06-12</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>借助 AI 在 30 分钟内定位并修复了三个偶发性崩溃问题。本文复盘整个排查过程，记录诊断思路和修复方案。</p>
+</blockquote>
+<h2 id="一、背景"><a href="#一、背景" class="headerlink" title="一、背景"></a>一、背景</h2><p>项目是一个基于 ZLMediaKit 的嵌入式多媒体客户端，运行在 ARM 平台上。最近重构了 RTSP 服务管理代码后，程序同时出现三个症状：</p>
+<ol>
+<li><strong>偶尔 double-free 崩溃</strong>（ARM 和 x86 都有）</li>
+<li><strong>ARM 启动即段错误，x86 却正常</strong></li>
+<li><strong>RTSP 服务无法正常退出</strong>（卡死）</li>
+</ol>
+<p>前两个问题看起来像内存错误，第三个像死锁，直觉上互不相干。但折腾一圈后发现，三个 bug 共享同一个根——<strong>静态库与动态库的符号冲突</strong>。下面按排查顺序逐个说。</p>
+<h2 id="二、Bug-1：偶尔-double-free-——-ELF-符号介入"><a href="#二、Bug-1：偶尔-double-free-——-ELF-符号介入" class="headerlink" title="二、Bug 1：偶尔 double-free —— ELF 符号介入"></a>二、Bug 1：偶尔 double-free —— ELF 符号介入</h2><h3 id="症状"><a href="#症状" class="headerlink" title="症状"></a>症状</h3><p>程序退出时偶尔报 double-free，不是每次都出现。<code>valgrind</code> 能抓到，但指向的调用栈涉及动态库的析构阶段，信息模糊。</p>
+<h3 id="排查过程"><a href="#排查过程" class="headerlink" title="排查过程"></a>排查过程</h3><p>让 AI 遍历 <code>src/</code> 下所有源文件做内存管理分析。AI 很快从 <code>CMakeLists.txt</code> 中拎出一段关键注释：</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># libcore_api.so 提供 toolkit 基础库符号（SocketHelper, EventPoller 等）</span></span><br><span class="line"><span class="comment"># libzlmediakit.a 提供 C++ 高层接口（PlayerProxy, TcpServer 等）</span></span><br><span class="line"><span class="comment"># 两者都包含 ZLMediaKit 全局 std::string，ELF 符号介入导致同一块内存被析构两次 (double-free)</span></span><br><span class="line"><span class="comment"># 解决：用 -Wl,--no-as-needed 确保 libcore_api.so 被链接，并在退出前手动清理</span></span><br></pre></td></tr></table></figure>
+
+<p>注释已经把问题说清楚了。进一步检查 <code>git diff</code>，发现重构中新代码把 <code>_exit(0)</code> 改成了 <code>return 0</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 旧代码（正确）</span></span><br><span class="line"><span class="comment">// 使用 _exit() 跳过 atexit/dl_fini 析构，避免 libcore_api.so 与 libzlmediakit.a</span></span><br><span class="line"><span class="comment">// 的全局 std::string 被 ELF 符号介入导致 double-free。</span></span><br><span class="line">_exit(<span class="number">0</span>);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 新代码（有问题）</span></span><br><span class="line"><span class="keyword">return</span> <span class="number">0</span>;</span><br></pre></td></tr></table></figure>
+
+<h3 id="根因"><a href="#根因" class="headerlink" title="根因"></a>根因</h3><p><code>libcore_api.so</code>（动态库）和 <code>libzlmediakit.a</code>（静态库）各自编译了一份 ZLMediaKit 的全局 <code>std::string</code> 对象。正常运行时相安无事，但程序退出的 <code>atexit</code> &#x2F; <code>dl_fini</code> 阶段：</p>
+<ol>
+<li>动态库 fini 析构一次 string，释放内存</li>
+<li>可执行文件的静态析构再对<strong>同一块</strong>内存调用 free → double-free</li>
+</ol>
+<p>这是 ELF 默认符号解析的经典陷阱：动态库的 <code>std::string</code> 符号介入了可执行文件中的同名符号，链接器把它们合并成了同一个对象，两块代码以为自己各管各的，实际上共享了一块内存。</p>
+<h3 id="修复"><a href="#修复" class="headerlink" title="修复"></a>修复</h3><figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># CMakeLists.txt</span></span><br><span class="line"><span class="keyword">set_target_properties</span>(app PROPERTIES</span><br><span class="line">    LINK_FLAGS <span class="string">&quot;-Wl,-Bsymbolic&quot;</span>   <span class="comment"># 可执行文件符号自绑定，阻止 .so 介入</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p><code>-Bsymbolic</code> 让可执行文件内的符号引用优先绑定到自身定义。<code>libcore_api.so</code> 的全局 string 和 <code>libzlmediakit.a</code> 的全局 string 从此各自独立，互不干预。</p>
+<p>把 <code>_exit(0)</code> 恢复后 double-free 消失——但这只是掩盖，真正的修法还是 <code>-Bsymbolic</code>。前者跳过析构，后者让析构正确。</p>
+<h2 id="三、Bug-2：ARM-启动段错误-——-静态初始化顺序-fiasco"><a href="#三、Bug-2：ARM-启动段错误-——-静态初始化顺序-fiasco" class="headerlink" title="三、Bug 2：ARM 启动段错误 —— 静态初始化顺序 fiasco"></a>三、Bug 2：ARM 启动段错误 —— 静态初始化顺序 fiasco</h2><h3 id="症状-1"><a href="#症状-1" class="headerlink" title="症状"></a>症状</h3><p>ARM 上程序启动即崩溃，GDB 的 backtrace 长这样：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">#4  Factory::registerPlugin → 访问 s_plugins[...]</span><br><span class="line">#7  __static_initialization_and_destruction_0  ← libcore_api.so 的静态构造</span><br></pre></td></tr></table></figure>
+
+<p>x86 上完全正常。</p>
+<h3 id="排查过程-1"><a href="#排查过程-1" class="headerlink" title="排查过程"></a>排查过程</h3><p>backtrace 里 frame #4 在可执行文件地址空间，frame #7 在 <code>libcore_api.so</code> 地址空间，但<strong>都指向同一个源文件</strong> <code>Factory.cpp</code>。同一个源文件怎么出现在两个不同的加载单元里？</p>
+<p>AI 对比了 ARM 和 x86 预编译库的符号表。线索就藏在 mangled symbol 里：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># x86 libzlmediakit.a（旧版，正常）</span><br><span class="line">_ZN8mediakitL10getPluginsEv              ← getPlugins() 函数</span><br><span class="line">_ZZN8mediakitL10getPluginsEvE9s_plugins  ← s_plugins 在 getPlugins() 内部（Meyers&#x27; singleton）</span><br><span class="line"></span><br><span class="line"># ARM libzlmediakit.a（新版，有问题）</span><br><span class="line">_ZN8mediakitL9s_pluginsE                 ← s_plugins 是文件级 static（独立符号）</span><br><span class="line">_ZN8mediakitL10getPluginsEv              ← getPlugins() 也存在（但 registerPlugin 未使用它）</span><br></pre></td></tr></table></figure>
+
+<p>真相大白：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>x86 预编译库</th>
+<th>ARM 预编译库</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ZLMediaKit 版本</td>
+<td>旧版</td>
+<td>新版</td>
+</tr>
+<tr>
+<td><code>s_plugins</code> 位置</td>
+<td>函数内 static（Meyers&#39; singleton）</td>
+<td>文件级 static</td>
+</tr>
+<tr>
+<td>初始化时机</td>
+<td>首次调用 <code>getPlugins()</code> 时</td>
+<td>ELF 初始化阶段，顺序不可控</td>
+</tr>
+</tbody></table>
+<h3 id="根因-1"><a href="#根因-1" class="headerlink" title="根因"></a>根因</h3><p><code>Factory.cpp</code> 的新版中，有人把 <code>s_plugins</code> 从函数内 static 改成了文件级 static：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 旧版（正常）</span></span><br><span class="line"><span class="function"><span class="type">static</span> <span class="keyword">auto</span>&amp; <span class="title">getPlugins</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">static</span> std::unordered_map&lt;<span class="type">int</span>, <span class="type">const</span> CodecPlugin*&gt; s_plugins;</span><br><span class="line">    <span class="keyword">return</span> s_plugins;  <span class="comment">// 首次调用时才初始化</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 新版（崩溃）</span></span><br><span class="line"><span class="type">static</span> std::unordered_map&lt;<span class="type">int</span>, <span class="type">const</span> CodecPlugin*&gt; s_plugins;</span><br><span class="line"><span class="comment">// ↑ 文件级 static，构造函数何时执行取决于 ELF 初始化顺序——这就是 fiasco</span></span><br></pre></td></tr></table></figure>
+
+<p>崩溃链路非常清晰：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">libcore_api.so 加载 → 静态构造函数运行</span><br><span class="line">  → REGISTER_CODEC(vp8_plugin) 展开的 onceToken 构造</span><br><span class="line">    → 调用 Factory::registerPlugin()</span><br><span class="line">      → ELF 符号介入，解析到可执行文件的 registerPlugin 版本</span><br><span class="line">        → 访问可执行文件中的 s_plugins</span><br><span class="line">          → 可执行文件的静态构造还没跑到</span><br><span class="line">            → s_plugins 尚未构造 → 访问未初始化的 unordered_map → 段错误</span><br></pre></td></tr></table></figure>
+
+<h3 id="为什么-x86-正常？"><a href="#为什么-x86-正常？" class="headerlink" title="为什么 x86 正常？"></a>为什么 x86 正常？</h3><p>因为 x86 预编译库是旧版 ZLMediaKit 编译的，<code>s_plugins</code> 是函数内 static（Meyers&#39; singleton），首次调用时才初始化，天然免疫静态初始化顺序问题。</p>
+<p><strong>这跟 CPU 架构没有任何关系，纯粹是两套预编译库的 ZLMediaKit 版本不同。</strong></p>
+<h3 id="修复-1"><a href="#修复-1" class="headerlink" title="修复"></a>修复</h3><p>两件事：</p>
+<ol>
+<li>把 <code>Factory.cpp</code> 恢复成 Meyers&#39; singleton 写法——这是治本</li>
+<li>ARM 预编译库从备份恢复旧版——这是兜底，万一别处还有类似改动</li>
+</ol>
+<p>经验法则：<strong>永远不要在跨编译单元的全局对象初始化代码中依赖另一个编译单元的全局对象。</strong> 如果你必须这样做，把它包进函数内 static。</p>
+<h2 id="四、Bug-3：RTSP-无法正常退出-——-EventPoller-线程死锁"><a href="#四、Bug-3：RTSP-无法正常退出-——-EventPoller-线程死锁" class="headerlink" title="四、Bug 3：RTSP 无法正常退出 —— EventPoller 线程死锁"></a>四、Bug 3：RTSP 无法正常退出 —— EventPoller 线程死锁</h2><h3 id="症状-2"><a href="#症状-2" class="headerlink" title="症状"></a>症状</h3><p>程序退出时卡住不动，Ctrl+C 无效，只能 <code>kill -9</code>。</p>
+<h3 id="排查过程-2"><a href="#排查过程-2" class="headerlink" title="排查过程"></a>排查过程</h3><p>旧代码里其实已经有一段注释点明了问题：</p>
+<blockquote>
+<p>PlayerProxy &#x2F; TcpServer 的析构依赖 EventPoller 线程协同完成，推流重连时 EventPoller 被异步任务占满，同步析构必然死锁。</p>
+</blockquote>
+<p>之前的&quot;修复&quot;手段很粗暴：让 <code>stop()</code> 方法什么也不做，靠 <code>_exit(0)</code> 直接退出，让操作系统回收资源。但 Bug 1 修了之后不能用 <code>_exit(0)</code> 了——你需要走正常的析构路径。</p>
+<p>AI 查阅了 ZLMediaKit 的 <code>EventPoller.h</code> 头文件，找到了 <code>async()</code> API，提出了关键思路：<strong>把清理任务投递到 EventPoller 的线程内部去执行</strong>。</p>
+<h3 id="根因-2"><a href="#根因-2" class="headerlink" title="根因"></a>根因</h3><p>死锁的因果链如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">主线程调用 proxy.reset()</span><br><span class="line">  → PlayerProxy 析构函数需要取消 EventPoller 上的定时器</span><br><span class="line">    → 向 EventPoller 线程投递&quot;取消&quot;任务，并同步等待完成</span><br><span class="line">      → 但 EventPoller 线程正在处理推流重连的异步任务，忙得不可开交</span><br><span class="line">        → &quot;取消&quot;任务永远排不到</span><br><span class="line">          → 主线程永远在等 → 死锁</span><br></pre></td></tr></table></figure>
+
+<p>本质是一个经典模式：<strong>线程 A 析构一个对象，但这个对象的清理工作需要线程 B 配合——而线程 B 正忙，无法响应。</strong> 跨线程同步析构是这类 bug 的温床。</p>
+<h3 id="修复-2"><a href="#修复-2" class="headerlink" title="修复"></a>修复</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">stop</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (proxies.<span class="built_in">empty</span>() &amp;&amp; !server) <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 将析构投递到 EventPoller 线程执行，避免跨线程同步等待</span></span><br><span class="line">    <span class="keyword">auto</span> poller = EventPollerPool::<span class="built_in">Instance</span>().<span class="built_in">getFirstPoller</span>();</span><br><span class="line">    <span class="keyword">if</span> (poller) &#123;</span><br><span class="line">        poller-&gt;<span class="built_in">async</span>([proxies = std::<span class="built_in">move</span>(<span class="keyword">this</span>-&gt;proxies),</span><br><span class="line">                       server  = std::<span class="built_in">move</span>(<span class="keyword">this</span>-&gt;server)]() <span class="keyword">mutable</span> &#123;</span><br><span class="line">            <span class="comment">// 在 EventPoller 自己的线程里析构 PlayerProxy</span></span><br><span class="line">            <span class="comment">// 所有内部清理操作都是同线程同步，不会死锁</span></span><br><span class="line">            proxies.<span class="built_in">clear</span>();</span><br><span class="line">            server.<span class="built_in">reset</span>();</span><br><span class="line">        &#125;);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>核心思想：让 PlayerProxy 的析构<strong>发生在 EventPoller 自己的线程里</strong>。析构函数内部的所有操作——取消定时器、关闭连接、清理 session——全部是同线程同步调用，没有任何跨线程等待。主线程只负责把 lambda 投递过去，投递完就返回了，不等待结果。</p>
+<p>这是一个通用模式：<strong>谁创建的对象，就在谁的线程里析构它。</strong> 如果对象依赖某个事件循环，那把析构也投递到那个循环里。</p>
+<h2 id="五、AI-辅助调试的价值"><a href="#五、AI-辅助调试的价值" class="headerlink" title="五、AI 辅助调试的价值"></a>五、AI 辅助调试的价值</h2><p>这次排查过程让我对 AI 在系统级 bug 定位中的角色有了更具体的认识。几个关键时刻：</p>
+<ol>
+<li><p><strong>全量代码扫描</strong>：人工排查三个相互关联的 bug，需要逐个阅读 <code>src/</code> 下几十个源文件并手工建立关联。AI 在几分钟内遍历完毕，直接给出可疑点列表。</p>
+</li>
+<li><p><strong>精准定位关键注释</strong>：<code>CMakeLists.txt</code> 里那段解释 ELF 符号介入的注释是整个 Bug 1 的关键线索。在几百行的构建配置里，AI 直接把它拎了出来——人工翻可能就扫过去了。</p>
+</li>
+<li><p><strong>跨领域知识关联</strong>：ELF 符号介入、Meyers&#39; singleton、静态初始化顺序 fiasco、EventPoller 线程模型——这四个知识点分属链接器、C++ 语言规范、Linux 动态加载和 ZLMediaKit 框架。单独排查时很容易卡在某一层的表象上，AI 能同时调动这几个领域的知识做交叉分析。</p>
+</li>
+<li><p><strong>符号表对比分析</strong>：通过对比 x86 和 ARM 预编译库的 mangled symbol，AI 在几秒内确认了 <code>s_plugins</code> 在两个版本中的差异。人工做这一步，需要 <code>strings | grep</code> 然后手工 demangle，一条条比对，耗时且容易遗漏。</p>
+</li>
+<li><p><strong>API 发现</strong>：AI 主动查找并阅读了 <code>EventPoller.h</code> 的 API 定义，发现了 <code>async()</code> 方法——这个方法不在我日常使用的 API 子集里。没有它，死锁问题就只能继续用 <code>_exit(0)</code> 这种粗暴手段绕过去。</p>
+</li>
+</ol>
+<p>说到底，AI 的价值不在于替代你对底层机制的理解——你仍然需要能看懂 backtrace、理解符号表、判断根因的可信度。AI 的价值在于<strong>压缩从症状到根因的推理链条</strong>：帮你快速排除噪音、关联线索、找到那条关键的证据。你可以把节省下来的脑力用在更重要的决策上。</p>
+<h2 id="六、小结"><a href="#六、小结" class="headerlink" title="六、小结"></a>六、小结</h2><p>三个 bug，各自触及不同的计算机科学基础概念：</p>
+<table>
+<thead>
+<tr>
+<th>Bug</th>
+<th>涉及概念</th>
+<th>一句话总结</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>double-free</td>
+<td>ELF 符号介入、动静态链接混用</td>
+<td><code>-Wl,-Bsymbolic</code> 让可执行文件的符号自绑定</td>
+</tr>
+<tr>
+<td>启动段错误</td>
+<td>静态初始化顺序 fiasco、Meyers&#39; singleton</td>
+<td>永远用函数内 static 替代文件级 static</td>
+</tr>
+<tr>
+<td>RTSP 退出死锁</td>
+<td>事件循环线程模型、异步析构</td>
+<td>把析构投递到 EventPoller 自己的线程执行</td>
+</tr>
+</tbody></table>
+<p>三个 bug 都是&quot;改一行修好&quot;的类型——<code>-Bsymbolic</code>、Meyers&#39; singleton、<code>poller-&gt;async()</code>——但定位每一行都需要对底层机制有准确理解。工程里的 hard bug 往往不是代码逻辑写错了，而是对运行时的假设出了问题：你以为符号是独立的，你以为初始化是有序的，你以为析构可以在任意线程等待——当你对底层机制的认知和实际行为之间有裂缝时，bug 就钻进去了。</p>
+<p><strong>调试的最高境界不是修好一个 bug，而是看懂一个假设——然后发现另外两个 bug 也基于同一个错误的假设。</strong></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/b7e3a912/">https://hespethorn.github.io/posts/b7e3a912/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/">多线程</a><a class="post-meta__tags" href="/tags/%E8%B0%83%E8%AF%95/">调试</a><a class="post-meta__tags" href="/tags/ELF/">ELF</a><a class="post-meta__tags" href="/tags/RTSP/">RTSP</a><a class="post-meta__tags" href="/tags/ZLMediaKit/">ZLMediaKit</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">561</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">622</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4d8e219/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b7e3a912/" title="一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</a><time datetime="2026-06-11T16:00:00.000Z" title="Created 2026-06-12 00:00:00">2026-06-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-assisted-debugging-misconception/" title="AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的">AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-09T16:00:00.000Z" title="Created 2026-06-10 00:00:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-07T16:00:00.000Z" title="Created 2026-06-08 00:00:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-24T16:00:00.000Z" title="Created 2026-05-25 00:00:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-14T16:00:00.000Z" title="Created 2026-04-15 00:00:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-11T16:00:00.000Z" title="Created 2026-04-12 00:00:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e3f5a7b1/" title="git pull 与 git pull --rebase 的差异">git pull 与 git pull --rebase 的差异</a><time datetime="2026-06-14T16:00:00.000Z" title="Created 2026-06-15 00:00:00">2026-06-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4d8e219/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b7e3a912/" title="一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</a><time datetime="2026-06-11T16:00:00.000Z" title="Created 2026-06-12 00:00:00">2026-06-12</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
