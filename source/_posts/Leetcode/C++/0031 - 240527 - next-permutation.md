@@ -74,9 +74,6 @@ Output: [1,5,1]
 
 ## 代码实现
 
-{% tabs test1 %}
-<!-- tab 两指针法 -->
-
 ```cpp
 #include <vector>
 #include <algorithm>
@@ -104,85 +101,3 @@ public:
     }
 };
 ```
-
-<!-- endtab -->
-
-<!-- tab 完整测试 -->
-
-```cpp
-#include <iostream>
-#include <vector>
-#include <algorithm>
-using namespace std;
-
-class Solution {
-public:
-    void nextPermutation(vector<int>& nums) {
-        int n = nums.size();
-        int i = n - 2;
-        
-        while (i >= 0 && nums[i] >= nums[i + 1]) {
-            i--;
-        }
-        
-        if (i >= 0) {
-            int j = n - 1;
-            while (nums[j] <= nums[i]) {
-                j--;
-            }
-            swap(nums[i], nums[j]);
-        }
-        
-        reverse(nums.begin() + i + 1, nums.end());
-    }
-};
-
-void printVector(const vector<int>& nums) {
-    cout << "[";
-    for (int i = 0; i < nums.size(); i++) {
-        cout << nums[i];
-        if (i < nums.size() - 1) {
-            cout << ", ";
-        }
-    }
-    cout << "]" << endl;
-}
-
-int main() {
-    Solution solution;
-    
-    vector<int> nums1 = {1, 2, 3};
-    cout << "Input: ";
-    printVector(nums1);
-    solution.nextPermutation(nums1);
-    cout << "Output: ";
-    printVector(nums1);
-    
-    vector<int> nums2 = {3, 2, 1};
-    cout << "\nInput: ";
-    printVector(nums2);
-    solution.nextPermutation(nums2);
-    cout << "Output: ";
-    printVector(nums2);
-    
-    vector<int> nums3 = {1, 1, 5};
-    cout << "\nInput: ";
-    printVector(nums3);
-    solution.nextPermutation(nums3);
-    cout << "Output: ";
-    printVector(nums3);
-    
-    vector<int> nums4 = {1, 3, 2};
-    cout << "\nInput: ";
-    printVector(nums4);
-    solution.nextPermutation(nums4);
-    cout << "Output: ";
-    printVector(nums4);
-    
-    return 0;
-}
-```
-
-<!-- endtab -->
-
-{% endtabs %}

@@ -83,9 +83,6 @@ Output: 0
 
 ## 代码实现
 
-{% tabs test1 %}
-<!-- tab 栈 -->
-
 ```cpp
 #include <iostream>
 #include <stack>
@@ -116,10 +113,6 @@ public:
     }
 };
 ```
-
-<!-- endtab -->
-
-<!-- tab 动态规划 -->
 
 ```cpp
 #include <iostream>
@@ -149,65 +142,3 @@ public:
     }
 };
 ```
-
-<!-- endtab -->
-
-<!-- tab 完整测试 -->
-
-```cpp
-#include <iostream>
-#include <string>
-#include <stack>
-#include <vector>
-using namespace std;
-
-class Solution {
-public:
-    int longestValidParentheses(string s) {
-        int max_len = 0;
-        stack<int> st;
-        st.push(-1);
-        
-        for (int i = 0; i < s.size(); i++) {
-            if (s[i] == '(') {
-                st.push(i);
-            } else {
-                st.pop();
-                if (st.empty()) {
-                    st.push(i);
-                } else {
-                    max_len = max(max_len, i - st.top());
-                }
-            }
-        }
-        
-        return max_len;
-    }
-};
-
-int main() {
-    Solution solution;
-    
-    string s1 = "(()";
-    cout << "Input: \"" << s1 << "\"" << endl;
-    cout << "Output: " << solution.longestValidParentheses(s1) << endl;
-    
-    string s2 = ")()())";
-    cout << "\nInput: \"" << s2 << "\"" << endl;
-    cout << "Output: " << solution.longestValidParentheses(s2) << endl;
-    
-    string s3 = "";
-    cout << "\nInput: \"" << s3 << "\"" << endl;
-    cout << "Output: " << solution.longestValidParentheses(s3) << endl;
-    
-    string s4 = "()(())";
-    cout << "\nInput: \"" << s4 << "\"" << endl;
-    cout << "Output: " << solution.longestValidParentheses(s4) << endl;
-    
-    return 0;
-}
-```
-
-<!-- endtab -->
-
-{% endtabs %}
