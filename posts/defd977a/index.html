@@ -1,0 +1,602 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>读代码前必运行的五个Git命令——快速诊断代码库健康状况 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="本文灵感来源于文章《The Git Commands I Run Before Reading Any Code》  一、为什么读代码前要先看Git历史作为一个 C++ 工程师，我接手过很多新项目。以前我总是迫不及待地打开代码编辑器，试图从第一行代码开始理解整个系统。但我发现，这种方法效率很低——我常常在代码迷宫中迷失方向，不知道哪里是核心、哪里是坑。 后来我学到了一个重要的技巧：在打开任何代码">
+<meta property="og:type" content="article">
+<meta property="og:title" content="读代码前必运行的五个Git命令——快速诊断代码库健康状况">
+<meta property="og:url" content="https://hespethorn.github.io/posts/defd977a/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="本文灵感来源于文章《The Git Commands I Run Before Reading Any Code》  一、为什么读代码前要先看Git历史作为一个 C++ 工程师，我接手过很多新项目。以前我总是迫不及待地打开代码编辑器，试图从第一行代码开始理解整个系统。但我发现，这种方法效率很低——我常常在代码迷宫中迷失方向，不知道哪里是核心、哪里是坑。 后来我学到了一个重要的技巧：在打开任何代码">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-07-13T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-14T01:35:33.915Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Git">
+<meta property="article:tag" content="版本控制">
+<meta property="article:tag" content="文章">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="代码审查">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "读代码前必运行的五个Git命令——快速诊断代码库健康状况",
+  "url": "https://hespethorn.github.io/posts/defd977a/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-07-13T16:00:00.000Z",
+  "dateModified": "2026-07-14T01:35:33.915Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/defd977a/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '读代码前必运行的五个Git命令——快速诊断代码库健康状况',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">611</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">718</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">读代码前必运行的五个Git命令——快速诊断代码库健康状况</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">读代码前必运行的五个Git命令——快速诊断代码库健康状况</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-07-13T16:00:00.000Z" title="Created 2026-07-14 00:00:00">2026-07-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>本文灵感来源于文章《The Git Commands I Run Before Reading Any Code》</p>
+</blockquote>
+<h2 id="一、为什么读代码前要先看Git历史"><a href="#一、为什么读代码前要先看Git历史" class="headerlink" title="一、为什么读代码前要先看Git历史"></a>一、为什么读代码前要先看Git历史</h2><p>作为一个 C++ 工程师，我接手过很多新项目。以前我总是迫不及待地打开代码编辑器，试图从第一行代码开始理解整个系统。但我发现，这种方法效率很低——我常常在代码迷宫中迷失方向，不知道哪里是核心、哪里是坑。</p>
+<p>后来我学到了一个重要的技巧：<strong>在打开任何代码文件之前，先运行几个 Git 命令，从提交历史中获取代码库的诊断画像。</strong></p>
+<p>这就像看医生之前，护士会先测体温、量血压一样。Git 历史能告诉我们：</p>
+<ul>
+<li>谁构建了这个系统？</li>
+<li>哪里是问题集中的地方？</li>
+<li>团队是充满信心地迭代，还是小心翼翼地拆炸弹？</li>
+<li>项目是在加速还是在衰退？</li>
+</ul>
+<h2 id="二、命令一：谁是代码改动最频繁的文件"><a href="#二、命令一：谁是代码改动最频繁的文件" class="headerlink" title="二、命令一：谁是代码改动最频繁的文件"></a>二、命令一：谁是代码改动最频繁的文件</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git <span class="built_in">log</span> --format=format: --name-only --since=<span class="string">&quot;1 year ago&quot;</span> | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c | <span class="built_in">sort</span> -nr | <span class="built_in">head</span> -20</span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果示例：</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">156 src/core/engine.cpp</span><br><span class="line"> 89 src/utils/logger.cpp</span><br><span class="line"> 72 include/config.h</span><br><span class="line"> 58 src/net/server.cpp</span><br><span class="line"> 45 src/database/connection.cpp</span><br></pre></td></tr></table></figure>
+
+<p>这个命令会列出过去一年中改动最频繁的20个文件。</p>
+<p><strong>解读：</strong></p>
+<p>排在最前面的文件，通常就是团队最害怕触碰的文件。&quot;哦对，那个文件。谁都不想碰它。&quot;</p>
+<p>高改动频率本身不一定是坏事，可能只是活跃开发的表现。但如果一个文件改动频繁，却没人愿意负责，那就是最明确的危险信号——这个文件充满了补丁上的补丁，一个小小的改动可能引发不可预测的连锁反应。</p>
+<p>微软研究院的一项研究发现，<strong>相对改动率（按组件大小归一化后的改动次数）是预测缺陷密度的好指标</strong>。我通常会把这个命令的输出和下面的&quot;bug 热点&quot;命令交叉比对——一个既高改动又高 bug 的文件，就是你最大的风险点。</p>
+<h2 id="三、命令二：谁构建了这个系统"><a href="#三、命令二：谁构建了这个系统" class="headerlink" title="三、命令二：谁构建了这个系统"></a>三、命令二：谁构建了这个系统</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git shortlog -sn --no-merges</span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果示例：</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">456  Zhang San</span><br><span class="line">234  Li Si</span><br><span class="line"> 89  Wang Wu</span><br><span class="line"> 45  Zhao Liu</span><br></pre></td></tr></table></figure>
+
+<p><strong>解读：</strong></p>
+<p>这个命令按提交数量对所有贡献者排序。</p>
+<p><strong>关键观察点：</strong></p>
+<ol>
+<li><p><strong>巴士因子（Bus Factor）</strong>：如果某个人贡献了60%以上的代码，那就是一个严重的风险。如果这个人已经离开半年了，那就是危机。</p>
+</li>
+<li><p><strong>贡献者断层</strong>：30个贡献者，但过去一年只有3个人活跃——构建系统的人已经不是维护系统的人了。</p>
+</li>
+<li><p><strong>活跃窗口对比</strong>：比较整体和近6个月的贡献者分布：</p>
+</li>
+</ol>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git shortlog -sn --no-merges --since=<span class="string">&quot;6 months ago&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>如果整体排名第一的贡献者不在近6个月的列表中，这是一个需要立即关注的信号。</p>
+<p><strong>注意事项：</strong> 如果团队使用 squash-merge 工作流，这个命令反映的是合并者，而不是实际编写代码的人。在得出结论之前，最好先了解团队的合并策略。</p>
+<h2 id="四、命令三：Bug集中在哪里"><a href="#四、命令三：Bug集中在哪里" class="headerlink" title="四、命令三：Bug集中在哪里"></a>四、命令三：Bug集中在哪里</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git <span class="built_in">log</span> -i -E --grep=<span class="string">&quot;fix|bug|broken&quot;</span> --name-only --format=<span class="string">&#x27;&#x27;</span> | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c | <span class="built_in">sort</span> -nr | <span class="built_in">head</span> -20</span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果示例：</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">23 src/core/engine.cpp</span><br><span class="line">15 src/utils/logger.cpp</span><br><span class="line"> 8 src/net/server.cpp</span><br></pre></td></tr></table></figure>
+
+<p><strong>解读：</strong></p>
+<p>这个命令和改动频率命令类似，但只过滤包含 bug 相关关键词的提交。</p>
+<p><strong>交叉分析：</strong></p>
+<p>把这个列表和改动频率列表对比。同时出现在两个列表中的文件，就是最高风险的代码——它们不断出问题，不断被修补，但从未被真正修复。</p>
+<p>这依赖于团队的提交信息规范。如果团队每次提交都写&quot;update stuff&quot;，你什么也得不到。但即使是一个粗略的 bug 密度地图，也比没有地图好。</p>
+<h2 id="五、命令四：项目在加速还是在衰退"><a href="#五、命令四：项目在加速还是在衰退" class="headerlink" title="五、命令四：项目在加速还是在衰退"></a>五、命令四：项目在加速还是在衰退</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git <span class="built_in">log</span> --format=<span class="string">&#x27;%ad&#x27;</span> --<span class="built_in">date</span>=format:<span class="string">&#x27;%Y-%m&#x27;</span> | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c</span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果示例：</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">23 2025-01</span><br><span class="line">28 2025-02</span><br><span class="line">31 2025-03</span><br><span class="line">15 2025-04</span><br><span class="line">12 2025-05</span><br><span class="line"> 8 2025-06</span><br></pre></td></tr></table></figure>
+
+<p><strong>解读：</strong></p>
+<p>这个命令按月份统计提交数量，展示整个仓库历史的提交节奏。</p>
+<p><strong>关键形状：</strong></p>
+<ol>
+<li><p><strong>稳定节奏</strong>：健康的信号，说明团队持续迭代。</p>
+</li>
+<li><p><strong>突然下降</strong>：单个月提交量减半，通常意味着有人离职。</p>
+</li>
+<li><p><strong>持续下降</strong>：6到12个月的下降曲线，说明团队正在失去动力。</p>
+</li>
+<li><p><strong>周期性尖峰</strong>：尖峰后跟着安静的月份，说明团队把工作批量打包成版本发布，而不是持续交付。</p>
+</li>
+</ol>
+<p>我曾经给一个 CTO 展示他们的提交速度图表，他说：&quot;那就是我们失去第二个高级工程师的时候。&quot; 在此之前，他从未把时间线联系起来。这是团队数据，不是代码数据，但同样重要。</p>
+<h2 id="六、命令五：团队在救火还是在正常开发"><a href="#六、命令五：团队在救火还是在正常开发" class="headerlink" title="六、命令五：团队在救火还是在正常开发"></a>六、命令五：团队在救火还是在正常开发</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git <span class="built_in">log</span> --oneline --since=<span class="string">&quot;1 year ago&quot;</span> | grep -iE <span class="string">&#x27;revert|hotfix|emergency|rollback&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>运行结果示例：</strong></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">abc1234 revert &quot;fix: 紧急修复登录问题&quot;</span><br><span class="line">def5678 hotfix: 修复内存泄漏</span><br><span class="line">ghi9012 emergency: 回滚到上一个稳定版本</span><br></pre></td></tr></table></figure>
+
+<p><strong>解读：</strong></p>
+<p>这个命令统计 revert 和 hotfix 的频率。</p>
+<p><strong>判断标准：</strong></p>
+<ul>
+<li><strong>一年中只有几次</strong>：正常。</li>
+<li><strong>每几周就有一次</strong>：团队不信任部署流程，这是更深层次问题的证据——测试不可靠、缺少 staging 环境、或者部署管道让回滚变得困难。</li>
+<li><strong>零结果</strong>：要么团队很稳定，要么没人写描述性的提交信息。</li>
+</ul>
+<p>危机模式很容易识别——要么存在，要么不存在。</p>
+<h2 id="七、我的实践：代码库健康度检查脚本"><a href="#七、我的实践：代码库健康度检查脚本" class="headerlink" title="七、我的实践：代码库健康度检查脚本"></a>七、我的实践：代码库健康度检查脚本</h2><p>作为一个 C++ 工程师，我喜欢把常用命令封装成脚本。下面是我自己写的代码库健康度检查脚本：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#!/bin/bash</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;========================================&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;代码库健康度检查报告&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;========================================&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;【1】高频改动文件（近一年）&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;----------------------------------------&quot;</span></span><br><span class="line">git <span class="built_in">log</span> --format=format: --name-only --since=<span class="string">&quot;1 year ago&quot;</span> | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c | <span class="built_in">sort</span> -nr | <span class="built_in">head</span> -10</span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;【2】贡献者分布&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;----------------------------------------&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;整体贡献者：&quot;</span></span><br><span class="line">git shortlog -sn --no-merges | <span class="built_in">head</span> -10</span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;近6个月活跃贡献者：&quot;</span></span><br><span class="line">git shortlog -sn --no-merges --since=<span class="string">&quot;6 months ago&quot;</span> | <span class="built_in">head</span> -10</span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;【3】Bug集中文件&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;----------------------------------------&quot;</span></span><br><span class="line">git <span class="built_in">log</span> -i -E --grep=<span class="string">&quot;fix|bug|broken&quot;</span> --name-only --format=<span class="string">&#x27;&#x27;</span> | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c | <span class="built_in">sort</span> -nr | <span class="built_in">head</span> -10</span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;【4】提交节奏（近一年）&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;----------------------------------------&quot;</span></span><br><span class="line">git <span class="built_in">log</span> --format=<span class="string">&#x27;%ad&#x27;</span> --<span class="built_in">date</span>=format:<span class="string">&#x27;%Y-%m&#x27;</span> --since=<span class="string">&quot;1 year ago&quot;</span> | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c</span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;【5】紧急修复统计&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;----------------------------------------&quot;</span></span><br><span class="line">emergency_count=$(git <span class="built_in">log</span> --oneline --since=<span class="string">&quot;1 year ago&quot;</span> | grep -iE <span class="string">&#x27;revert|hotfix|emergency|rollback&#x27;</span> | <span class="built_in">wc</span> -l)</span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;近一年紧急修复/回滚次数：<span class="variable">$emergency_count</span>&quot;</span></span><br><span class="line"><span class="keyword">if</span> [ <span class="variable">$emergency_count</span> -gt 12 ]; <span class="keyword">then</span></span><br><span class="line">    <span class="built_in">echo</span> <span class="string">&quot;⚠️ 警告：紧急修复频率较高，建议检查部署流程&quot;</span></span><br><span class="line"><span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;========================================&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;检查完成&quot;</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;========================================&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>把这个脚本保存为 <code>health-check.sh</code>，运行方式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">chmod</span> +x health-check.sh</span><br><span class="line">./health-check.sh</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">========================================</span><br><span class="line">代码库健康度检查报告</span><br><span class="line">========================================</span><br><span class="line"></span><br><span class="line">【1】高频改动文件（近一年）</span><br><span class="line">----------------------------------------</span><br><span class="line">  156 src/core/engine.cpp</span><br><span class="line">   89 src/utils/logger.cpp</span><br><span class="line">   72 include/config.h</span><br><span class="line"></span><br><span class="line">【2】贡献者分布</span><br><span class="line">----------------------------------------</span><br><span class="line">整体贡献者：</span><br><span class="line">  456  Zhang San</span><br><span class="line">  234  Li Si</span><br><span class="line">   89  Wang Wu</span><br><span class="line"></span><br><span class="line">近6个月活跃贡献者：</span><br><span class="line">  120  Li Si</span><br><span class="line">   89  Wang Wu</span><br><span class="line"></span><br><span class="line">【3】Bug集中文件</span><br><span class="line">----------------------------------------</span><br><span class="line">   23 src/core/engine.cpp</span><br><span class="line">   15 src/utils/logger.cpp</span><br><span class="line"></span><br><span class="line">【4】提交节奏（近一年）</span><br><span class="line">----------------------------------------</span><br><span class="line">   23 2025-07</span><br><span class="line">   28 2025-08</span><br><span class="line">   31 2025-09</span><br><span class="line"></span><br><span class="line">【5】紧急修复统计</span><br><span class="line">----------------------------------------</span><br><span class="line">近一年紧急修复/回滚次数：5</span><br><span class="line">========================================</span><br><span class="line">检查完成</span><br><span class="line">========================================</span><br></pre></td></tr></table></figure>
+
+<h2 id="八、这些命令告诉我们什么"><a href="#八、这些命令告诉我们什么" class="headerlink" title="八、这些命令告诉我们什么"></a>八、这些命令告诉我们什么</h2><p>这五个命令只需要几分钟就能运行完。它们不会告诉你一切，但会告诉你：</p>
+<ol>
+<li><p><strong>应该先读哪些代码</strong>：从低风险、稳定的模块开始，而不是一头扎进地雷区。</p>
+</li>
+<li><p><strong>应该关注什么</strong>：当你打开 <code>src/core/engine.cpp</code> 时，你会知道这是一个既高频改动又高频出 bug 的文件，需要格外小心。</p>
+</li>
+<li><p><strong>团队的状况</strong>：提交节奏、贡献者分布、紧急修复频率——这些都是团队健康度的重要指标。</p>
+</li>
+<li><p><strong>代码库的历史</strong>：你能看到系统是如何演进的，哪些部分经历了最多的迭代。</p>
+</li>
+</ol>
+<h2 id="九、总结"><a href="#九、总结" class="headerlink" title="九、总结"></a>九、总结</h2><p>作为一个 C++ 工程师，我越来越意识到：<strong>理解代码库的历史和文化，和理解代码本身同样重要。</strong></p>
+<p>这五个 Git 命令给了我一个快速诊断代码库的工具：</p>
+<table>
+<thead>
+<tr>
+<th>命令</th>
+<th>用途</th>
+<th>关键信号</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>git log --name-only</code></td>
+<td>高频改动文件</td>
+<td>高改动+高bug&#x3D;最大风险</td>
+</tr>
+<tr>
+<td><code>git shortlog -sn</code></td>
+<td>贡献者分布</td>
+<td>单人大占比&#x3D;巴士因子风险</td>
+</tr>
+<tr>
+<td><code>git log --grep=&quot;fix&quot;</code></td>
+<td>Bug集中文件</td>
+<td>与高频改动交叉分析</td>
+</tr>
+<tr>
+<td><code>git log --date=format</code></td>
+<td>提交节奏</td>
+<td>突然下降&#x3D;人员变动</td>
+</tr>
+<tr>
+<td>&#96;git log</td>
+<td>grep revert&#96;</td>
+<td>紧急修复频率</td>
+</tr>
+</tbody></table>
+<p><strong>记住：在打开代码之前，先问 Git 几个问题。答案会让你的代码审查之旅更加高效。</strong></p>
+<hr>
+<blockquote>
+<p>参考文章：<a target="_blank" rel="noopener external nofollow noreferrer" href="https://piechowski.io/post/git-commands-before-reading-code/">The Git Commands I Run Before Reading Any Code</a></p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/defd977a/">https://hespethorn.github.io/posts/defd977a/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Git/">Git</a><a class="post-meta__tags" href="/tags/%E7%89%88%E6%9C%AC%E6%8E%A7%E5%88%B6/">版本控制</a><a class="post-meta__tags" href="/tags/%E6%96%87%E7%AB%A0/">文章</a><a class="post-meta__tags" href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/">工程实践</a><a class="post-meta__tags" href="/tags/%E4%BB%A3%E7%A0%81%E5%AE%A1%E6%9F%A5/">代码审查</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">611</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">718</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/defd977a/" title="读代码前必运行的五个Git命令——快速诊断代码库健康状况">读代码前必运行的五个Git命令——快速诊断代码库健康状况</a><time datetime="2026-07-13T16:00:00.000Z" title="Created 2026-07-14 00:00:00">2026-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/31e66085/" title="RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感">RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感</a><time datetime="2026-07-12T16:00:00.000Z" title="Created 2026-07-13 00:00:00">2026-07-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c07399ea/" title="const&amp;万能引用的陷阱——现代C++参数传递的正确姿势">const&amp;万能引用的陷阱——现代C++参数传递的正确姿势</a><time datetime="2026-07-09T16:00:00.000Z" title="Created 2026-07-10 00:00:00">2026-07-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c610829b/" title="设计模式真的很烂吗：读《Design Patterns Suck》有感">设计模式真的很烂吗：读《Design Patterns Suck》有感</a><time datetime="2026-07-08T16:00:00.000Z" title="Created 2026-07-09 00:00:00">2026-07-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cf051ed8/" title="思维链提示——让大模型学会推理的神奇方法：读《Chain-of-Thought Prompting》论文有感">思维链提示——让大模型学会推理的神奇方法：读《Chain-of-Thought Prompting》论文有感</a><time datetime="2026-07-02T16:00:00.000Z" title="Created 2026-07-03 00:00:00">2026-07-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/83f26f3b/" title="Codex Desktop gpt-5.5调用失败解决方案">Codex Desktop gpt-5.5调用失败解决方案</a><time datetime="2026-06-28T16:00:00.000Z" title="Created 2026-06-29 00:00:00">2026-06-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/febb3a13/" title="算法早已实现：读AI寓言故事有感">算法早已实现：读AI寓言故事有感</a><time datetime="2026-06-24T16:00:00.000Z" title="Created 2026-06-25 00:00:00">2026-06-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b96618e4/" title="GBFS贪婪最佳优先搜索算法深度解析">GBFS贪婪最佳优先搜索算法深度解析</a><time datetime="2026-06-23T16:00:00.000Z" title="Created 2026-06-24 00:00:00">2026-06-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4d8e219/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b7e3a912/" title="一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</a><time datetime="2026-06-11T16:00:00.000Z" title="Created 2026-06-12 00:00:00">2026-06-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-assisted-debugging-misconception/" title="AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的">AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-09T16:00:00.000Z" title="Created 2026-06-10 00:00:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-07T16:00:00.000Z" title="Created 2026-06-08 00:00:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-24T16:00:00.000Z" title="Created 2026-05-25 00:00:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/86d86550/" title="读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划">读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划</a><time datetime="2026-05-22T16:00:00.000Z" title="Created 2026-05-23 00:00:00">2026-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-14T16:00:00.000Z" title="Created 2026-04-15 00:00:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-11T16:00:00.000Z" title="Created 2026-04-12 00:00:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c9b2e7a4/" title="衔勒坊的配辔人">衔勒坊的配辔人</a><time datetime="2026-07-13T16:00:00.000Z" title="Created 2026-07-14 00:00:00">2026-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/defd977a/" title="读代码前必运行的五个Git命令——快速诊断代码库健康状况">读代码前必运行的五个Git命令——快速诊断代码库健康状况</a><time datetime="2026-07-13T16:00:00.000Z" title="Created 2026-07-14 00:00:00">2026-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d7e3f8b2/" title="银锭铺的校秤人">银锭铺的校秤人</a><time datetime="2026-07-12T16:00:00.000Z" title="Created 2026-07-13 00:00:00">2026-07-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/31e66085/" title="RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感">RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感</a><time datetime="2026-07-12T16:00:00.000Z" title="Created 2026-07-13 00:00:00">2026-07-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f1c6a9d3/" title="对影阁的鉴画人">对影阁的鉴画人</a><time datetime="2026-07-11T16:00:00.000Z" title="Created 2026-07-12 00:00:00">2026-07-12</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
