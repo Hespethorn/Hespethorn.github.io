@@ -1,0 +1,626 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>string_view——现代C++的零拷贝字符串视图 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、为什么需要string_view作为一个 C++ 工程师，我相信很多人和我一样，写过无数次这样的代码： 12345678void process(const std::string&amp; str) &#123;    &#x2F;&#x2F; 只是读取，不修改    std::cout &lt;&lt; str.size() &lt;&lt; std::endl;&#125;process(&quot;hel">
+<meta property="og:type" content="article">
+<meta property="og:title" content="string_view——现代C++的零拷贝字符串视图">
+<meta property="og:url" content="https://hespethorn.github.io/posts/9e945f53/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、为什么需要string_view作为一个 C++ 工程师，我相信很多人和我一样，写过无数次这样的代码： 12345678void process(const std::string&amp; str) &#123;    &#x2F;&#x2F; 只是读取，不修改    std::cout &lt;&lt; str.size() &lt;&lt; std::endl;&#125;process(&quot;hel">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-07-20T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-23T12:21:05.834Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="现代C++">
+<meta property="article:tag" content="文章">
+<meta property="article:tag" content="性能优化">
+<meta property="article:tag" content="string_view">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "string_view——现代C++的零拷贝字符串视图",
+  "url": "https://hespethorn.github.io/posts/9e945f53/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-07-20T16:00:00.000Z",
+  "dateModified": "2026-07-23T12:21:05.834Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/9e945f53/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'string_view——现代C++的零拷贝字符串视图',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">635</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">751</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">string_view——现代C++的零拷贝字符串视图</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">string_view——现代C++的零拷贝字符串视图</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-07-20T16:00:00.000Z" title="Created 2026-07-21 00:00:00">2026-07-21</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、为什么需要string-view"><a href="#一、为什么需要string-view" class="headerlink" title="一、为什么需要string_view"></a>一、为什么需要string_view</h2><p>作为一个 C++ 工程师，我相信很多人和我一样，写过无数次这样的代码：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">process</span><span class="params">(<span class="type">const</span> std::string&amp; str)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 只是读取，不修改</span></span><br><span class="line">    std::cout &lt;&lt; str.<span class="built_in">size</span>() &lt;&lt; std::endl;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="built_in">process</span>(<span class="string">&quot;hello&quot;</span>);</span><br><span class="line"><span class="built_in">process</span>(std::<span class="built_in">string</span>(<span class="string">&quot;world&quot;</span>));</span><br><span class="line"><span class="built_in">process</span>(std::<span class="built_in">string_view</span>(<span class="string">&quot;test&quot;</span>));</span><br></pre></td></tr></table></figure>
+
+<p>每次调用 <code>process(&quot;hello&quot;)</code> 时，都会创建一个临时的 <code>std::string</code> 对象，拷贝字符串内容，然后在函数结束时销毁它。这是一种不必要的开销。</p>
+<p>同样的问题也存在于从 <code>std::string</code> 中截取子串时：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">std::string s = <span class="string">&quot;hello world&quot;</span>;</span><br><span class="line">std::string substr = s.<span class="built_in">substr</span>(<span class="number">0</span>, <span class="number">5</span>);  <span class="comment">// 创建新字符串，拷贝内容</span></span><br></pre></td></tr></table></figure>
+
+<p><strong><code>std::string_view</code></strong> 就是为了解决这些问题而生的——它提供了对字符串的<strong>零拷贝、只读视图</strong>。</p>
+<h2 id="二、string-view是什么"><a href="#二、string-view是什么" class="headerlink" title="二、string_view是什么"></a>二、string_view是什么</h2><h3 id="2-1-基本概念"><a href="#2-1-基本概念" class="headerlink" title="2.1 基本概念"></a>2.1 基本概念</h3><p><code>std::string_view</code>（C++17 引入）是一个<strong>轻量级的字符串视图</strong>，它不拥有字符串的内存，只是保存了指向字符串起始位置的指针和长度。</p>
+<h3 id="2-2-核心特点"><a href="#2-2-核心特点" class="headerlink" title="2.2 核心特点"></a>2.2 核心特点</h3><ol>
+<li><strong>零拷贝</strong>：不拷贝字符串内容，只保存指针和长度</li>
+<li><strong>只读</strong>：不能修改底层字符串</li>
+<li><strong>轻量级</strong>：通常只有两个指针大小（约16字节）</li>
+<li><strong>非拥有</strong>：不管理底层内存的生命周期</li>
+</ol>
+<h2 id="三、string-view的使用场景"><a href="#三、string-view的使用场景" class="headerlink" title="三、string_view的使用场景"></a>三、string_view的使用场景</h2><h3 id="3-1-函数参数"><a href="#3-1-函数参数" class="headerlink" title="3.1 函数参数"></a>3.1 函数参数</h3><p>当函数只是读取字符串，不修改也不需要拥有时，使用 <code>string_view</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">print_length</span><span class="params">(std::string_view str)</span> </span>&#123;</span><br><span class="line">    std::cout &lt;&lt; str.<span class="built_in">size</span>() &lt;&lt; std::endl;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* cstr = <span class="string">&quot;hello&quot;</span>;</span><br><span class="line">    std::string str = <span class="string">&quot;world&quot;</span>;</span><br><span class="line">    std::string_view sv = <span class="string">&quot;test&quot;</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="built_in">print_length</span>(cstr);   <span class="comment">// 直接传递，零拷贝</span></span><br><span class="line">    <span class="built_in">print_length</span>(str);    <span class="comment">// 直接传递，零拷贝</span></span><br><span class="line">    <span class="built_in">print_length</span>(sv);     <span class="comment">// 直接传递，零拷贝</span></span><br><span class="line">    <span class="built_in">print_length</span>(<span class="string">&quot;literal&quot;</span>);  <span class="comment">// 直接传递，零拷贝</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">5</span><br><span class="line">5</span><br><span class="line">4</span><br><span class="line">7</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-2-子串操作"><a href="#3-2-子串操作" class="headerlink" title="3.2 子串操作"></a>3.2 子串操作</h3><p>从字符串中截取子串时，使用 <code>string_view</code> 避免拷贝。关键是先从 <code>std::string</code> 创建 <code>string_view</code>，然后在视图上调用 <code>substr</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string str = <span class="string">&quot;hello world&quot;</span>;</span><br><span class="line">    </span><br><span class="line">    std::string substr = str.<span class="built_in">substr</span>(<span class="number">0</span>, <span class="number">5</span>);           <span class="comment">// 创建新字符串，有拷贝开销</span></span><br><span class="line">    <span class="function">std::string_view <span class="title">sv</span><span class="params">(str)</span></span>;</span><br><span class="line">    <span class="keyword">auto</span> sv_substr = sv.<span class="built_in">substr</span>(<span class="number">0</span>, <span class="number">5</span>);               <span class="comment">// 零拷贝，直接在视图上截取</span></span><br><span class="line">    </span><br><span class="line">    std::cout &lt;&lt; substr &lt;&lt; std::endl;      <span class="comment">// hello</span></span><br><span class="line">    std::cout &lt;&lt; sv_substr &lt;&lt; std::endl;   <span class="comment">// hello</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">hello</span><br><span class="line">hello</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-3-解析文本"><a href="#3-3-解析文本" class="headerlink" title="3.3 解析文本"></a>3.3 解析文本</h3><p>在解析文本时，<code>string_view</code> 可以高效地切割和传递字符串片段：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function">std::string_view <span class="title">get_token</span><span class="params">(std::string_view str, <span class="type">size_t</span> index)</span> </span>&#123;</span><br><span class="line">    <span class="type">size_t</span> pos = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; index; ++i) &#123;</span><br><span class="line">        pos = str.<span class="built_in">find</span>(<span class="string">&#x27; &#x27;</span>, pos);</span><br><span class="line">        <span class="keyword">if</span> (pos == std::string_view::npos) <span class="keyword">return</span> <span class="string">&quot;&quot;</span>;</span><br><span class="line">        ++pos;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="type">size_t</span> end = str.<span class="built_in">find</span>(<span class="string">&#x27; &#x27;</span>, pos);</span><br><span class="line">    <span class="keyword">if</span> (end == std::string_view::npos) end = str.<span class="built_in">size</span>();</span><br><span class="line">    <span class="keyword">return</span> str.<span class="built_in">substr</span>(pos, end - pos);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string_view str = <span class="string">&quot;Alice 25 Engineer&quot;</span>;</span><br><span class="line">    std::cout &lt;&lt; <span class="built_in">get_token</span>(str, <span class="number">0</span>) &lt;&lt; std::endl;  <span class="comment">// Alice</span></span><br><span class="line">    std::cout &lt;&lt; <span class="built_in">get_token</span>(str, <span class="number">1</span>) &lt;&lt; std::endl;  <span class="comment">// 25</span></span><br><span class="line">    std::cout &lt;&lt; <span class="built_in">get_token</span>(str, <span class="number">2</span>) &lt;&lt; std::endl;  <span class="comment">// Engineer</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Alice</span><br><span class="line">25</span><br><span class="line">Engineer</span><br></pre></td></tr></table></figure>
+
+<h2 id="四、string-view-vs-const-char-vs-const-string"><a href="#四、string-view-vs-const-char-vs-const-string" class="headerlink" title="四、string_view vs const char* vs const string&amp;"></a>四、string_view vs const char* vs const string&amp;</h2><h3 id="4-1-对比表格"><a href="#4-1-对比表格" class="headerlink" title="4.1 对比表格"></a>4.1 对比表格</h3><table>
+<thead>
+<tr>
+<th>特性</th>
+<th><code>const char*</code></th>
+<th><code>const std::string&amp;</code></th>
+<th><code>std::string_view</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>长度信息</strong></td>
+<td>无，需 strlen</td>
+<td>有，O(1)</td>
+<td>有，O(1)</td>
+</tr>
+<tr>
+<td><strong>空终止符</strong></td>
+<td>必须有</td>
+<td>有</td>
+<td>不一定有</td>
+</tr>
+<tr>
+<td><strong>子串操作</strong></td>
+<td>需手动处理指针</td>
+<td>产生拷贝</td>
+<td>零拷贝</td>
+</tr>
+<tr>
+<td><strong>安全性</strong></td>
+<td>低，易越界</td>
+<td>高</td>
+<td>高</td>
+</tr>
+<tr>
+<td><strong>内存开销</strong></td>
+<td>8字节</td>
+<td>8字节</td>
+<td>16字节</td>
+</tr>
+<tr>
+<td><strong>通用性</strong></td>
+<td>仅 C 风格字符串</td>
+<td>仅 <code>std::string</code></td>
+<td>两者皆可</td>
+</tr>
+</tbody></table>
+<h3 id="4-2-转换关系"><a href="#4-2-转换关系" class="headerlink" title="4.2 转换关系"></a>4.2 转换关系</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">const char* ──► std::string_view  ✓ 直接转换</span><br><span class="line">std::string ──► std::string_view  ✓ 直接转换</span><br><span class="line">std::string_view ──► const char*  需要保证空终止符</span><br><span class="line">std::string_view ──► std::string   需要拷贝</span><br></pre></td></tr></table></figure>
+
+<h2 id="五、string-view的陷阱与注意事项"><a href="#五、string-view的陷阱与注意事项" class="headerlink" title="五、string_view的陷阱与注意事项"></a>五、string_view的陷阱与注意事项</h2><h3 id="5-1-生命周期问题"><a href="#5-1-生命周期问题" class="headerlink" title="5.1 生命周期问题"></a>5.1 生命周期问题</h3><p><code>string_view</code> 不管理底层内存，必须确保底层字符串的生命周期长于 <code>string_view</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 错误示例</span></span><br><span class="line"><span class="function">std::string_view <span class="title">get_name</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string name = <span class="string">&quot;Alice&quot;</span>;</span><br><span class="line">    <span class="keyword">return</span> name;  <span class="comment">// 返回后 name 被销毁，string_view 悬空</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 正确示例</span></span><br><span class="line"><span class="function">std::string_view <span class="title">get_name</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">static</span> <span class="type">const</span> std::string name = <span class="string">&quot;Alice&quot;</span>;</span><br><span class="line">    <span class="keyword">return</span> name;  <span class="comment">// static 保证生命周期</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-空终止符问题"><a href="#5-2-空终止符问题" class="headerlink" title="5.2 空终止符问题"></a>5.2 空终止符问题</h3><p><code>string_view</code> 不一定以 <code>\0</code> 结尾，直接传给需要 C 风格字符串的函数会出错：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cstring&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string str = <span class="string">&quot;hello world&quot;</span>;</span><br><span class="line">    std::string_view sv = str.<span class="built_in">substr</span>(<span class="number">0</span>, <span class="number">5</span>);  <span class="comment">// &quot;hello&quot;，但不一定以 \0 结尾</span></span><br><span class="line">    </span><br><span class="line">    std::cout &lt;&lt; sv &lt;&lt; std::endl;          <span class="comment">// 正确，string_view 的 operator&lt;&lt; 知道长度</span></span><br><span class="line">    std::cout &lt;&lt; <span class="built_in">strlen</span>(sv.<span class="built_in">data</span>()) &lt;&lt; std::endl;  <span class="comment">// 危险！可能读取越界</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>解决方案</strong>：需要 C 风格字符串时，先转换为 <code>std::string</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">std::string <span class="title">str</span><span class="params">(sv)</span></span>;</span><br><span class="line"><span class="type">const</span> <span class="type">char</span>* cstr = str.<span class="built_in">c_str</span>();</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-3-修改底层字符串"><a href="#5-3-修改底层字符串" class="headerlink" title="5.3 修改底层字符串"></a>5.3 修改底层字符串</h3><p>虽然 <code>string_view</code> 是只读的，但底层字符串可能被修改：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string str = <span class="string">&quot;hello&quot;</span>;</span><br><span class="line">    std::string_view sv = str;</span><br><span class="line">    </span><br><span class="line">    str[<span class="number">0</span>] = <span class="string">&#x27;H&#x27;</span>;  <span class="comment">// 修改底层字符串</span></span><br><span class="line">    </span><br><span class="line">    std::cout &lt;&lt; sv &lt;&lt; std::endl;  <span class="comment">// 输出 &quot;Hello&quot;，sv 也随之改变</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Hello</span><br></pre></td></tr></table></figure>
+
+<h2 id="六、性能对比"><a href="#六、性能对比" class="headerlink" title="六、性能对比"></a>六、性能对比</h2><p>让我用一个基准测试来对比 <code>const std::string&amp;</code> 和 <code>std::string_view</code> 的性能：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;chrono&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">process_string</span><span class="params">(<span class="type">const</span> std::string&amp; str)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; str.<span class="built_in">size</span>(); ++i) &#123;</span><br><span class="line">        <span class="type">char</span> c = str[i];</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">process_string_view</span><span class="params">(std::string_view str)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; str.<span class="built_in">size</span>(); ++i) &#123;</span><br><span class="line">        <span class="type">char</span> c = str[i];</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Func&gt;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">benchmark</span><span class="params">(Func func, <span class="type">const</span> <span class="type">char</span>* label, <span class="type">size_t</span> iterations)</span> </span>&#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* cstr = <span class="string">&quot;hello world&quot;</span>;</span><br><span class="line">    <span class="keyword">auto</span> start = std::chrono::high_resolution_clock::<span class="built_in">now</span>();</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; iterations; ++i) &#123;</span><br><span class="line">        <span class="built_in">func</span>(cstr);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">auto</span> end = std::chrono::high_resolution_clock::<span class="built_in">now</span>();</span><br><span class="line">    <span class="keyword">auto</span> ns = std::chrono::<span class="built_in">duration_cast</span>&lt;std::chrono::nanoseconds&gt;(end - start).<span class="built_in">count</span>();</span><br><span class="line">    std::cout &lt;&lt; label &lt;&lt; <span class="string">&quot;: &quot;</span> &lt;&lt; ns / iterations &lt;&lt; <span class="string">&quot; ns/op&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">size_t</span> iterations = <span class="number">10000000</span>;</span><br><span class="line">    </span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;传递 const char* 时：&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    <span class="built_in">benchmark</span>(process_string, <span class="string">&quot;const string&amp;&quot;</span>, iterations);</span><br><span class="line">    <span class="built_in">benchmark</span>(process_string_view, <span class="string">&quot;string_view&quot;</span>, iterations);</span><br><span class="line">    </span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;\n传递 std::string 时：&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    std::string str = <span class="string">&quot;hello world&quot;</span>;</span><br><span class="line">    <span class="keyword">auto</span> start1 = std::chrono::high_resolution_clock::<span class="built_in">now</span>();</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; iterations; ++i) &#123;</span><br><span class="line">        <span class="built_in">process_string</span>(str);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">auto</span> end1 = std::chrono::high_resolution_clock::<span class="built_in">now</span>();</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">auto</span> start2 = std::chrono::high_resolution_clock::<span class="built_in">now</span>();</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; iterations; ++i) &#123;</span><br><span class="line">        <span class="built_in">process_string_view</span>(str);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">auto</span> end2 = std::chrono::high_resolution_clock::<span class="built_in">now</span>();</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">auto</span> ns1 = std::chrono::<span class="built_in">duration_cast</span>&lt;std::chrono::nanoseconds&gt;(end1 - start1).<span class="built_in">count</span>();</span><br><span class="line">    <span class="keyword">auto</span> ns2 = std::chrono::<span class="built_in">duration_cast</span>&lt;std::chrono::nanoseconds&gt;(end2 - start2).<span class="built_in">count</span>();</span><br><span class="line">    </span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;const string&amp;: &quot;</span> &lt;&lt; ns1 / iterations &lt;&lt; <span class="string">&quot; ns/op&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;string_view: &quot;</span> &lt;&lt; ns2 / iterations &lt;&lt; <span class="string">&quot; ns/op&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">传递 const char* 时：</span><br><span class="line">const string&amp;: 12.3 ns/op</span><br><span class="line">string_view: 2.1 ns/op</span><br><span class="line"></span><br><span class="line">传递 std::string 时：</span><br><span class="line">const string&amp;: 1.8 ns/op</span><br><span class="line">string_view: 1.7 ns/op</span><br></pre></td></tr></table></figure>
+
+<p><strong>结论：</strong></p>
+<ul>
+<li>当传递 <code>const char*</code> 给 <code>const std::string&amp;</code> 时，会创建临时对象，开销显著</li>
+<li>当传递 <code>std::string</code> 时，两者性能几乎相同</li>
+<li><code>string_view</code> 在处理 C 风格字符串时优势明显</li>
+</ul>
+<h2 id="七、string-view的进阶用法"><a href="#七、string-view的进阶用法" class="headerlink" title="七、string_view的进阶用法"></a>七、string_view的进阶用法</h2><h3 id="7-1-与算法结合"><a href="#7-1-与算法结合" class="headerlink" title="7.1 与算法结合"></a>7.1 与算法结合</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string_view&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;algorithm&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string_view str = <span class="string">&quot;hello world&quot;</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">auto</span> it = std::<span class="built_in">find</span>(str.<span class="built_in">begin</span>(), str.<span class="built_in">end</span>(), <span class="string">&#x27;w&#x27;</span>);</span><br><span class="line">    <span class="keyword">if</span> (it != str.<span class="built_in">end</span>()) &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;Found at position: &quot;</span> &lt;&lt; it - str.<span class="built_in">begin</span>() &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Found at position: 6</span><br></pre></td></tr></table></figure>
+
+<h3 id="7-2-自定义字符串类型"><a href="#7-2-自定义字符串类型" class="headerlink" title="7.2 自定义字符串类型"></a>7.2 自定义字符串类型</h3><p>如果你有自己的字符串类型，可以提供到 <code>string_view</code> 的隐式转换：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MyString</span> &#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* data_;</span><br><span class="line">    <span class="type">size_t</span> size_;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="keyword">operator</span> <span class="title">std::string_view</span><span class="params">()</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> std::<span class="built_in">string_view</span>(data_, size_);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="7-3-constexpr-string-view"><a href="#7-3-constexpr-string-view" class="headerlink" title="7.3 constexpr string_view"></a>7.3 constexpr string_view</h3><p>C++20 中 <code>string_view</code> 可以在编译期使用：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">constexpr</span> std::string_view str = <span class="string">&quot;hello&quot;</span>;</span><br><span class="line"><span class="built_in">static_assert</span>(str.<span class="built_in">size</span>() == <span class="number">5</span>);</span><br><span class="line"><span class="built_in">static_assert</span>(str == <span class="string">&quot;hello&quot;</span>);</span><br></pre></td></tr></table></figure>
+
+<h2 id="八、最佳实践总结"><a href="#八、最佳实践总结" class="headerlink" title="八、最佳实践总结"></a>八、最佳实践总结</h2><h3 id="8-1-什么时候用-string-view"><a href="#8-1-什么时候用-string-view" class="headerlink" title="8.1 什么时候用 string_view"></a>8.1 什么时候用 string_view</h3><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>函数参数（只读）</strong></td>
+<td><code>std::string_view</code></td>
+</tr>
+<tr>
+<td><strong>返回临时子串</strong></td>
+<td><code>std::string</code>（需要拥有所有权）</td>
+</tr>
+<tr>
+<td><strong>存储字符串</strong></td>
+<td><code>std::string</code></td>
+</tr>
+<tr>
+<td><strong>解析文本</strong></td>
+<td><code>std::string_view</code></td>
+</tr>
+<tr>
+<td><strong>接口设计</strong></td>
+<td><code>std::string_view</code>（更通用）</td>
+</tr>
+</tbody></table>
+<h3 id="8-2-转换规则"><a href="#8-2-转换规则" class="headerlink" title="8.2 转换规则"></a>8.2 转换规则</h3><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// string_view → string（需要拷贝）</span></span><br><span class="line"><span class="function">std::string <span class="title">str</span><span class="params">(sv)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// string_view → const char*（需要保证空终止符）</span></span><br><span class="line"><span class="type">const</span> <span class="type">char</span>* cstr = sv.<span class="built_in">empty</span>() ? <span class="string">&quot;&quot;</span> : sv.<span class="built_in">data</span>();  <span class="comment">// 危险！</span></span><br><span class="line"><span class="type">const</span> <span class="type">char</span>* safe_cstr = std::<span class="built_in">string</span>(sv).<span class="built_in">c_str</span>(); <span class="comment">// 安全</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// string/const char* → string_view（零拷贝）</span></span><br><span class="line"><span class="function">std::string_view <span class="title">sv1</span><span class="params">(str)</span></span>;</span><br><span class="line"><span class="function">std::string_view <span class="title">sv2</span><span class="params">(cstr)</span></span>;</span><br></pre></td></tr></table></figure>
+
+<h3 id="8-3-注意事项"><a href="#8-3-注意事项" class="headerlink" title="8.3 注意事项"></a>8.3 注意事项</h3><ol>
+<li><strong>不要返回局部变量的 string_view</strong></li>
+<li><strong>不要假设 string_view 以 <code>\0</code> 结尾</strong></li>
+<li><strong>确保底层字符串的生命周期长于 string_view</strong></li>
+<li><strong>接口设计时优先使用 string_view</strong></li>
+</ol>
+<h2 id="九、总结"><a href="#九、总结" class="headerlink" title="九、总结"></a>九、总结</h2><p><code>std::string_view</code> 是现代 C++ 中非常重要的工具，它解决了字符串传递中的零拷贝问题。</p>
+<p><strong>核心价值：</strong></p>
+<ol>
+<li><strong>零拷贝</strong>：避免不必要的字符串拷贝，提升性能</li>
+<li><strong>通用性</strong>：可以接收 <code>const char*</code>、<code>std::string</code> 和其他字符串类型</li>
+<li><strong>安全性</strong>：内置长度信息，避免越界访问</li>
+<li><strong>轻量级</strong>：只有两个指针大小，适合频繁传递</li>
+</ol>
+<p><strong>使用场景：</strong></p>
+<ul>
+<li>函数参数（只读访问）</li>
+<li>文本解析和切割</li>
+<li>接口设计（提高通用性）</li>
+</ul>
+<p><strong>记住：<code>string_view</code> 是视图，不是字符串本身。理解它的非拥有语义，才能正确使用它。</strong></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/9e945f53/">https://hespethorn.github.io/posts/9e945f53/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/%E7%8E%B0%E4%BB%A3C/">现代C++</a><a class="post-meta__tags" href="/tags/%E6%96%87%E7%AB%A0/">文章</a><a class="post-meta__tags" href="/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/">性能优化</a><a class="post-meta__tags" href="/tags/string-view/">string_view</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">635</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">751</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">74</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9e945f53/" title="string_view——现代C++的零拷贝字符串视图">string_view——现代C++的零拷贝字符串视图</a><time datetime="2026-07-20T16:00:00.000Z" title="Created 2026-07-21 00:00:00">2026-07-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/defd977a/" title="读代码前必运行的五个Git命令——快速诊断代码库健康状况">读代码前必运行的五个Git命令——快速诊断代码库健康状况</a><time datetime="2026-07-13T16:00:00.000Z" title="Created 2026-07-14 00:00:00">2026-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/31e66085/" title="RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感">RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感</a><time datetime="2026-07-12T16:00:00.000Z" title="Created 2026-07-13 00:00:00">2026-07-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c07399ea/" title="const&amp;万能引用的陷阱——现代C++参数传递的正确姿势">const&amp;万能引用的陷阱——现代C++参数传递的正确姿势</a><time datetime="2026-07-09T16:00:00.000Z" title="Created 2026-07-10 00:00:00">2026-07-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c610829b/" title="设计模式真的很烂吗：读《Design Patterns Suck》有感">设计模式真的很烂吗：读《Design Patterns Suck》有感</a><time datetime="2026-07-08T16:00:00.000Z" title="Created 2026-07-09 00:00:00">2026-07-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cf051ed8/" title="思维链提示——让大模型学会推理的神奇方法：读《Chain-of-Thought Prompting》论文有感">思维链提示——让大模型学会推理的神奇方法：读《Chain-of-Thought Prompting》论文有感</a><time datetime="2026-07-02T16:00:00.000Z" title="Created 2026-07-03 00:00:00">2026-07-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/83f26f3b/" title="Codex Desktop gpt-5.5调用失败解决方案">Codex Desktop gpt-5.5调用失败解决方案</a><time datetime="2026-06-28T16:00:00.000Z" title="Created 2026-06-29 00:00:00">2026-06-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/febb3a13/" title="算法早已实现：读AI寓言故事有感">算法早已实现：读AI寓言故事有感</a><time datetime="2026-06-24T16:00:00.000Z" title="Created 2026-06-25 00:00:00">2026-06-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b96618e4/" title="GBFS贪婪最佳优先搜索算法深度解析">GBFS贪婪最佳优先搜索算法深度解析</a><time datetime="2026-06-23T16:00:00.000Z" title="Created 2026-06-24 00:00:00">2026-06-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4d8e219/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b7e3a912/" title="一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</a><time datetime="2026-06-11T16:00:00.000Z" title="Created 2026-06-12 00:00:00">2026-06-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-assisted-debugging-misconception/" title="AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的">AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-09T16:00:00.000Z" title="Created 2026-06-10 00:00:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-07T16:00:00.000Z" title="Created 2026-06-08 00:00:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-24T16:00:00.000Z" title="Created 2026-05-25 00:00:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/86d86550/" title="读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划">读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划</a><time datetime="2026-05-22T16:00:00.000Z" title="Created 2026-05-23 00:00:00">2026-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-14T16:00:00.000Z" title="Created 2026-04-15 00:00:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-11T16:00:00.000Z" title="Created 2026-04-12 00:00:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a7b2d9e3/" title="鉴真阁的核史官">鉴真阁的核史官</a><time datetime="2026-07-26T16:00:00.000Z" title="Created 2026-07-27 00:00:00">2026-07-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f8c3d1a5/" title="博古斋的寻典人">博古斋的寻典人</a><time datetime="2026-07-25T16:00:00.000Z" title="Created 2026-07-26 00:00:00">2026-07-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e5f2a8c6/" title="演算堂的推演生">演算堂的推演生</a><time datetime="2026-07-24T16:00:00.000Z" title="Created 2026-07-25 00:00:00">2026-07-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b6e3c1d7/" title="问心斋的解语人">问心斋的解语人</a><time datetime="2026-07-23T16:00:00.000Z" title="Created 2026-07-24 00:00:00">2026-07-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a9d2f8e4/" title="礼乐司的教习官">礼乐司的教习官</a><time datetime="2026-07-22T16:00:00.000Z" title="Created 2026-07-23 00:00:00">2026-07-23</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
