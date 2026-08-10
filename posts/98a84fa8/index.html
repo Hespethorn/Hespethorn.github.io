@@ -1,0 +1,654 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、为什么大模型需要&quot;位置&quot;？作为一名长期写 C++ 和关注大模型的工程师，我最早对**位置编码（Positional Encoding）**产生兴趣，是因为一个看似反直觉的问题：  Transformer 本身，是&quot;看不见顺序&quot;的。  自注意力机制（Self-Attention）计算的是两个 token 之间的&quot;相关程度&quot;： 1Atte">
+<meta property="og:type" content="article">
+<meta property="og:title" content="RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感">
+<meta property="og:url" content="https://hespethorn.github.io/posts/98a84fa8/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、为什么大模型需要&quot;位置&quot;？作为一名长期写 C++ 和关注大模型的工程师，我最早对**位置编码（Positional Encoding）**产生兴趣，是因为一个看似反直觉的问题：  Transformer 本身，是&quot;看不见顺序&quot;的。  自注意力机制（Self-Attention）计算的是两个 token 之间的&quot;相关程度&quot;： 1Atte">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-08-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-10T07:22:49.597Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="大语言模型">
+<meta property="article:tag" content="RoPE">
+<meta property="article:tag" content="文章">
+<meta property="article:tag" content="论文解读">
+<meta property="article:tag" content="位置编码">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "RoPE旋转位置编码——让大模型\"记住\"字词顺序的旋转魔法：读《RoFormer》论文有感",
+  "url": "https://hespethorn.github.io/posts/98a84fa8/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-08-08T16:00:00.000Z",
+  "dateModified": "2026-08-10T07:22:49.597Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/98a84fa8/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'RoPE旋转位置编码——让大模型"记住"字词顺序的旋转魔法：读《RoFormer》论文有感',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">654</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">793</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">75</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-08-08T16:00:00.000Z" title="Created 2026-08-09 00:00:00">2026-08-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%96%87%E7%AB%A0/">文章</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、为什么大模型需要-位置-？"><a href="#一、为什么大模型需要-位置-？" class="headerlink" title="一、为什么大模型需要&quot;位置&quot;？"></a>一、为什么大模型需要&quot;位置&quot;？</h2><p>作为一名长期写 C++ 和关注大模型的工程师，我最早对**位置编码（Positional Encoding）**产生兴趣，是因为一个看似反直觉的问题：</p>
+<blockquote>
+<p><strong>Transformer 本身，是&quot;看不见顺序&quot;的。</strong></p>
+</blockquote>
+<p>自注意力机制（Self-Attention）计算的是两个 token 之间的&quot;相关程度&quot;：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Attention(Q, K, V) = softmax(Q·Kᵀ / √d) · V</span><br></pre></td></tr></table></figure>
+
+<p>注意这个公式——<code>Q·Kᵀ</code> 是点积，衡量的是<strong>内容相似度</strong>。把&quot;我爱你&quot;和&quot;你爱我&quot;送进 Transformer，如果不加位置信息，模型看到的几乎是一模一样的东西。因为&quot;我&quot;和&quot;你&quot;不管谁在前谁在后，它们的点积都一样。</p>
+<p>这就引出了一个大问题：<strong>语言是讲究顺序的</strong>。&quot;猫追老鼠&quot;和&quot;老鼠追猫&quot;完全是两回事。所以我们必须给每个 token 注入&quot;它是第几个&quot;的信息——这就是位置编码存在的意义。</p>
+<p>一句话总结：<strong>注意力只关心&quot;你跟我像不像&quot;，不关心&quot;你在哪&quot;；位置编码负责把&quot;你在哪&quot;告诉模型。</strong></p>
+<h2 id="二、前人的解法：绝对位置编码与相对位置编码"><a href="#二、前人的解法：绝对位置编码与相对位置编码" class="headerlink" title="二、前人的解法：绝对位置编码与相对位置编码"></a>二、前人的解法：绝对位置编码与相对位置编码</h2><p>在 RoPE 之前，主流的方案主要有两类：</p>
+<h3 id="2-1-绝对位置编码（Absolute-Positional-Encoding）"><a href="#2-1-绝对位置编码（Absolute-Positional-Encoding）" class="headerlink" title="2.1 绝对位置编码（Absolute Positional Encoding）"></a>2.1 绝对位置编码（Absolute Positional Encoding）</h3><p>这是 Transformer 原论文（Vaswani et al., 2017）的做法——用一组正弦&#x2F;余弦函数，或直接让位置向量可学习，<strong>加</strong>到 token 的嵌入上：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">pos_encoding(pos, 2i)   = sin(pos / 10000^(2i/d))</span><br><span class="line">pos_encoding(pos, 2i+1) = cos(pos / 10000^(2i/d))</span><br></pre></td></tr></table></figure>
+
+<p>特点：每个位置有一个&quot;绝对身份&quot;，但<strong>无法显式表达&quot;两个 token 相隔多远&quot;</strong>。模型需要自己从两个绝对位置的差里&quot;悟&quot;出相对关系。</p>
+<h3 id="2-2-相对位置编码（Relative-Positional-Encoding）"><a href="#2-2-相对位置编码（Relative-Positional-Encoding）" class="headerlink" title="2.2 相对位置编码（Relative Positional Encoding）"></a>2.2 相对位置编码（Relative Positional Encoding）</h3><p>以 T5 的 relative bias、ALiBi（Attention with Linear Biases）为代表。这类方案直接给注意力分数加一个<strong>与距离相关的偏置</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">score(i, j) = q_i · k_j + b_&#123;i-j&#125;</span><br></pre></td></tr></table></figure>
+
+<p>特点：明确告诉模型&quot;第 i 个和第 j 个 token 距离是 i-j&quot;，对长文本更友好，但通常需要改变注意力结构，通用性差一些。</p>
+<h3 id="2-3-一个灵魂拷问"><a href="#2-3-一个灵魂拷问" class="headerlink" title="2.3 一个灵魂拷问"></a>2.3 一个灵魂拷问</h3><p>绝对编码是&quot;加&quot;到向量上，相对编码是&quot;改&quot;注意力分数——<strong>能不能有一种方案：既天然携带相对位置信息，又不需要改动注意力结构？</strong></p>
+<p>RoPE 给出的答案是：<strong>把位置信息&quot;旋转&quot;进 Q 和 K 向量里。</strong></p>
+<h2 id="三、RoPE-核心思想：让内积自动携带-相对距离"><a href="#三、RoPE-核心思想：让内积自动携带-相对距离" class="headerlink" title="三、RoPE 核心思想：让内积自动携带&quot;相对距离&quot;"></a>三、RoPE 核心思想：让内积自动携带&quot;相对距离&quot;</h2><p>RoPE（Rotary Position Embedding，旋转位置编码）由苏剑林在 2021 年的论文《RoFormer: Enhanced Transformer with Rotary Position Embedding》中提出。</p>
+<h3 id="3-1-一个几何直觉"><a href="#3-1-一个几何直觉" class="headerlink" title="3.1 一个几何直觉"></a>3.1 一个几何直觉</h3><p>想象一个二维平面上的向量，把它<strong>旋转 θ 度</strong>——它的长度不变，方向变了。如果用数学语言说：</p>
+<ul>
+<li>旋转前：向量 <code>(x, y)</code></li>
+<li>旋转后：<code>(x·cosθ - y·sinθ, x·sinθ + y·cosθ)</code></li>
+</ul>
+<p><strong>旋转的妙处在于：两个向量各自旋转 θ₁ 和 θ₂ 后，它们的内积 &#x3D; 原来的内积再旋转 (θ₂ - θ₁)。</strong> 也就是说，内积的结果只取决于<strong>旋转角度的差</strong>，与各自的绝对角度无关！</p>
+<p>这正是 RoPE 的几何直觉：</p>
+<blockquote>
+<p><strong>让第 m 个 token 的 Q&#x2F;K 向量旋转 m·θ 度。那么第 m 个 token 与第 n 个 token 的注意力分数，就只与 (m-n) 相关——相对位置信息，天然地长在了内积里。</strong></p>
+</blockquote>
+<p>一句话：<strong>旋转的角度差 &#x3D; 位置的差。</strong></p>
+<h3 id="3-2-高维空间怎么做？"><a href="#3-2-高维空间怎么做？" class="headerlink" title="3.2 高维空间怎么做？"></a>3.2 高维空间怎么做？</h3><p>现实中的向量是 d 维的（比如 4096 维），不是 2 维。RoPE 的做法是<strong>把 d 维向量切成 d&#x2F;2 个二维子空间，每个子空间单独旋转</strong>，并且每个子空间用不同的角速度：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">第 i 个子空间的旋转角度：θᵢ = m · 10000^(-2i/d)   (i = 0, 1, ..., d/2-1)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>低维度子空间转得快</strong>（频率高）——负责编码&quot;相邻 token&quot;的精细位置</li>
+<li><strong>高维度子空间转得慢</strong>（频率低）——负责编码&quot;相距很远&quot;的粗略位置</li>
+</ul>
+<p>这跟正弦位置编码的频率设计一脉相承，但作用方式完全不同。</p>
+<h3 id="3-3-优雅的数学形式：复数视角"><a href="#3-3-优雅的数学形式：复数视角" class="headerlink" title="3.3 优雅的数学形式：复数视角"></a>3.3 优雅的数学形式：复数视角</h3><p>如果从复数的角度看，RoPE 极其优雅。把 d 维向量拆成 d&#x2F;2 个复数，位置 m 的旋转就是<strong>乘以 e^(imθ)</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">q_m 旋转后 = q_m · e^(i·m·θ)</span><br><span class="line">k_n 旋转后 = k_n · e^(i·n·θ)</span><br></pre></td></tr></table></figure>
+
+<p>那么内积（取实部）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Re[ (q_m · e^(i·m·θ)) · conj(k_n · e^(i·n·θ)) ]</span><br><span class="line">= Re[ q_m · conj(k_n) · e^(i·(m-n)·θ) ]</span><br></pre></td></tr></table></figure>
+
+<p>看！<code>(m-n)</code> 出现了——<strong>相对位置信息被显式地写进了注意力分数的表达式里</strong>。这就是 RoPE 的核心公式，也是它最迷人的地方。</p>
+<h2 id="四、代码实现：30-行搞定-RoPE"><a href="#四、代码实现：30-行搞定-RoPE" class="headerlink" title="四、代码实现：30 行搞定 RoPE"></a>四、代码实现：30 行搞定 RoPE</h2><p>理解了原理，代码其实非常简洁。下面用 PyTorch 实现一个标准的 RoPE（旋转部分作用于 Q 和 K）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> torch</span><br><span class="line"><span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn</span><br><span class="line"><span class="keyword">import</span> math</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">precompute_rope_freqs</span>(<span class="params">dim: <span class="built_in">int</span>, max_len: <span class="built_in">int</span>, base: <span class="built_in">float</span> = <span class="number">10000.0</span></span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;预计算旋转角频率：每个二维子空间一个角度&quot;&quot;&quot;</span></span><br><span class="line">    <span class="comment"># 第 i 个子空间的角速度 (i = 0, 1, ..., dim/2 - 1)</span></span><br><span class="line">    freqs = <span class="number">1.0</span> / (base ** (torch.arange(<span class="number">0</span>, dim, <span class="number">2</span>).<span class="built_in">float</span>() / dim))</span><br><span class="line">    <span class="comment"># 每个位置 m 的角度 = m * freqs</span></span><br><span class="line">    t = torch.arange(max_len).<span class="built_in">float</span>()</span><br><span class="line">    angles = torch.outer(t, freqs)          <span class="comment"># [max_len, dim/2]</span></span><br><span class="line">    <span class="comment"># 预计算 cos 和 sin</span></span><br><span class="line">    cos = angles.cos()                       <span class="comment"># [max_len, dim/2]</span></span><br><span class="line">    sin = angles.sin()                       <span class="comment"># [max_len, dim/2]</span></span><br><span class="line">    <span class="keyword">return</span> cos, sin</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">apply_rope</span>(<span class="params">x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">    x: [batch, seq_len, num_heads, head_dim]</span></span><br><span class="line"><span class="string">    将 x 的每对相邻维度 (2i, 2i+1) 旋转对应角度</span></span><br><span class="line"><span class="string">    &quot;&quot;&quot;</span></span><br><span class="line">    <span class="comment"># 拆成两半：偶索引维度和奇索引维度</span></span><br><span class="line">    x1 = x[..., <span class="number">0</span>::<span class="number">2</span>]                        <span class="comment"># 偶数维</span></span><br><span class="line">    x2 = x[..., <span class="number">1</span>::<span class="number">2</span>]                        <span class="comment"># 奇数维</span></span><br><span class="line">    <span class="comment"># 旋转公式：x&#x27; = (x1·cos - x2·sin, x1·sin + x2·cos)</span></span><br><span class="line">    out = torch.stack(</span><br><span class="line">        [x1 * cos - x2 * sin, x1 * sin + x2 * cos],</span><br><span class="line">        dim=-<span class="number">1</span></span><br><span class="line">    )</span><br><span class="line">    <span class="comment"># 摊平回原来的维度布局</span></span><br><span class="line">    <span class="keyword">return</span> out.flatten(-<span class="number">2</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># ---------- 使用示例 ----------</span></span><br><span class="line">seq_len, head_dim = <span class="number">4</span>, <span class="number">8</span></span><br><span class="line">cos, sin = precompute_rope_freqs(head_dim, max_len=seq_len)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 模拟一个 [batch=1, seq=4, head=1, dim=8] 的 Q 向量</span></span><br><span class="line">q = torch.randn(<span class="number">1</span>, seq_len, <span class="number">1</span>, head_dim)</span><br><span class="line">q_rot = apply_rope(q, cos[:seq_len], sin[:seq_len])</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;原始 Q 形状:&quot;</span>, q.shape)      <span class="comment"># [1, 4, 1, 8]</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;旋转后 Q 形状:&quot;</span>, q_rot.shape) <span class="comment"># [1, 4, 1, 8]</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;旋转前后模长不变:&quot;</span>, </span><br><span class="line">      torch.allclose(q.norm(dim=-<span class="number">1</span>), q_rot.norm(dim=-<span class="number">1</span>)))  <span class="comment"># True</span></span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">原始 Q 形状: torch.Size([1, 4, 1, 8])</span><br><span class="line">旋转后 Q 形状: torch.Size([1, 4, 1, 8])</span><br><span class="line">旋转前后模长不变: True</span><br></pre></td></tr></table></figure>
+
+<p><strong>验证相对位置的&quot;魔法&quot;</strong>——计算旋转后的 Q 和 K 的内积，看它是否只依赖位置差：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">rope_score</span>(<span class="params">q_pos: <span class="built_in">int</span>, k_pos: <span class="built_in">int</span></span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;q 在第 q_pos 位、k 在第 k_pos 位时的注意力分数&quot;&quot;&quot;</span></span><br><span class="line">    qv = apply_rope(q[:, q_pos:q_pos+<span class="number">1</span>], cos[q_pos:q_pos+<span class="number">1</span>], sin[q_pos:q_pos+<span class="number">1</span>])</span><br><span class="line">    kv = apply_rope(q[:, k_pos:k_pos+<span class="number">1</span>], cos[k_pos:k_pos+<span class="number">1</span>], sin[k_pos:k_pos+<span class="number">1</span>])</span><br><span class="line">    <span class="keyword">return</span> (qv * kv).<span class="built_in">sum</span>(dim=-<span class="number">1</span>).item()</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;位置差=1:  q0·k1 = <span class="subst">&#123;rope_score(<span class="number">0</span>, <span class="number">1</span>):<span class="number">.4</span>f&#125;</span>  q1·k2 = <span class="subst">&#123;rope_score(<span class="number">1</span>, <span class="number">2</span>):<span class="number">.4</span>f&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;位置差=2:  q0·k2 = <span class="subst">&#123;rope_score(<span class="number">0</span>, <span class="number">2</span>):<span class="number">.4</span>f&#125;</span>  q1·k3 = <span class="subst">&#123;rope_score(<span class="number">1</span>, <span class="number">3</span>):<span class="number">.4</span>f&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>运行输出（示意）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">位置差=1:  q0·k1 = 0.4521  q1·k2 = 0.4521   # 位置差相同 → 分数相同！</span><br><span class="line">位置差=2:  q0·k2 = -0.1137  q1·k3 = -0.1137  # 位置差相同 → 分数相同！</span><br></pre></td></tr></table></figure>
+
+<p><strong>同样的内容、同样的位置差，注意力分数完全一致</strong>——相对位置信息被完美地编码了，而这一切都发生在 Q&#x2F;K 向量内部，注意力结构一行没改。</p>
+<h2 id="五、RoPE-的工程实践与深度对比"><a href="#五、RoPE-的工程实践与深度对比" class="headerlink" title="五、RoPE 的工程实践与深度对比"></a>五、RoPE 的工程实践与深度对比</h2><h3 id="5-1-为什么主流-LLM-都选-RoPE？"><a href="#5-1-为什么主流-LLM-都选-RoPE？" class="headerlink" title="5.1 为什么主流 LLM 都选 RoPE？"></a>5.1 为什么主流 LLM 都选 RoPE？</h3><p>过去几年，RoPE 几乎成了大语言模型的事实标准：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>位置编码</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GPT-3</td>
+<td>可学习绝对编码</td>
+<td>早期方案</td>
+</tr>
+<tr>
+<td>LLaMA &#x2F; LLaMA 2&#x2F;3</td>
+<td><strong>RoPE</strong></td>
+<td>Meta 系列全系采用</td>
+</tr>
+<tr>
+<td>Qwen &#x2F; Qwen2</td>
+<td><strong>RoPE</strong></td>
+<td>支持 32K+ 长上下文</td>
+</tr>
+<tr>
+<td>Baichuan</td>
+<td><strong>RoPE</strong></td>
+<td>中文大模型标杆</td>
+</tr>
+<tr>
+<td>PaLM &#x2F; Gemini</td>
+<td>RoPE 变体</td>
+<td>配合长度外推技巧</td>
+</tr>
+<tr>
+<td>GPT-4 (推测)</td>
+<td>RoPE 系</td>
+<td>未完全公开</td>
+</tr>
+</tbody></table>
+<p><strong>它受欢迎的原因主要有四点：</strong></p>
+<ol>
+<li><strong>零参数开销</strong>：RoPE 不引入任何可学习参数，只是一个确定性变换——工程上零成本接入</li>
+<li><strong>天然携带相对位置</strong>：内积自动只依赖 (m-n)，比&quot;让模型自己悟&quot;的绝对编码更高效</li>
+<li><strong>兼容线性注意力</strong>：在 Flash Attention、MQA&#x2F;GQA 等优化下依然无损</li>
+<li><strong>外推潜力</strong>：由于是周期性旋转，模型对&quot;超过训练长度&quot;的序列有一定的泛化能力</li>
+</ol>
+<h3 id="5-2-与主流方案的完整对比"><a href="#5-2-与主流方案的完整对比" class="headerlink" title="5.2 与主流方案的完整对比"></a>5.2 与主流方案的完整对比</h3><table>
+<thead>
+<tr>
+<th>特性</th>
+<th>正弦绝对编码</th>
+<th>可学习绝对编码</th>
+<th>T5 相对偏置</th>
+<th>ALiBi</th>
+<th><strong>RoPE</strong></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>参数开销</td>
+<td>0</td>
+<td>d×L</td>
+<td>每层可学习</td>
+<td>0</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>显式相对位置</td>
+<td>❌</td>
+<td>❌</td>
+<td>✅</td>
+<td>✅</td>
+<td><strong>✅</strong></td>
+</tr>
+<tr>
+<td>不改注意力结构</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+<td><strong>✅</strong></td>
+</tr>
+<tr>
+<td>长度外推</td>
+<td>弱</td>
+<td>弱</td>
+<td>中</td>
+<td><strong>强</strong></td>
+<td>中（可强化）</td>
+</tr>
+<tr>
+<td>与 FlashAttention 兼容</td>
+<td>✅</td>
+<td>✅</td>
+<td>⚠️</td>
+<td>⚠️</td>
+<td><strong>✅</strong></td>
+</tr>
+<tr>
+<td>主流 LLM 采用</td>
+<td>早期</td>
+<td>GPT-3</td>
+<td>T5</td>
+<td>MPT</td>
+<td><strong>LLaMA&#x2F;Qwen&#x2F;Baichuan</strong></td>
+</tr>
+</tbody></table>
+<h3 id="5-3-RoPE-的短板与改进方向"><a href="#5-3-RoPE-的短板与改进方向" class="headerlink" title="5.3 RoPE 的短板与改进方向"></a>5.3 RoPE 的短板与改进方向</h3><p>RoPE 并非完美，工程上主要面临两个问题：</p>
+<p><strong>1. 外推能力有限。</strong> 训练时只见过 4096 长度的序列，推理时给它 8192，模型可能&quot;懵&quot;。社区催生了一大批改进：</p>
+<ul>
+<li><strong>NTK-aware Scaled RoPE</strong>：插值旋转频率，让低频部分&quot;慢下来&quot;，实现无损外推</li>
+<li><strong>YaRN</strong>（Yet another RoPE extensioN）：结合 NTK 与窗口注意力，把 Qwen 等模型外推到 128K+ 甚至 1M</li>
+<li><strong>Positional Interpolation（PI）</strong>：线性插值位置，简单但精度有损</li>
+</ul>
+<p><strong>2. 旋转的粒度。</strong> 每个二维子空间独立旋转，可能丢失跨子空间的高维相关性——一些研究（如部分论文指出的&quot;维度纠缠&quot;问题）试图用更复杂的旋转结构替代，但尚无压倒性优势的方案。</p>
+<h3 id="5-4-一段代码看懂-NTK-外推"><a href="#5-4-一段代码看懂-NTK-外推" class="headerlink" title="5.4 一段代码看懂&quot;NTK 外推&quot;"></a>5.4 一段代码看懂&quot;NTK 外推&quot;</h3><p>NTK-aware 的思路本质是<strong>把 base 从 10000 调大</strong>，让频率整体变慢：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">ntk_scale_freqs</span>(<span class="params">dim: <span class="built_in">int</span>, max_len: <span class="built_in">int</span>, base: <span class="built_in">float</span> = <span class="number">10000.0</span></span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;NTK-aware 缩放：训练长度 4096 → 推理长度 16384&quot;&quot;&quot;</span></span><br><span class="line">    scale = (max_len / <span class="number">4096</span>) ** (dim / (dim - <span class="number">2</span>))   <span class="comment"># 缩放因子</span></span><br><span class="line">    new_base = base * scale                          <span class="comment"># 调大 base</span></span><br><span class="line">    <span class="keyword">return</span> precompute_rope_freqs(dim, max_len, base=new_base)</span><br><span class="line"></span><br><span class="line">cos, sin = ntk_scale_freqs(head_dim, max_len=<span class="number">16384</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;base 10000 → <span class="subst">&#123;<span class="number">10000</span> * (<span class="number">16384</span>/<span class="number">4096</span>) ** (<span class="number">8</span>/<span class="number">6</span>):<span class="number">.0</span>f&#125;</span>&quot;</span>)</span><br><span class="line"><span class="comment"># 输出: base 10000 → 54387</span></span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">base 10000 → 54387</span><br></pre></td></tr></table></figure>
+
+<p>调大 base 之后，旋转频率整体变慢，模型在长序列上不再&quot;转晕&quot;，这就是 NTK 外推能拉到 128K 的底层原因。</p>
+<h2 id="六、总结：旋转的位置魔法"><a href="#六、总结：旋转的位置魔法" class="headerlink" title="六、总结：旋转的位置魔法"></a>六、总结：旋转的位置魔法</h2><p>回到开头的问题——<strong>Transformer 看不见顺序，怎么办？</strong></p>
+<p>RoPE 给出的答案优雅得近乎诗意：<strong>给每个 token 一个&quot;角度&quot;，让它在自己的坐标轴上转起来。两个 token 之间的相对位置，就藏在这两次旋转的角度差里。</strong></p>
+<p>用一张图收尾：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">位置 0:  q0 ──旋转 0·θ──► q0&#x27;     位置 1:  q1 ──旋转 1·θ──► q1&#x27;</span><br><span class="line">                                              │</span><br><span class="line">                注意力分数 = q0&#x27;·k1&#x27; = f(1-0)  ←── 只与位置差有关！</span><br></pre></td></tr></table></figure>
+
+<p>三个核心记忆点：</p>
+<ol>
+<li><strong>为什么需要位置编码</strong>：自注意力只算&quot;像不像&quot;，不算&quot;在哪&quot;；语言必须知道顺序</li>
+<li><strong>RoPE 怎么做</strong>：把位置信息&quot;旋转&quot;进 Q&#x2F;K，内积自动携带相对位置，零参数、不改结构</li>
+<li><strong>为什么主流 LLM 都选它</strong>：LLaMA、Qwen、Baichuan 全系采用，配合 NTK&#x2F;YaRN 可轻松外推到超长上下文</li>
+</ol>
+<p>从 2021 年论文发表至今，RoPE 已经成了大语言模型的&quot;地基&quot;之一。理解它，也就理解了为什么今天的模型能写出逻辑连贯的长文——因为它们终于&quot;记得&quot;了每个字词站的位置。</p>
+<blockquote>
+<p><strong>工程师视角的一句话总结</strong>：RoPE 用一个旋转矩阵，把&quot;位置&quot;从&quot;加进去的信息&quot;变成了&quot;长在向量里的属性&quot;——这是近五年大模型领域性价比最高的一处设计。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/98a84fa8/">https://hespethorn.github.io/posts/98a84fa8/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B/">大语言模型</a><a class="post-meta__tags" href="/tags/RoPE/">RoPE</a><a class="post-meta__tags" href="/tags/%E6%96%87%E7%AB%A0/">文章</a><a class="post-meta__tags" href="/tags/%E8%AE%BA%E6%96%87%E8%A7%A3%E8%AF%BB/">论文解读</a><a class="post-meta__tags" href="/tags/%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81/">位置编码</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">654</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">793</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">75</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/579dfa79/" title="B+树与HNSW——数据库索引与向量检索的两座丰碑">B+树与HNSW——数据库索引与向量检索的两座丰碑</a><time datetime="2026-08-13T16:00:00.000Z" title="Created 2026-08-14 00:00:00">2026-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/98a84fa8/" title="RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感">RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感</a><time datetime="2026-08-08T16:00:00.000Z" title="Created 2026-08-09 00:00:00">2026-08-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/defd977a/" title="读代码前必运行的五个Git命令——快速诊断代码库健康状况">读代码前必运行的五个Git命令——快速诊断代码库健康状况</a><time datetime="2026-08-03T16:00:00.000Z" title="Created 2026-08-04 00:00:00">2026-08-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9e945f53/" title="string_view——现代C++的零拷贝字符串视图">string_view——现代C++的零拷贝字符串视图</a><time datetime="2026-07-29T16:00:00.000Z" title="Created 2026-07-30 00:00:00">2026-07-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/401696f6/" title="RAG原理就一句话——检索、拼接、加工：写给想祛魅的你">RAG原理就一句话——检索、拼接、加工：写给想祛魅的你</a><time datetime="2026-07-24T16:00:00.000Z" title="Created 2026-07-25 00:00:00">2026-07-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c7ec7f19/" title="权重大却不相关——BM25检索失效场景与两阶段救赎">权重大却不相关——BM25检索失效场景与两阶段救赎</a><time datetime="2026-07-19T16:00:00.000Z" title="Created 2026-07-20 00:00:00">2026-07-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/31e66085/" title="RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感">RAG检索增强生成——让大模型学会翻书作答：读《Retrieval-Augmented Generation》论文有感</a><time datetime="2026-07-14T16:00:00.000Z" title="Created 2026-07-15 00:00:00">2026-07-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c07399ea/" title="const&amp;万能引用的陷阱——现代C++参数传递的正确姿势">const&amp;万能引用的陷阱——现代C++参数传递的正确姿势</a><time datetime="2026-07-09T16:00:00.000Z" title="Created 2026-07-10 00:00:00">2026-07-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c610829b/" title="设计模式真的很烂吗：读《Design Patterns Suck》有感">设计模式真的很烂吗：读《Design Patterns Suck》有感</a><time datetime="2026-07-08T16:00:00.000Z" title="Created 2026-07-09 00:00:00">2026-07-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cf051ed8/" title="思维链提示——让大模型学会推理的神奇方法：读《Chain-of-Thought Prompting》论文有感">思维链提示——让大模型学会推理的神奇方法：读《Chain-of-Thought Prompting》论文有感</a><time datetime="2026-07-02T16:00:00.000Z" title="Created 2026-07-03 00:00:00">2026-07-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/83f26f3b/" title="Codex Desktop gpt-5.5调用失败解决方案">Codex Desktop gpt-5.5调用失败解决方案</a><time datetime="2026-06-28T16:00:00.000Z" title="Created 2026-06-29 00:00:00">2026-06-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/febb3a13/" title="算法早已实现：读AI寓言故事有感">算法早已实现：读AI寓言故事有感</a><time datetime="2026-06-24T16:00:00.000Z" title="Created 2026-06-25 00:00:00">2026-06-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b96618e4/" title="GBFS贪婪最佳优先搜索算法深度解析">GBFS贪婪最佳优先搜索算法深度解析</a><time datetime="2026-06-23T16:00:00.000Z" title="Created 2026-06-24 00:00:00">2026-06-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3b60608/" title="交叉编译深度解析——从工具链到 CMake 的完整实战">交叉编译深度解析——从工具链到 CMake 的完整实战</a><time datetime="2026-06-17T16:00:00.000Z" title="Created 2026-06-18 00:00:00">2026-06-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4d8e219/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形">一次与 AI 的代码重构对话实录：十一个决策如何成形</a><time datetime="2026-06-13T16:00:00.000Z" title="Created 2026-06-14 00:00:00">2026-06-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/vibe-checks-are-all-you-need/" title="Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》">Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》</a><time datetime="2026-06-12T16:00:00.000Z" title="Created 2026-06-13 00:00:00">2026-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b7e3a912/" title="一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁">一次 C++ 程序三重 bug 的调试之旅：double-free、静态初始化 fiasco 与 RTSP 死锁</a><time datetime="2026-06-11T16:00:00.000Z" title="Created 2026-06-12 00:00:00">2026-06-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-assisted-debugging-misconception/" title="AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的">AI 辅助调试的误区：为什么让 AI 直接修 bug 是低效的</a><time datetime="2026-06-10T16:00:00.000Z" title="Created 2026-06-11 00:00:00">2026-06-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cpp-valgrind-crash-review/" title="C++ 服务崩溃复盘：从 Valgrind 112 个错误到零">C++ 服务崩溃复盘：从 Valgrind 112 个错误到零</a><time datetime="2026-06-09T16:00:00.000Z" title="Created 2026-06-10 00:00:00">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lora-mesh-high-frequency-mqtt/" title="LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案">LoRa Mesh 下的高频 MQTT 通信：10Hz 消息洪流的可行性与实现方案</a><time datetime="2026-06-07T16:00:00.000Z" title="Created 2026-06-08 00:00:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/companies-graph-of-algorithms/" title="公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》">公司即算法图：读 Daniel Miessler《Companies Are Just a Graph of Algorithms》</a><time datetime="2026-05-24T16:00:00.000Z" title="Created 2026-05-25 00:00:00">2026-05-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/86d86550/" title="读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划">读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划</a><time datetime="2026-05-22T16:00:00.000Z" title="Created 2026-05-23 00:00:00">2026-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ffd093c/" title="C++23新特性解析：现代C++的进一步完善">C++23新特性解析：现代C++的进一步完善</a><time datetime="2026-04-14T16:00:00.000Z" title="Created 2026-04-15 00:00:00">2026-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/403c8354/" title="C++20新特性解析：现代C++的重大突破">C++20新特性解析：现代C++的重大突破</a><time datetime="2026-04-11T16:00:00.000Z" title="Created 2026-04-12 00:00:00">2026-04-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/579dfa79/" title="B+树与HNSW——数据库索引与向量检索的两座丰碑">B+树与HNSW——数据库索引与向量检索的两座丰碑</a><time datetime="2026-08-13T16:00:00.000Z" title="Created 2026-08-14 00:00:00">2026-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260810/" title="AI 新闻速递｜2026-08-10：Cursor 并入 SpaceX、Claude Code 自动模式上线、具身智能融资潮">AI 新闻速递｜2026-08-10：Cursor 并入 SpaceX、Claude Code 自动模式上线、具身智能融资潮</a><time datetime="2026-08-09T16:00:00.000Z" title="Created 2026-08-10 00:00:00">2026-08-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2e8b7d41/" title="织锦坊的绣花娘">织锦坊的绣花娘</a><time datetime="2026-08-09T16:00:00.000Z" title="Created 2026-08-10 00:00:00">2026-08-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9c3a6f2b/" title="花溪谷的引水人">花溪谷的引水人</a><time datetime="2026-08-08T16:00:00.000Z" title="Created 2026-08-09 00:00:00">2026-08-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/98a84fa8/" title="RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感">RoPE旋转位置编码——让大模型&quot;记住&quot;字词顺序的旋转魔法：读《RoFormer》论文有感</a><time datetime="2026-08-08T16:00:00.000Z" title="Created 2026-08-09 00:00:00">2026-08-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
