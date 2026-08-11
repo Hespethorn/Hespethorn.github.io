@@ -1,0 +1,751 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、从一段&quot;看起来没问题&quot;的代码说起几乎每个 Python 初学者都写过这样的文件读取代码： 123f &#x3D; open(&#x27;data.txt&#x27;, &#x27;r&#x27;, encoding&#x3D;&#x27;utf-8&#x27;)content &#x3D; f.read()f.close()  三行，逻辑清晰，运行也正常。但它有一个致命缺陷：如果 f.read() 抛出">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比">
+<meta property="og:url" content="https://hespethorn.github.io/posts/python-context-manager-deep-dive/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、从一段&quot;看起来没问题&quot;的代码说起几乎每个 Python 初学者都写过这样的文件读取代码： 123f &#x3D; open(&#x27;data.txt&#x27;, &#x27;r&#x27;, encoding&#x3D;&#x27;utf-8&#x27;)content &#x3D; f.read()f.close()  三行，逻辑清晰，运行也正常。但它有一个致命缺陷：如果 f.read() 抛出">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-08-10T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-11T02:22:07.644Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="RAII">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="上下文管理器">
+<meta property="article:tag" content="with语句">
+<meta property="article:tag" content="contextlib">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比",
+  "url": "https://hespethorn.github.io/posts/python-context-manager-deep-dive/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-08-10T16:00:00.000Z",
+  "dateModified": "2026-08-11T02:22:07.644Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/python-context-manager-deep-dive/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">657</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">798</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">75</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-08-10T16:00:00.000Z" title="Created 2026-08-11 00:00:00">2026-08-11</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Python/">Python</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>13mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、从一段-看起来没问题-的代码说起"><a href="#一、从一段-看起来没问题-的代码说起" class="headerlink" title="一、从一段&quot;看起来没问题&quot;的代码说起"></a>一、从一段&quot;看起来没问题&quot;的代码说起</h2><p>几乎每个 Python 初学者都写过这样的文件读取代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">f = <span class="built_in">open</span>(<span class="string">&#x27;data.txt&#x27;</span>, <span class="string">&#x27;r&#x27;</span>, encoding=<span class="string">&#x27;utf-8&#x27;</span>)</span><br><span class="line">content = f.read()</span><br><span class="line">f.close()</span><br></pre></td></tr></table></figure>
+
+<p>三行，逻辑清晰，运行也正常。但它有一个致命缺陷：<strong>如果 <code>f.read()</code> 抛出异常，<code>f.close()</code> 永远不会执行</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">f = <span class="built_in">open</span>(<span class="string">&#x27;data.txt&#x27;</span>, <span class="string">&#x27;r&#x27;</span>, encoding=<span class="string">&#x27;utf-8&#x27;</span>)</span><br><span class="line">content = f.read()</span><br><span class="line"><span class="built_in">print</span>(content[<span class="number">999999</span>])   <span class="comment"># IndexError！</span></span><br><span class="line">f.close()                <span class="comment"># 这一行被跳过了</span></span><br></pre></td></tr></table></figure>
+
+<p>文件描述符泄漏了。单次运行看不出问题，但如果这段代码在循环里跑一万次，进程很快就会撞上操作系统的 <code>ulimit -n</code> 上限，抛出 <code>OSError: [Errno 24] Too many open files</code>。</p>
+<p>老派的补救方式是 <code>try...finally</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">f = <span class="built_in">open</span>(<span class="string">&#x27;data.txt&#x27;</span>, <span class="string">&#x27;r&#x27;</span>, encoding=<span class="string">&#x27;utf-8&#x27;</span>)</span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    content = f.read()</span><br><span class="line"><span class="keyword">finally</span>:</span><br><span class="line">    f.close()      <span class="comment"># 无论是否异常，都会执行</span></span><br></pre></td></tr></table></figure>
+
+<p>这段代码是正确的，但很啰嗦。更麻烦的是，<strong>它把&quot;资源怎么用&quot;和&quot;资源怎么清理&quot;混在了同一段业务代码里</strong>。如果需要同时打开三个文件，嵌套三层 <code>try...finally</code>，可读性会迅速崩坏。</p>
+<p>Python 的解决方案是 <code>with</code> 语句：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">with</span> <span class="built_in">open</span>(<span class="string">&#x27;data.txt&#x27;</span>, <span class="string">&#x27;r&#x27;</span>, encoding=<span class="string">&#x27;utf-8&#x27;</span>) <span class="keyword">as</span> f:</span><br><span class="line">    content = f.read()</span><br><span class="line"><span class="comment"># 离开 with 块时，文件自动关闭（哪怕发生了异常）</span></span><br></pre></td></tr></table></figure>
+
+<p>关键在于：<strong><code>with</code> 不是 <code>open</code> 的专属语法糖，而是一套通用协议</strong>。任何对象只要实现了这套协议，就能用在 <code>with</code> 后面。</p>
+<h2 id="二、协议本质：-enter-与-exit"><a href="#二、协议本质：-enter-与-exit" class="headerlink" title="二、协议本质：__enter__ 与 __exit__"></a>二、协议本质：<code>__enter__</code> 与 <code>__exit__</code></h2><h3 id="2-1-两个魔术方法"><a href="#2-1-两个魔术方法" class="headerlink" title="2.1 两个魔术方法"></a>2.1 两个魔术方法</h3><p>上下文管理器协议只要求两个方法：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>调用时机</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>__enter__(self)</code></td>
+<td>进入 <code>with</code> 块之前</td>
+<td>做准备工作，返回值绑定给 <code>as</code> 后的变量</td>
+</tr>
+<tr>
+<td><code>__exit__(self, exc_type, exc_val, exc_tb)</code></td>
+<td>离开 <code>with</code> 块时（正常或异常）</td>
+<td>做清理工作</td>
+</tr>
+</tbody></table>
+<p>自己实现一个计时器：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Timer</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, label</span>):</span><br><span class="line">        <span class="variable language_">self</span>.label = label</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__enter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="variable language_">self</span>.start = time.perf_counter()</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&#x27;[<span class="subst">&#123;self.label&#125;</span>] 开始计时&#x27;</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span>                  <span class="comment"># 这个返回值会绑定给 as 后的变量</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__exit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">        <span class="variable language_">self</span>.elapsed = time.perf_counter() - <span class="variable language_">self</span>.start</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&#x27;[<span class="subst">&#123;self.label&#125;</span>] 耗时 <span class="subst">&#123;self.elapsed:<span class="number">.4</span>f&#125;</span> 秒&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> Timer(<span class="string">&#x27;求和&#x27;</span>) <span class="keyword">as</span> t:</span><br><span class="line">    total = <span class="built_in">sum</span>(<span class="built_in">range</span>(<span class="number">10_000_000</span>))</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;结果=<span class="subst">&#123;total&#125;</span>，可再次读取耗时：<span class="subst">&#123;t.elapsed:<span class="number">.4</span>f&#125;</span>&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">[求和] 开始计时</span><br><span class="line">[求和] 耗时 0.2831 秒</span><br><span class="line">结果=49999995000000，可再次读取耗时：0.2831</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-2-as-拿到的到底是什么"><a href="#2-2-as-拿到的到底是什么" class="headerlink" title="2.2 as 拿到的到底是什么"></a>2.2 <code>as</code> 拿到的到底是什么</h3><p>这是最容易踩坑的地方。<strong><code>as</code> 后面的变量绑定的是 <code>__enter__</code> 的返回值，而不是 <code>with</code> 后面的那个对象。</strong></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Wrong</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__enter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;进入&#x27;</span>)</span><br><span class="line">        <span class="comment"># 忘记 return，隐式返回 None</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__exit__</span>(<span class="params">self, *args</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;退出&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> Wrong() <span class="keyword">as</span> w:</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;w = <span class="subst">&#123;w&#125;</span>&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">进入</span><br><span class="line">w = None          # 不是 Wrong 实例！</span><br><span class="line">退出</span><br></pre></td></tr></table></figure>
+
+<p><code>open()</code> 之所以能写成 <code>with open(...) as f</code>，是因为文件对象的 <code>__enter__</code> 里 <code>return self</code>。如果你自己写的类希望 <code>as</code> 拿到实例本身，<strong>必须显式 <code>return self</code></strong>。</p>
+<h3 id="2-3-展开后的等价形式"><a href="#2-3-展开后的等价形式" class="headerlink" title="2.3 展开后的等价形式"></a>2.3 展开后的等价形式</h3><p><code>with cm as x: body</code> 大致等价于：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">cm = EXPR</span><br><span class="line">_exit = <span class="built_in">type</span>(cm).__exit__          <span class="comment"># 注意：从类上取，不是从实例上取</span></span><br><span class="line">x = <span class="built_in">type</span>(cm).__enter__(cm)</span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    body</span><br><span class="line"><span class="keyword">except</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> _exit(cm, *sys.exc_info()):</span><br><span class="line">        <span class="keyword">raise</span>                       <span class="comment"># __exit__ 返回假值，异常继续向外传播</span></span><br><span class="line"><span class="keyword">else</span>:</span><br><span class="line">    _exit(cm, <span class="literal">None</span>, <span class="literal">None</span>, <span class="literal">None</span>)</span><br></pre></td></tr></table></figure>
+
+<p>有两个细节值得留意：</p>
+<ol>
+<li><strong>方法从类上查找，不是从实例上查找</strong>。给实例动态挂一个 <code>obj.__exit__ = ...</code> 是无效的，魔术方法的隐式调用永远走类型查找（这一点和 <code>__len__</code>、<code>__iter__</code> 一致）。</li>
+<li><strong><code>__enter__</code> 抛异常时，<code>__exit__</code> 不会被调用</strong>。因为此时资源还没成功获取，谈不上清理。</li>
+</ol>
+<h2 id="三、异常处理：-exit-的返回值决定一切"><a href="#三、异常处理：-exit-的返回值决定一切" class="headerlink" title="三、异常处理：__exit__ 的返回值决定一切"></a>三、异常处理：<code>__exit__</code> 的返回值决定一切</h2><h3 id="3-1-三个参数的含义"><a href="#3-1-三个参数的含义" class="headerlink" title="3.1 三个参数的含义"></a>3.1 三个参数的含义</h3><p>当 <code>with</code> 块内发生异常时，<code>__exit__</code> 会收到完整的异常信息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Inspector</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__enter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__exit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">        <span class="keyword">if</span> exc_type <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">&#x27;正常退出，无异常&#x27;</span>)</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;异常类型：<span class="subst">&#123;exc_type.__name__&#125;</span>&#x27;</span>)</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;异常内容：<span class="subst">&#123;exc_val&#125;</span>&#x27;</span>)</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;发生位置：第 <span class="subst">&#123;exc_tb.tb_lineno&#125;</span> 行&#x27;</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">False</span>       <span class="comment"># 关键：返回假值，异常继续传播</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    <span class="keyword">with</span> Inspector():</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&#x27;数据格式错误&#x27;</span>)</span><br><span class="line"><span class="keyword">except</span> ValueError <span class="keyword">as</span> e:</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;外层捕获到：<span class="subst">&#123;e&#125;</span>&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">异常类型：ValueError</span><br><span class="line">异常内容：数据格式错误</span><br><span class="line">发生位置：第 17 行</span><br><span class="line">外层捕获到：数据格式错误</span><br></pre></td></tr></table></figure>
+
+<p>正常退出时，三个参数都是 <code>None</code>。</p>
+<h3 id="3-2-返回-True-会-吞掉-异常"><a href="#3-2-返回-True-会-吞掉-异常" class="headerlink" title="3.2 返回 True 会&quot;吞掉&quot;异常"></a>3.2 返回 True 会&quot;吞掉&quot;异常</h3><p>这是上下文管理器最强大也最危险的能力：<strong><code>__exit__</code> 返回真值，异常就会被静默吞掉</strong>，程序继续从 <code>with</code> 块之后执行。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Suppress</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, *exc_types</span>):</span><br><span class="line">        <span class="variable language_">self</span>.exc_types = exc_types</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__enter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__exit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">        <span class="comment"># 只吞掉指定类型的异常</span></span><br><span class="line">        <span class="keyword">return</span> exc_type <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span> <span class="keyword">and</span> <span class="built_in">issubclass</span>(exc_type, <span class="variable language_">self</span>.exc_types)</span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> Suppress(ZeroDivisionError):</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;开始计算&#x27;</span>)</span><br><span class="line">    x = <span class="number">1</span> / <span class="number">0</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;这一行不会执行&#x27;</span>)       <span class="comment"># with 块内剩余代码被跳过</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&#x27;程序继续运行&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">开始计算</span><br><span class="line">程序继续运行</span><br></pre></td></tr></table></figure>
+
+<p>注意一个关键事实：<strong>异常被吞掉不等于 <code>with</code> 块继续执行</strong>。异常发生的那一刻，<code>with</code> 块内后续代码就已经被跳过了，<code>__exit__</code> 只能决定异常要不要向外传播。</p>
+<p>标准库已经提供了这个功能，不用自己写：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> contextlib <span class="keyword">import</span> suppress</span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> suppress(FileNotFoundError):</span><br><span class="line">    os.remove(<span class="string">&#x27;可能不存在的临时文件.tmp&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p><strong>慎用</strong>：无差别吞异常是排查线上问题时最痛苦的事情之一。只在你明确知道&quot;这个异常出现是正常的&quot;时候才用。</p>
+<h3 id="3-3-一个隐蔽的陷阱"><a href="#3-3-一个隐蔽的陷阱" class="headerlink" title="3.3 一个隐蔽的陷阱"></a>3.3 一个隐蔽的陷阱</h3><p><code>__exit__</code> 里如果没有显式 <code>return</code>，隐式返回 <code>None</code>（假值），异常正常传播——这是符合直觉的默认行为。但如果你在 <code>__exit__</code> 里写了一个总是返回真值的表达式，就会意外吞掉所有异常：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">__exit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">    <span class="keyword">return</span> <span class="variable language_">self</span>.cleanup()     <span class="comment"># 如果 cleanup() 返回了非空对象，异常就被吞了！</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>建议：<code>__exit__</code> 要么不写 return，要么显式 <code>return False</code>。</strong></p>
+<h2 id="四、contextlib：用生成器写上下文管理器"><a href="#四、contextlib：用生成器写上下文管理器" class="headerlink" title="四、contextlib：用生成器写上下文管理器"></a>四、contextlib：用生成器写上下文管理器</h2><h3 id="4-1-contextmanager-装饰器"><a href="#4-1-contextmanager-装饰器" class="headerlink" title="4.1 @contextmanager 装饰器"></a>4.1 <code>@contextmanager</code> 装饰器</h3><p>为了两个方法专门定义一个类，对简单场景来说太重了。<code>contextlib.contextmanager</code> 允许用生成器函数实现同样的效果：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> contextlib <span class="keyword">import</span> contextmanager</span><br><span class="line"></span><br><span class="line"><span class="meta">@contextmanager</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">timer</span>(<span class="params">label</span>):</span><br><span class="line">    start = time.perf_counter()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;[<span class="subst">&#123;label&#125;</span>] 开始&#x27;</span>)</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">yield</span> start                        <span class="comment"># yield 之前 = __enter__</span></span><br><span class="line">    <span class="keyword">finally</span>:</span><br><span class="line">        elapsed = time.perf_counter() - start</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&#x27;[<span class="subst">&#123;label&#125;</span>] 耗时 <span class="subst">&#123;elapsed:<span class="number">.4</span>f&#125;</span> 秒&#x27;</span>)   <span class="comment"># yield 之后 = __exit__</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> timer(<span class="string">&#x27;排序&#x27;</span>) <span class="keyword">as</span> t0:</span><br><span class="line">    data = <span class="built_in">sorted</span>(<span class="built_in">range</span>(<span class="number">1_000_000</span>), reverse=<span class="literal">True</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[排序] 开始</span><br><span class="line">[排序] 耗时 0.1204 秒</span><br></pre></td></tr></table></figure>
+
+<p>对应关系非常清晰：</p>
+<table>
+<thead>
+<tr>
+<th>生成器写法</th>
+<th>类写法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>yield</code> 之前的代码</td>
+<td><code>__enter__</code> 方法体</td>
+</tr>
+<tr>
+<td><code>yield</code> 出去的值</td>
+<td><code>__enter__</code> 的返回值</td>
+</tr>
+<tr>
+<td><code>yield</code> 之后的代码</td>
+<td><code>__exit__</code> 方法体</td>
+</tr>
+<tr>
+<td><code>try...finally</code> 包住 yield</td>
+<td>保证异常时也清理</td>
+</tr>
+</tbody></table>
+<h3 id="4-2-为什么-finally-不能省"><a href="#4-2-为什么-finally-不能省" class="headerlink" title="4.2 为什么 finally 不能省"></a>4.2 为什么 finally 不能省</h3><p>如果不写 <code>try...finally</code>，<code>with</code> 块内一旦抛异常，异常会在 <code>yield</code> 处被重新抛进生成器，导致 <code>yield</code> 之后的清理代码被跳过：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@contextmanager</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">bad_timer</span>(<span class="params">label</span>):</span><br><span class="line">    start = time.perf_counter()</span><br><span class="line">    <span class="keyword">yield</span>                                   <span class="comment"># 异常从这里抛出</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;[<span class="subst">&#123;label&#125;</span>] 耗时统计&#x27;</span>)            <span class="comment"># 永远不会执行</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    <span class="keyword">with</span> bad_timer(<span class="string">&#x27;危险&#x27;</span>):</span><br><span class="line">        <span class="keyword">raise</span> RuntimeError(<span class="string">&#x27;炸了&#x27;</span>)</span><br><span class="line"><span class="keyword">except</span> RuntimeError:</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;没有看到耗时统计&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">没有看到耗时统计</span><br></pre></td></tr></table></figure>
+
+<p><strong>规则：<code>@contextmanager</code> 函数里的 <code>yield</code> 必须包在 <code>try...finally</code> 中。</strong> 如果需要吞掉异常，用 <code>try...except</code> 并且不 re-raise。</p>
+<h3 id="4-3-一个实用例子：临时切换工作目录"><a href="#4-3-一个实用例子：临时切换工作目录" class="headerlink" title="4.3 一个实用例子：临时切换工作目录"></a>4.3 一个实用例子：临时切换工作目录</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">from</span> contextlib <span class="keyword">import</span> contextmanager</span><br><span class="line"></span><br><span class="line"><span class="meta">@contextmanager</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">chdir</span>(<span class="params">path</span>):</span><br><span class="line">    origin = os.getcwd()</span><br><span class="line">    os.chdir(path)</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">yield</span> path</span><br><span class="line">    <span class="keyword">finally</span>:</span><br><span class="line">        os.chdir(origin)       <span class="comment"># 无论如何都切回来</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(os.getcwd())             <span class="comment"># /home/user/project</span></span><br><span class="line"><span class="keyword">with</span> chdir(<span class="string">&#x27;/tmp&#x27;</span>):</span><br><span class="line">    <span class="built_in">print</span>(os.getcwd())         <span class="comment"># /tmp</span></span><br><span class="line"><span class="built_in">print</span>(os.getcwd())             <span class="comment"># /home/user/project</span></span><br></pre></td></tr></table></figure>
+
+<p>这类&quot;临时修改全局状态，用完还原&quot;的场景，是上下文管理器最有价值的用武之地——比 <code>try...finally</code> 表达力强得多，因为它把&quot;还原&quot;的责任封装进了工具本身，调用方不可能忘记。</p>
+<h3 id="4-4-contextlib-常用工具速查"><a href="#4-4-contextlib-常用工具速查" class="headerlink" title="4.4 contextlib 常用工具速查"></a>4.4 contextlib 常用工具速查</h3><table>
+<thead>
+<tr>
+<th>工具</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@contextmanager</code></td>
+<td>用生成器定义上下文管理器</td>
+</tr>
+<tr>
+<td><code>suppress(*exc)</code></td>
+<td>静默忽略指定异常</td>
+</tr>
+<tr>
+<td><code>closing(obj)</code></td>
+<td>为只有 <code>close()</code> 没有 <code>__exit__</code> 的对象补上协议</td>
+</tr>
+<tr>
+<td><code>nullcontext(x)</code></td>
+<td>什么都不做的占位管理器，用于条件式 with</td>
+</tr>
+<tr>
+<td><code>ExitStack()</code></td>
+<td>动态管理数量不定的上下文管理器</td>
+</tr>
+<tr>
+<td><code>redirect_stdout(f)</code></td>
+<td>临时重定向标准输出</td>
+</tr>
+</tbody></table>
+<p><code>nullcontext</code> 解决了一个很常见的尴尬——&quot;有时需要加锁，有时不需要&quot;：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> contextlib <span class="keyword">import</span> nullcontext</span><br><span class="line"><span class="keyword">import</span> threading</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">process</span>(<span class="params">data, lock=<span class="literal">None</span></span>):</span><br><span class="line">    ctx = lock <span class="keyword">if</span> lock <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span> <span class="keyword">else</span> nullcontext()</span><br><span class="line">    <span class="keyword">with</span> ctx:                      <span class="comment"># 不用写两份分支代码</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">sum</span>(data)</span><br><span class="line"></span><br><span class="line">process([<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>])                          <span class="comment"># 无锁</span></span><br><span class="line">process([<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>], threading.Lock())        <span class="comment"># 有锁</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="五、进阶：多重管理与-ExitStack"><a href="#五、进阶：多重管理与-ExitStack" class="headerlink" title="五、进阶：多重管理与 ExitStack"></a>五、进阶：多重管理与 ExitStack</h2><h3 id="5-1-多个上下文管理器"><a href="#5-1-多个上下文管理器" class="headerlink" title="5.1 多个上下文管理器"></a>5.1 多个上下文管理器</h3><p>同一行可以写多个，从左到右依次进入、从右到左依次退出：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">with</span> <span class="built_in">open</span>(<span class="string">&#x27;in.txt&#x27;</span>) <span class="keyword">as</span> fin, <span class="built_in">open</span>(<span class="string">&#x27;out.txt&#x27;</span>, <span class="string">&#x27;w&#x27;</span>) <span class="keyword">as</span> fout:</span><br><span class="line">    fout.write(fin.read().upper())</span><br></pre></td></tr></table></figure>
+
+<p>等价于嵌套写法，但少了一层缩进。行太长时用括号换行（Python 3.10+ 官方支持，早期版本可用反斜杠）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">with</span> (</span><br><span class="line">    <span class="built_in">open</span>(<span class="string">&#x27;in.txt&#x27;</span>) <span class="keyword">as</span> fin,</span><br><span class="line">    <span class="built_in">open</span>(<span class="string">&#x27;out.txt&#x27;</span>, <span class="string">&#x27;w&#x27;</span>) <span class="keyword">as</span> fout,</span><br><span class="line">):</span><br><span class="line">    fout.write(fin.read().upper())</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-ExitStack：数量不定时的救星"><a href="#5-2-ExitStack：数量不定时的救星" class="headerlink" title="5.2 ExitStack：数量不定时的救星"></a>5.2 ExitStack：数量不定时的救星</h3><p>如果要打开的文件数量在运行时才确定，硬编码的 <code>with a, b, c</code> 就无能为力了：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> contextlib <span class="keyword">import</span> ExitStack</span><br><span class="line"></span><br><span class="line">filenames = [<span class="string">&#x27;a.txt&#x27;</span>, <span class="string">&#x27;b.txt&#x27;</span>, <span class="string">&#x27;c.txt&#x27;</span>, <span class="string">&#x27;d.txt&#x27;</span>]</span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> ExitStack() <span class="keyword">as</span> stack:</span><br><span class="line">    files = [stack.enter_context(<span class="built_in">open</span>(name)) <span class="keyword">for</span> name <span class="keyword">in</span> filenames]</span><br><span class="line">    <span class="comment"># 此时所有文件都已打开</span></span><br><span class="line">    total_lines = <span class="built_in">sum</span>(<span class="built_in">len</span>(f.readlines()) <span class="keyword">for</span> f <span class="keyword">in</span> files)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;总行数：<span class="subst">&#123;total_lines&#125;</span>&#x27;</span>)</span><br><span class="line"><span class="comment"># 退出时，所有文件按注册的逆序自动关闭</span></span><br></pre></td></tr></table></figure>
+
+<p><code>ExitStack</code> 还能注册普通的回调函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">with</span> ExitStack() <span class="keyword">as</span> stack:</span><br><span class="line">    conn = connect_db()</span><br><span class="line">    stack.callback(conn.close)          <span class="comment"># 注册清理动作</span></span><br><span class="line">    stack.callback(<span class="built_in">print</span>, <span class="string">&#x27;清理完成&#x27;</span>)    <span class="comment"># 支持带参数</span></span><br><span class="line">    do_something(conn)</span><br></pre></td></tr></table></figure>
+
+<p>这在编写&quot;部分初始化失败要回滚已完成部分&quot;的代码时非常有用——传统写法需要层层嵌套的 <code>try...except</code>，而 <code>ExitStack</code> 把它压平成了线性代码。</p>
+<h3 id="5-3-异步上下文管理器"><a href="#5-3-异步上下文管理器" class="headerlink" title="5.3 异步上下文管理器"></a>5.3 异步上下文管理器</h3><p><code>asyncio</code> 场景下有一套平行的协议：<code>__aenter__</code> &#x2F; <code>__aexit__</code>，配合 <code>async with</code> 使用。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AsyncResource</span>:</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__aenter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;异步获取资源&#x27;</span>)</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">0.1</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="variable language_">self</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__aexit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;异步释放资源&#x27;</span>)</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">0.1</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> AsyncResource() <span class="keyword">as</span> r:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;使用资源&#x27;</span>)</span><br><span class="line"></span><br><span class="line">asyncio.run(main())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">异步获取资源</span><br><span class="line">使用资源</span><br><span class="line">异步释放资源</span><br></pre></td></tr></table></figure>
+
+<p><code>contextlib</code> 也提供了对应的 <code>@asynccontextmanager</code> 和 <code>AsyncExitStack</code>。</p>
+<h2 id="六、与-C-RAII-的对比"><a href="#六、与-C-RAII-的对比" class="headerlink" title="六、与 C++ RAII 的对比"></a>六、与 C++ RAII 的对比</h2><p>C++ 程序员会立刻联想到 RAII（Resource Acquisition Is Initialization）——构造函数获取资源，析构函数释放资源：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="function">std::ifstream <span class="title">fin</span><span class="params">(<span class="string">&quot;data.txt&quot;</span>)</span></span>;   <span class="comment">// 构造：打开文件</span></span><br><span class="line">    std::string line;</span><br><span class="line">    std::<span class="built_in">getline</span>(fin, line);</span><br><span class="line">    <span class="comment">// 离开作用域，fin 的析构函数自动关闭文件（即使抛异常，栈展开也会调用）</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>两者解决的是同一个问题，但机制完全不同：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C++ RAII</th>
+<th>Python <code>with</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>触发时机</td>
+<td>离开作用域，编译期确定</td>
+<td>离开 <code>with</code> 块，运行时协议调用</td>
+</tr>
+<tr>
+<td>绑定对象</td>
+<td>对象生命周期，隐式</td>
+<td><code>with</code> 语句，显式</td>
+</tr>
+<tr>
+<td>底层机制</td>
+<td>析构函数 + 栈展开</td>
+<td><code>__exit__</code> + 解释器字节码</td>
+</tr>
+<tr>
+<td>能否感知异常</td>
+<td>不能（析构函数拿不到异常信息）</td>
+<td>能（<code>__exit__</code> 收到三元组）</td>
+</tr>
+<tr>
+<td>能否吞掉异常</td>
+<td>不能</td>
+<td>能（<code>return True</code>）</td>
+</tr>
+<tr>
+<td>忘记使用的后果</td>
+<td>不会——语法上无法绕过</td>
+<td>会——可以直接调 <code>open()</code> 不用 <code>with</code></td>
+</tr>
+</tbody></table>
+<p><strong>核心差异在于&quot;显式 vs 隐式&quot;。</strong> C++ 的资源管理绑定在对象生命周期上，你无法&quot;忘记&quot;析构；Python 的资源管理绑定在语法块上，<code>with</code> 是可选的，忘记写就会泄漏。这也是为什么 Python 需要靠 linter（如 <code>flake8</code> 的 SIM115 规则）来提醒&quot;这里应该用 with&quot;。</p>
+<p>反过来，Python 的方案更灵活：<code>__exit__</code> 能拿到异常信息，可以做&quot;失败时回滚、成功时提交&quot;这种数据库事务语义，而 C++ 的析构函数做不到（析构函数中无法可靠区分正常退出和异常退出，<code>std::uncaught_exceptions()</code> 也只是权宜之计）。</p>
+<h3 id="6-1-为什么不能靠-del"><a href="#6-1-为什么不能靠-del" class="headerlink" title="6.1 为什么不能靠 __del__"></a>6.1 为什么不能靠 <code>__del__</code></h3><p>有人会想：Python 不是也有析构方法 <code>__del__</code> 吗？为什么不用它？</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Bad</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__del__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;清理资源&#x27;</span>)       <span class="comment"># 不可靠！</span></span><br></pre></td></tr></table></figure>
+
+<p>三个致命问题：</p>
+<ol>
+<li><strong>时机不确定</strong>。CPython 靠引用计数，通常能及时触发；但一旦对象进了循环引用，就要等 GC，时机完全不可控。PyPy、Jython 根本没有引用计数。</li>
+<li><strong>解释器退出时可能不调用</strong>。程序结束时的 <code>__del__</code> 调用没有任何保证。</li>
+<li><strong>异常被吞</strong>。<code>__del__</code> 中抛出的异常会被忽略，只在 stderr 打印一条警告。</li>
+</ol>
+<p><strong>结论：Python 里做确定性资源清理，只有 <code>with</code> 一条路。<code>__del__</code> 只能当兜底的最后防线。</strong></p>
+<h2 id="七、总结"><a href="#七、总结" class="headerlink" title="七、总结"></a>七、总结</h2><h3 id="7-1-何时该写上下文管理器"><a href="#7-1-何时该写上下文管理器" class="headerlink" title="7.1 何时该写上下文管理器"></a>7.1 何时该写上下文管理器</h3><p>一个简单的判据：<strong>只要存在&quot;成对操作&quot;，就应该考虑上下文管理器。</strong></p>
+<table>
+<thead>
+<tr>
+<th>获取</th>
+<th>释放</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>打开文件</td>
+<td>关闭文件</td>
+</tr>
+<tr>
+<td>获取锁</td>
+<td>释放锁</td>
+</tr>
+<tr>
+<td>开启事务</td>
+<td>提交 &#x2F; 回滚</td>
+</tr>
+<tr>
+<td>建立连接</td>
+<td>断开连接</td>
+</tr>
+<tr>
+<td>修改全局状态</td>
+<td>还原状态</td>
+</tr>
+<tr>
+<td>切换工作目录</td>
+<td>切回原目录</td>
+</tr>
+<tr>
+<td>开始计时</td>
+<td>停止计时并上报</td>
+</tr>
+</tbody></table>
+<h3 id="7-2-三种实现方式怎么选"><a href="#7-2-三种实现方式怎么选" class="headerlink" title="7.2 三种实现方式怎么选"></a>7.2 三种实现方式怎么选</h3><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>类 + <code>__enter__</code> &#x2F; <code>__exit__</code></td>
+<td>需要维护状态、需要复用、需要精细控制异常</td>
+</tr>
+<tr>
+<td><code>@contextmanager</code> 生成器</td>
+<td>逻辑简单、一次性使用、代码更短</td>
+</tr>
+<tr>
+<td><code>ExitStack</code></td>
+<td>管理数量不定的资源、需要动态注册清理回调</td>
+</tr>
+</tbody></table>
+<h3 id="7-3-六条实践清单"><a href="#7-3-六条实践清单" class="headerlink" title="7.3 六条实践清单"></a>7.3 六条实践清单</h3><ol>
+<li><strong><code>__enter__</code> 想让 <code>as</code> 拿到自己，必须 <code>return self</code></strong>——这是最高频的踩坑点。</li>
+<li><strong><code>__exit__</code> 默认返回 <code>None</code>（不吞异常）</strong>，需要吞异常时才显式 <code>return True</code>，并且要精确判断异常类型。</li>
+<li><strong><code>@contextmanager</code> 里的 <code>yield</code> 必须包在 <code>try...finally</code> 中</strong>，否则异常路径下清理代码会被跳过。</li>
+<li><strong>不要用 <code>__del__</code> 做资源清理</strong>，时机不可控且跨解释器行为不一致。</li>
+<li><strong>条件式的 with 用 <code>nullcontext()</code></strong>，避免写两份重复的分支代码。</li>
+<li><strong><code>with</code> 块内异常发生后，块内剩余代码一定被跳过</strong>——<code>__exit__</code> 只能决定异常是否外传，不能让 <code>with</code> 块&quot;继续跑&quot;。</li>
+</ol>
+<p>上下文管理器的价值，不在于少写几行 <code>try...finally</code>，而在于<strong>把&quot;用完必须清理&quot;这条约束从程序员的记忆里，搬进了工具本身的类型定义中</strong>。这是一种把纪律固化为语法的设计思路——和 C++ 的 RAII 殊途同归。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/python-context-manager-deep-dive/">https://hespethorn.github.io/posts/python-context-manager-deep-dive/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/RAII/">RAII</a><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AE%A1%E7%90%86%E5%99%A8/">上下文管理器</a><a class="post-meta__tags" href="/tags/with%E8%AF%AD%E5%8F%A5/">with语句</a><a class="post-meta__tags" href="/tags/contextlib/">contextlib</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">657</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">798</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">75</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-context-manager-deep-dive/" title="Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比">Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比</a><time datetime="2026-08-10T16:00:00.000Z" title="Created 2026-08-11 00:00:00">2026-08-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/eva-assistant-code-analysis/" title="EVA智能助手代码深度解析">EVA智能助手代码深度解析</a><time datetime="2026-04-22T16:00:00.000Z" title="Created 2026-04-23 00:00:00">2026-04-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-scheme-quote-explained/" title="Scheme quote深度解析：求值与数据的边界">Scheme quote深度解析：求值与数据的边界</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-tail-recursion-optimization/" title="尾递归与尾调用优化深度解析：从栈帧到Python的替代方案">尾递归与尾调用优化深度解析：从栈帧到Python的替代方案</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-scheme-interpreter-tutorial/" title="用Python实现Scheme解释器：搭积木式的分步教程">用Python实现Scheme解释器：搭积木式的分步教程</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-comma-vs-scheme-begin/" title="跨越范式的组合艺术：Scheme begin vs Python逗号">跨越范式的组合艺术：Scheme begin vs Python逗号</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-match-vs-cpp-switch-vs-scheme-cond/" title="跨语言多分支控制流深度解析：C++ switch vs Python match vs Scheme cond">跨语言多分支控制流深度解析：C++ switch vs Python match vs Scheme cond</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-slicing-deep-dive/" title="Python切片操作深度解析：从基础到底层内存模型">Python切片操作深度解析：从基础到底层内存模型</a><time datetime="2025-01-15T16:00:00.000Z" title="Created 2025-01-16 00:00:00">2025-01-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-str-format-deep-dive/" title="Python字符串格式化利器：深入解析format()方法">Python字符串格式化利器：深入解析format()方法</a><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-magic-methods-lookup/" title="Python魔法揭秘：特殊名称与内置功能的&quot;暗号&quot;对照表">Python魔法揭秘：特殊名称与内置功能的&quot;暗号&quot;对照表</a><time datetime="2025-01-01T16:00:00.000Z" title="Created 2025-01-02 00:00:00">2025-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-repr-vs-fstring/" title="Python字符串双雄：repr()的精确与f-string的优雅">Python字符串双雄：repr()的精确与f-string的优雅</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-yield-return-yield-from/" title="Python深度解析：Yield, Return与Yield From的时空魔法">Python深度解析：Yield, Return与Yield From的时空魔法</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-inheritance-vs-cpp-access-control/" title="Python继承机制与C++的核心区别：权限控制视角">Python继承机制与C++的核心区别：权限控制视角</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-zip-map-filter-reversed/" title="Python进阶必修课：掌握Zip, Map, Filter, Reversed的优雅之道">Python进阶必修课：掌握Zip, Map, Filter, Reversed的优雅之道</a><time datetime="2024-12-04T16:00:00.000Z" title="Created 2024-12-05 00:00:00">2024-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-mutable-immutable-c-perspective/" title="Python可变与不可变数据：C语言视角的深度解析">Python可变与不可变数据：C语言视角的深度解析</a><time datetime="2024-11-27T16:00:00.000Z" title="Created 2024-11-28 00:00:00">2024-11-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-parameter-passing-truth/" title="Python函数参数传递的真相——为什么你的变量没被修改？">Python函数参数传递的真相——为什么你的变量没被修改？</a><time datetime="2024-11-20T16:00:00.000Z" title="Created 2024-11-21 00:00:00">2024-11-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-function-currying/" title="Python函数柯里化：将多参数函数转化为单参数函数链">Python函数柯里化：将多参数函数转化为单参数函数链</a><time datetime="2024-11-13T16:00:00.000Z" title="Created 2024-11-14 00:00:00">2024-11-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-frame-environment-model/" title="Python函数框架：外框架、内框架与环境模型">Python函数框架：外框架、内框架与环境模型</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-import-like-cpp-header/" title="Python如何像C++引用头文件">Python如何像C++引用头文件</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-generator-iterator/" title="Python 生成器和迭代器深度解析">Python 生成器和迭代器深度解析</a><time datetime="2024-10-22T16:00:00.000Z" title="Created 2024-10-23 00:00:00">2024-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-list-comprehension/" title="Python 列表推导式深度解析">Python 列表推导式深度解析</a><time datetime="2024-10-15T16:00:00.000Z" title="Created 2024-10-16 00:00:00">2024-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-unpacking/" title="Python 解包操作：* 和 ** 深度解析">Python 解包操作：* 和 ** 深度解析</a><time datetime="2024-10-08T16:00:00.000Z" title="Created 2024-10-09 00:00:00">2024-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-pil-library-guide/" title="Python PIL库使用指南">Python PIL库使用指南</a><time datetime="2024-10-01T16:00:00.000Z" title="Created 2024-10-02 00:00:00">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-csv-module-guide/" title="Python CSV模块使用指南">Python CSV模块使用指南</a><time datetime="2024-09-25T16:00:00.000Z" title="Created 2024-09-26 00:00:00">2024-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-magic-methods-deep-dive/" title="拒绝死记硬背！用 C++ 的底层逻辑，彻底搞懂 Python 的“魔术方法”">拒绝死记硬背！用 C++ 的底层逻辑，彻底搞懂 Python 的“魔术方法”</a><time datetime="2024-09-18T16:00:00.000Z" title="Created 2024-09-19 00:00:00">2024-09-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-decorator-essence-deep-dive/" title="Python装饰器本质深度解析">Python装饰器本质深度解析</a><time datetime="2024-09-11T16:00:00.000Z" title="Created 2024-09-12 00:00:00">2024-09-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-re-module-core-features/" title="Python正则表达式re模块核心功能详解">Python正则表达式re模块核心功能详解</a><time datetime="2024-09-02T16:00:00.000Z" title="Created 2024-09-03 00:00:00">2024-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-re-ignorecase-guide/" title="Python正则表达式re.IGNORECASE使用指南">Python正则表达式re.IGNORECASE使用指南</a><time datetime="2024-08-27T16:00:00.000Z" title="Created 2024-08-28 00:00:00">2024-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-modules-and-packages-deep-dive/" title="Python模块与包深度解析">Python模块与包深度解析</a><time datetime="2024-08-20T16:00:00.000Z" title="Created 2024-08-21 00:00:00">2024-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-file-operations-deep-dive/" title="Python文件操作深度解析">Python文件操作深度解析</a><time datetime="2024-08-13T16:00:00.000Z" title="Created 2024-08-14 00:00:00">2024-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-walrus-operator-deep-dive/" title="Python海象运算符深度解析">Python海象运算符深度解析</a><time datetime="2024-08-04T16:00:00.000Z" title="Created 2024-08-05 00:00:00">2024-08-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-exception-hierarchy/" title="Python异常继承体系深度解析">Python异常继承体系深度解析</a><time datetime="2024-07-27T16:00:00.000Z" title="Created 2024-07-28 00:00:00">2024-07-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-exception-handling-deep-dive/" title="Python异常处理深度解析">Python异常处理深度解析</a><time datetime="2024-07-20T16:00:00.000Z" title="Created 2024-07-21 00:00:00">2024-07-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-attribute-access-mechanism/" title="Python的“欺骗性”语法：为什么说 obj.name 本质上就是 obj.getter()？">Python的“欺骗性”语法：为什么说 obj.name 本质上就是 obj.getter()？</a><time datetime="2024-07-13T16:00:00.000Z" title="Created 2024-07-14 00:00:00">2024-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-multiprocessing-deep-dive/" title="Python多进程编程深度解析">Python多进程编程深度解析</a><time datetime="2024-07-06T16:00:00.000Z" title="Created 2024-07-07 00:00:00">2024-07-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-multithreading-deep-dive/" title="Python多线程编程深度解析">Python多线程编程深度解析</a><time datetime="2024-06-27T16:00:00.000Z" title="Created 2024-06-28 00:00:00">2024-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-functional-programming-intro/" title="Python函数式编程入门：高阶函数与“回调”机制的深度解析">Python函数式编程入门：高阶函数与“回调”机制的深度解析</a><time datetime="2024-06-19T16:00:00.000Z" title="Created 2024-06-20 00:00:00">2024-06-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-property-advanced-usage/" title="Python @property高级应用技巧">Python @property高级应用技巧</a><time datetime="2024-06-12T16:00:00.000Z" title="Created 2024-06-13 00:00:00">2024-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-vs-cpp-function-parameters/" title="技术笔记：Python与C++函数参数传递机制差异">技术笔记：Python与C++函数参数传递机制差异</a><time datetime="2024-06-05T16:00:00.000Z" title="Created 2024-06-06 00:00:00">2024-06-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-self-vs-cls/" title="Python self与cls的区别深度解析">Python self与cls的区别深度解析</a><time datetime="2024-05-27T16:00:00.000Z" title="Created 2024-05-28 00:00:00">2024-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-property-decorator-core/" title="Python @property装饰器核心机制解析">Python @property装饰器核心机制解析</a><time datetime="2024-05-19T16:00:00.000Z" title="Created 2024-05-20 00:00:00">2024-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-sorted-key-parameter/" title="Python sorted函数key参数深度解析">Python sorted函数key参数深度解析</a><time datetime="2024-05-12T16:00:00.000Z" title="Created 2024-05-13 00:00:00">2024-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-classmethod-vs-cpp-static/" title="Python @classmethod 本质上就是C++ 的静态成员？">Python @classmethod 本质上就是C++ 的静态成员？</a><time datetime="2024-05-07T16:00:00.000Z" title="Created 2024-05-08 00:00:00">2024-05-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cs50p-week4-libraries/" title="Python库与模块解析">Python库与模块解析</a><time datetime="2024-04-28T16:00:00.000Z" title="Created 2024-04-29 00:00:00">2024-04-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-testing-pytest/" title="Python测试框架：pytest与assert断言">Python测试框架：pytest与assert断言</a><time datetime="2024-04-21T16:00:00.000Z" title="Created 2024-04-22 00:00:00">2024-04-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-no-pointers/" title="Python引用机制：无指针设计与内存管理">Python引用机制：无指针设计与内存管理</a><time datetime="2024-04-14T16:00:00.000Z" title="Created 2024-04-15 00:00:00">2024-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-io-operations/" title="Python IO操作：文件读写与标准输入输出">Python IO操作：文件读写与标准输入输出</a><time datetime="2024-04-12T16:00:00.000Z" title="Created 2024-04-13 00:00:00">2024-04-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-array-dict/" title="Python数据结构：列表与字典操作">Python数据结构：列表与字典操作</a><time datetime="2024-04-07T16:00:00.000Z" title="Created 2024-04-08 00:00:00">2024-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-loops-while-for/" title="Python循环结构：while与for迭代器详解">Python循环结构：while与for迭代器详解</a><time datetime="2024-03-31T16:00:00.000Z" title="Created 2024-04-01 00:00:00">2024-04-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a51cdce/" title="Python匹配语句：match-case与switch对比">Python匹配语句：match-case与switch对比</a><time datetime="2024-03-24T16:00:00.000Z" title="Created 2024-03-25 00:00:00">2024-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/16a1976e/" title="Python异常处理：try-except-finally-else机制">Python异常处理：try-except-finally-else机制</a><time datetime="2024-03-17T16:00:00.000Z" title="Created 2024-03-18 00:00:00">2024-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/56b7777/" title="Python条件表达式：链式比较与短路求值">Python条件表达式：链式比较与短路求值</a><time datetime="2024-03-10T16:00:00.000Z" title="Created 2024-03-11 00:00:00">2024-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/70c320a5/" title="Python条件语句：if-elif-else分支结构">Python条件语句：if-elif-else分支结构</a><time datetime="2024-03-03T16:00:00.000Z" title="Created 2024-03-04 00:00:00">2024-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d17a61c7/" title="Python全局变量：作用域与global关键字">Python全局变量：作用域与global关键字</a><time datetime="2024-02-25T16:00:00.000Z" title="Created 2024-02-26 00:00:00">2024-02-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fa02e126/" title="Python函数副作用：返回值与状态变更">Python函数副作用：返回值与状态变更</a><time datetime="2024-02-18T16:00:00.000Z" title="Created 2024-02-19 00:00:00">2024-02-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3464d813/" title="Python函数定义：def关键字与缩进规则">Python函数定义：def关键字与缩进规则</a><time datetime="2024-02-11T16:00:00.000Z" title="Created 2024-02-12 00:00:00">2024-02-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8e1546a3/" title="Python数值处理：round()函数四舍五入机制">Python数值处理：round()函数四舍五入机制</a><time datetime="2024-02-04T16:00:00.000Z" title="Created 2024-02-05 00:00:00">2024-02-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f45f582/" title="Python类型转换机制及与C++对比">Python类型转换机制及与C++对比</a><time datetime="2024-01-28T16:00:00.000Z" title="Created 2024-01-29 00:00:00">2024-01-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d6f9d5b3/" title="Python交互式编程环境使用指南">Python交互式编程环境使用指南</a><time datetime="2024-01-21T16:00:00.000Z" title="Created 2024-01-22 00:00:00">2024-01-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c9d4403c/" title="Python字符串处理：strip()方法与链式调用">Python字符串处理：strip()方法与链式调用</a><time datetime="2024-01-14T16:00:00.000Z" title="Created 2024-01-15 00:00:00">2024-01-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1276b97d/" title="Python格式化字符串：f-string用法详解">Python格式化字符串：f-string用法详解</a><time datetime="2024-01-04T16:00:00.000Z" title="Created 2024-01-05 00:00:00">2024-01-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6f73d8d8/" title="Python基础：print输出、input输入与注释语法">Python基础：print输出、input输入与注释语法</a><time datetime="2024-01-01T16:00:00.000Z" title="Created 2024-01-02 00:00:00">2024-01-02</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/579dfa79/" title="B+树与HNSW——数据库索引与向量检索的两座丰碑">B+树与HNSW——数据库索引与向量检索的两座丰碑</a><time datetime="2026-08-13T16:00:00.000Z" title="Created 2026-08-14 00:00:00">2026-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260811/" title="AI 新闻速递｜2026-08-11：宇树登陆科创板、Docker 给 Agent 造沙箱、英伟达搭 5000 亿融资盘">AI 新闻速递｜2026-08-11：宇树登陆科创板、Docker 给 Agent 造沙箱、英伟达搭 5000 亿融资盘</a><time datetime="2026-08-10T16:00:00.000Z" title="Created 2026-08-11 00:00:00">2026-08-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7b3ac9f2/" title="望江楼的报潮人">望江楼的报潮人</a><time datetime="2026-08-10T16:00:00.000Z" title="Created 2026-08-11 00:00:00">2026-08-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-context-manager-deep-dive/" title="Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比">Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比</a><time datetime="2026-08-10T16:00:00.000Z" title="Created 2026-08-11 00:00:00">2026-08-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260810/" title="AI 新闻速递｜2026-08-10：Cursor 并入 SpaceX、Claude Code 自动模式上线、具身智能融资潮">AI 新闻速递｜2026-08-10：Cursor 并入 SpaceX、Claude Code 自动模式上线、具身智能融资潮</a><time datetime="2026-08-09T16:00:00.000Z" title="Created 2026-08-10 00:00:00">2026-08-10</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
