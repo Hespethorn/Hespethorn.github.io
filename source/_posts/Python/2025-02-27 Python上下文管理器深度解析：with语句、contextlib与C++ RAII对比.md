@@ -10,7 +10,7 @@ categories:
   - Python
 series: Python
 abbrlink: python-context-manager-deep-dive
-date: 2026-08-11
+date: 2025-02-27
 ---
 
 ## 一、从一段"看起来没问题"的代码说起
