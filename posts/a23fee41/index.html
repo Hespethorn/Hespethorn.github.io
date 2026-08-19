@@ -1,0 +1,592 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角） | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、当&quot;给类加功能&quot;开始重复:注册表、计时、单例、校验写过一点 Python 的人,都见过函数装饰器——@staticmethod、@property、@lru_cache 那一套。但还有一类更狠的:类装饰器。它不是贴在函数上,而是贴在类上: 123@some_decoratorclass MyClass:    ...  区别在于:函数装饰器接收&quot;一个函数&amp;quot">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）">
+<meta property="og:url" content="https://hespethorn.github.io/posts/a23fee41/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、当&quot;给类加功能&quot;开始重复:注册表、计时、单例、校验写过一点 Python 的人,都见过函数装饰器——@staticmethod、@property、@lru_cache 那一套。但还有一类更狠的:类装饰器。它不是贴在函数上,而是贴在类上: 123@some_decoratorclass MyClass:    ...  区别在于:函数装饰器接收&quot;一个函数&amp;quot">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-04-16T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-19T01:29:42.860Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="装饰器">
+<meta property="article:tag" content="类装饰器">
+<meta property="article:tag" content="元编程">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）",
+  "url": "https://hespethorn.github.io/posts/a23fee41/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-04-16T16:00:00.000Z",
+  "dateModified": "2026-08-19T01:29:42.860Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/a23fee41/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">678</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">829</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">75</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-04-16T16:00:00.000Z" title="Created 2025-04-17 00:00:00">2025-04-17</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Python/">Python</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、当-给类加功能-开始重复-注册表、计时、单例、校验"><a href="#一、当-给类加功能-开始重复-注册表、计时、单例、校验" class="headerlink" title="一、当&quot;给类加功能&quot;开始重复:注册表、计时、单例、校验"></a>一、当&quot;给类加功能&quot;开始重复:注册表、计时、单例、校验</h2><p>写过一点 Python 的人,都见过<strong>函数装饰器</strong>——<code>@staticmethod</code>、<code>@property</code>、<code>@lru_cache</code> 那一套。但还有一类更狠的:<strong>类装饰器</strong>。它不是贴在函数上,而是<strong>贴在类上</strong>:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@some_decorator</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MyClass</span>:</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+
+<p>区别在于:函数装饰器接收&quot;一个函数&quot;、返回&quot;一个函数&quot;;<strong>类装饰器接收&quot;一个类&quot;、返回&quot;一个类&quot;(或它的替身)</strong>。它在 <code>class</code> 语句执行完、类对象刚诞生的那一刻被调用,让你有机会<strong>当场加工这个类</strong>——加方法、改属性、登记进注册表、甚至换成单例。</p>
+<p>什么场景会用到?四个最常见的:</p>
+<ul>
+<li><strong>插件注册表</strong>:定义 <code>class BM25Scorer</code>,希望它自动进全局 <code>registry</code>,不用在别处再写一行 <code>register(...)</code>。</li>
+<li><strong>统一计时&#x2F;日志</strong>:给类里所有方法自动包一层耗时统计。</li>
+<li><strong>单例化</strong>:让某个配置类无论 <code>new</code> 几次都返回同一实例。</li>
+<li><strong>字段校验</strong>:类一定义就检查&quot;必须声明 <code>table_name</code>&quot;,否则直接报错。</li>
+</ul>
+<p>换句话说,凡是&quot;<strong>类定义时就要做点事</strong>&quot;的需求,类装饰器都比&quot;写完类再手动调一个函数&quot;优雅。下面看它到底怎么写。</p>
+<h2 id="二、类装饰器是什么-输入类、输出类-类定义后立刻加工"><a href="#二、类装饰器是什么-输入类、输出类-类定义后立刻加工" class="headerlink" title="二、类装饰器是什么:输入类、输出类,类定义后立刻加工"></a>二、类装饰器是什么:输入类、输出类,类定义后立刻加工</h2><p>最朴素的类装饰器,<strong>长相和普通函数装饰器一模一样,只是参数类型换成 <code>cls</code></strong>:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">_registry = &#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">register</span>(<span class="params">name</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">deco</span>(<span class="params">cls</span>):</span><br><span class="line">        _registry[name] = cls      <span class="comment"># 把类登记进全局字典</span></span><br><span class="line">        <span class="keyword">return</span> cls                 <span class="comment"># 关键:把原类原样返回</span></span><br><span class="line">    <span class="keyword">return</span> deco</span><br><span class="line"></span><br><span class="line"><span class="meta">@register(<span class="params"><span class="string">&quot;bm25&quot;</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">BM25Scorer</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">score</span>(<span class="params">self, text</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0.0</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(_registry)</span><br><span class="line"><span class="comment"># &#123;&#x27;bm25&#x27;: &lt;class &#x27;__main__.BM25Scorer&#x27;&gt;&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>注意三点:</p>
+<ol>
+<li><code>register(name)</code> 是<strong>装饰器工厂</strong>——因为要传参数 <code>name</code>,所以外层函数返回真正的装饰器 <code>deco</code>。不带参数的话,装饰器本身就直接是 <code>def deco(cls): ...</code>。</li>
+<li><code>deco(cls)</code> 接收的是<strong>已经创建好的类对象</strong>(不是实例)。</li>
+<li><strong><code>return cls</code></strong>——最常见、也最安全的写法,是&quot;就地加工后把原类还回去&quot;。</li>
+</ol>
+<p>再看一个&quot;给类加方法&quot;的装饰器:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">add_repr</span>(<span class="params">cls</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        attrs = <span class="string">&quot;, &quot;</span>.join(<span class="string">f&quot;<span class="subst">&#123;k&#125;</span>=<span class="subst">&#123;v!r&#125;</span>&quot;</span> <span class="keyword">for</span> k, v <span class="keyword">in</span> <span class="built_in">vars</span>(<span class="variable language_">self</span>).items())</span><br><span class="line">        <span class="keyword">return</span> <span class="string">f&quot;<span class="subst">&#123;cls.__name__&#125;</span>(<span class="subst">&#123;attrs&#125;</span>)&quot;</span></span><br><span class="line">    cls.__repr__ = __repr__      <span class="comment"># 直接往类上挂方法</span></span><br><span class="line">    <span class="keyword">return</span> cls</span><br><span class="line"></span><br><span class="line"><span class="meta">@add_repr</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Point</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, x, y</span>):</span><br><span class="line">        <span class="variable language_">self</span>.x, <span class="variable language_">self</span>.y = x, y</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(Point(<span class="number">1</span>, <span class="number">2</span>))   <span class="comment"># Point(x=1, y=2)</span></span><br></pre></td></tr></table></figure>
+
+<p><code>cls.__repr__ = __repr__</code> 这一步,本质就是<strong>在类定义后动态往类体里塞方法</strong>——和你在类里手写 <code>def __repr__</code> 完全等价,只不过时机被挪到了装饰器里。<code>cls.__name__</code> 在闭包里捕获的是被装饰类的名字,所以换个类也不会串。</p>
+<h2 id="三、深入-带参装饰器、保留元信息、装饰器叠加、与-init-subclass-怎么选"><a href="#三、深入-带参装饰器、保留元信息、装饰器叠加、与-init-subclass-怎么选" class="headerlink" title="三、深入:带参装饰器、保留元信息、装饰器叠加、与 init_subclass 怎么选"></a>三、深入:带参装饰器、保留元信息、装饰器叠加、与 <strong>init_subclass</strong> 怎么选</h2><p><strong>(1) 带参数的类装饰器要套三层。</strong> 和最上面 <code>register</code> 一样,外层接参数、中层是真正的装饰器、内层加工类:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">with_timeout</span>(<span class="params">seconds</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">deco</span>(<span class="params">cls</span>):</span><br><span class="line">        cls._timeout = seconds     <span class="comment"># 把配置写进类属性</span></span><br><span class="line">        <span class="keyword">return</span> cls</span><br><span class="line">    <span class="keyword">return</span> deco</span><br><span class="line"></span><br><span class="line"><span class="meta">@with_timeout(<span class="params"><span class="number">30</span></span>)</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Fetcher</span>:</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(Fetcher._timeout)   <span class="comment"># 30</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>(2) 元信息陷阱:别让装饰器&quot;调包&quot;了类。</strong> 类装饰器最经典的坑,是<strong>返回了一个函数而不是类</strong>。比如下面这个&quot;单例&quot;装饰器:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">singleton_bad</span>(<span class="params">cls</span>):</span><br><span class="line">    instances = &#123;&#125;</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">get_instance</span>(<span class="params">*a, **k</span>):          <span class="comment"># ← 这是一个函数</span></span><br><span class="line">        <span class="keyword">if</span> cls <span class="keyword">not</span> <span class="keyword">in</span> instances:</span><br><span class="line">            instances[cls] = cls(*a, **k)</span><br><span class="line">        <span class="keyword">return</span> instances[cls]</span><br><span class="line">    <span class="keyword">return</span> get_instance                <span class="comment"># ← 把类&quot;调包&quot;成了函数!</span></span><br><span class="line"></span><br><span class="line"><span class="meta">@singleton_bad</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Config</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, path</span>):</span><br><span class="line">        <span class="variable language_">self</span>.path = path</span><br><span class="line"></span><br><span class="line">c = Config(<span class="string">&quot;a.json&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(c.path)                  <span class="comment"># a.json (实例本身没问题)</span></span><br><span class="line"><span class="built_in">print</span>(Config)                  <span class="comment"># &lt;function get_instance ...&gt;  ← Config 已不是类!</span></span><br><span class="line"><span class="built_in">print</span>(<span class="built_in">isinstance</span>(c, Config))   <span class="comment"># TypeError: isinstance() arg 2 must be a type</span></span><br></pre></td></tr></table></figure>
+
+<p><code>Config</code> 这个名字现在绑定的是 <code>get_instance</code> 函数,<code>isinstance</code>、子类化、<code>pickle</code> 序列化、类型注解全崩。</p>
+<p><strong>正确写法:就地改 <code>__new__</code>,把类本身还回去</strong>:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">singleton</span>(<span class="params">cls</span>):</span><br><span class="line">    _instances = &#123;&#125;</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__new__</span>(<span class="params">cls_, *a, **k</span>):</span><br><span class="line">        <span class="keyword">if</span> cls_ <span class="keyword">not</span> <span class="keyword">in</span> _instances:</span><br><span class="line">            _instances[cls_] = <span class="built_in">object</span>.__new__(cls_)   <span class="comment"># 只控制&quot;是否新建&quot;</span></span><br><span class="line">        <span class="keyword">return</span> _instances[cls_]</span><br><span class="line">    cls.__new__ = __new__      <span class="comment"># 只覆盖构造逻辑,类身份不变</span></span><br><span class="line">    <span class="keyword">return</span> cls                 <span class="comment"># ← 仍是类</span></span><br><span class="line"></span><br><span class="line"><span class="meta">@singleton</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Config</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, path</span>):</span><br><span class="line">        <span class="variable language_">self</span>.path = path</span><br><span class="line"></span><br><span class="line">c1 = Config(<span class="string">&quot;a.json&quot;</span>)</span><br><span class="line">c2 = Config(<span class="string">&quot;b.json&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(c1 <span class="keyword">is</span> c2, c1.path)       <span class="comment"># True a.json  (第二次 new 被忽略,沿用首次实例)</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>一句话准则:类装饰器应返回&quot;类&quot;,而非&quot;包装函数&quot;</strong>——除非你真的想要一个可调用对象。</p>
+<p><strong>(3) 多个装饰器自下而上叠加。</strong> 离类最近的先执行:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@register(<span class="params"><span class="string">&quot;point&quot;</span></span>)</span></span><br><span class="line"><span class="meta">@add_repr</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Point</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, x, y</span>):</span><br><span class="line">        <span class="variable language_">self</span>.x, <span class="variable language_">self</span>.y = x, y</span><br></pre></td></tr></table></figure>
+
+<p>执行顺序是 <code>add_repr(Point)</code> → <code>register(&quot;point&quot;)(结果)</code>:先挂 <code>__repr__</code>,再登记。想让 <code>register</code> 拿到&quot;带 <code>__repr__</code> 的版本&quot;,就把 <code>register</code> 放最外层,如上。</p>
+<p><strong>(4) 类装饰器 vs <code>__init_subclass__</code>:怎么选?</strong> 两者都能&quot;类出现时自动做事&quot;,但机制不同:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PluginBase</span>:</span><br><span class="line">    _registry = &#123;&#125;</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init_subclass__</span>(<span class="params">cls, name=<span class="literal">None</span>, **kw</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init_subclass__(**kw)</span><br><span class="line">        <span class="keyword">if</span> name:</span><br><span class="line">            PluginBase._registry[name] = cls</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Foo</span>(PluginBase, name=<span class="string">&quot;foo&quot;</span>):   <span class="comment"># 继承即自动注册,无需装饰器</span></span><br><span class="line">    <span class="keyword">pass</span></span><br></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>类装饰器</th>
+<th><code>__init_subclass__</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>触发时机</td>
+<td>该类被 <code>@</code> 显式装饰时</td>
+<td>任何类继承该类时自动</td>
+</tr>
+<tr>
+<td>可控性</td>
+<td>想用才贴,精确控制单个类</td>
+<td>所有子类强制触发,难局部豁免</td>
+</tr>
+<tr>
+<td>是否改类身份</td>
+<td>可(若返回新类)</td>
+<td>不改,只是钩子</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>一次性加工、显式声明(如 <code>@register</code>)</td>
+<td>框架级 uniform 行为(所有插件都要注册)</td>
+</tr>
+</tbody></table>
+<p>经验法则:<strong>要&quot;显式、只对这一个类做&quot;,用装饰器;要&quot;凡是我家子类都必须做&quot;,用 <code>__init_subclass__</code></strong>。</p>
+<h2 id="四、实战-C-视角-前司-BM25-检索的-策略注册表-血案"><a href="#四、实战-C-视角-前司-BM25-检索的-策略注册表-血案" class="headerlink" title="四、实战:C++ 视角 + 前司 BM25 检索的&quot;策略注册表&quot;血案"></a>四、实战:C++ 视角 + 前司 BM25 检索的&quot;策略注册表&quot;血案</h2><p><strong>C++ 等价物:没有类装饰器,只能手写注册表 + 工厂。</strong> C++ 没有&quot;类定义时自动执行一段代码&quot;的语法糖,要搞插件注册,得自己维护一个 <code>map&lt;string, 工厂函数&gt;</code>:</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;map&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;functional&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Scorer</span> &#123;                                   <span class="comment">// 抽象基类</span></span><br><span class="line">    <span class="function"><span class="keyword">virtual</span> <span class="type">double</span> <span class="title">score</span><span class="params">(<span class="type">const</span> std::string&amp;)</span> </span>= <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">virtual</span> ~<span class="built_in">Scorer</span>() = <span class="keyword">default</span>;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 全局注册表:名字 -&gt; 工厂</span></span><br><span class="line">std::map&lt;std::string, std::function&lt;std::unique_ptr&lt;Scorer&gt;()&gt;&gt; registry;</span><br><span class="line"></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">BM25Scorer</span> : Scorer &#123;</span><br><span class="line">    <span class="function"><span class="type">double</span> <span class="title">score</span><span class="params">(<span class="type">const</span> std::string&amp;)</span> <span class="keyword">override</span> </span>&#123; <span class="keyword">return</span> <span class="number">0</span>; &#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 必须在别处手动注册一次!</span></span><br><span class="line">registry[<span class="string">&quot;bm25&quot;</span>] = [] &#123; <span class="keyword">return</span> std::<span class="built_in">make_unique</span>&lt;BM25Scorer&gt;(); &#125;;</span><br></pre></td></tr></table></figure>
+
+<p>差异很清楚:<strong>Python 的 <code>@register(&quot;bm25&quot;)</code> 让&quot;类定义即注册&quot;,声明和登记同一行完成;C++ 得先定义类、再在别处手写一行 <code>registry[...] = ...</code></strong>(工程上常靠宏或 CRTP 静态初始化来模拟,但都更绕)。装饰器把&quot;注册&quot;这件事,从&quot;易漏的手动步骤&quot;变成了&quot;声明即生效的副作用&quot;。</p>
+<p><strong>前司检索系统的真实血案。</strong> 我们做 OA 全文检索(基于 <strong>BM25 + 倒排索引</strong>)时,分词器、打分器、排序器都是可插拔的&quot;策略&quot;。早期是一坨 <code>if type == &quot;bm25&quot;: ... elif type == &quot;tfidf&quot;: ...</code>,新增一种策略要改三处。我们遂引入类装饰器 <code>@register_strategy(&quot;bm25&quot;)</code> 让每个策略类&quot;自报家门&quot;自动进注册表——代码清爽了。</p>
+<p>但第一版 <code>@register_strategy</code> 犯了上面第二节的<strong>元信息坑</strong>:它为了&quot;顺便给类加个 <code>from_name()</code> 类方法&quot;,内部<strong>返回了一个包装函数而非原类</strong>。结果在 Celery 异步任务里,分发器用 <code>isinstance(obj, StrategyBase)</code> 做类型判断直接 <code>TypeError</code>,任务批量失败——<strong>因为 <code>StrategyBase</code> 这个名字已被装饰器悄悄换成了函数</strong>。修法是把装饰器改成&quot;就地给 <code>cls</code> 挂方法、<code>return cls</code>&quot;,类身份保住后 <code>isinstance</code>&#x2F;序列化全部恢复正常。</p>
+<p>这再次印证前司 BM25 那条老经验:<strong>装数据的容器、定义行为的类,身份都不能被偷偷调包</strong>——可变默认 <code>= &#123;&#125;</code> 会漏状态(dataclass 那篇讲过),类装饰器返回函数则会毁身份。两者的根因相通:<strong>装饰器的&quot;副作用&quot;必须作用在&quot;原对象&quot;上,而不是用替身把它换掉</strong>。</p>
+<h2 id="五、对比总结-函数装饰器-类装饰器-元类-init-subclass"><a href="#五、对比总结-函数装饰器-类装饰器-元类-init-subclass" class="headerlink" title="五、对比总结:函数装饰器 &#x2F; 类装饰器 &#x2F; 元类 &#x2F; init_subclass"></a>五、对比总结:函数装饰器 &#x2F; 类装饰器 &#x2F; 元类 &#x2F; <strong>init_subclass</strong></h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>函数装饰器</th>
+<th>类装饰器</th>
+<th>元类(<code>metaclass</code>)</th>
+<th><code>__init_subclass__</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>接收对象</td>
+<td>函数</td>
+<td>类</td>
+<td>类(在创建前)</td>
+<td>子类(创建后)</td>
+</tr>
+<tr>
+<td>触发时机</td>
+<td>函数定义时</td>
+<td>类定义时</td>
+<td>类创建时(更早)</td>
+<td>子类定义时</td>
+</tr>
+<tr>
+<td>能否改类身份</td>
+<td>否(返回函数)</td>
+<td>可(返回类&#x2F;新类)</td>
+<td>可(完全控制类的诞生)</td>
+<td>否(只钩子)</td>
+</tr>
+<tr>
+<td>复杂度</td>
+<td>低</td>
+<td>低–中</td>
+<td>高</td>
+<td>中</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>计时&#x2F;缓存&#x2F;权限</td>
+<td>注册&#x2F;单例&#x2F;加方法&#x2F;校验</td>
+<td>深度定制类创建(ORM 字段收集)</td>
+<td>框架级子类统一行为</td>
+</tr>
+<tr>
+<td>可读性</td>
+<td>好</td>
+<td>好</td>
+<td>差(劝退新人)</td>
+<td>好</td>
+</tr>
+</tbody></table>
+<p>一句话本质:<strong>类装饰器是在&quot;类已经造好&quot;之后出场的那把手术刀</strong>——它比元类轻、比 <code>__init_subclass__</code> 灵活、比&quot;定义完再手动调函数&quot;省心。但它也最容易被误用成&quot;返回包装函数&quot;,从而悄悄调包类的身份。记住三条:<strong>① 想用才贴,精确控制单个类;② 除非有意,永远 <code>return cls</code>;③ 框架级&quot;所有子类都要做&quot;的事,交给 <code>__init_subclass__</code></strong>。</p>
+<blockquote>
+<p>小结:类装饰器接收&quot;类对象&quot;、返回&quot;类对象&quot;,在 <code>class</code> 语句执行后立刻加工类(加方法&#x2F;挂属性&#x2F;登记注册表&#x2F;改构造),是&quot;类定义即做事&quot;的轻量手段;带参装饰器需工厂三层嵌套,<code>return cls</code> 是铁律(否则会把类调包成函数,毁掉 <code>isinstance</code>&#x2F;序列化&#x2F;子类化,前司 BM25 检索的注册表就因返回包装函数在 Celery 里批量 <code>TypeError</code>);多装饰器自下而上叠加;与 <code>__init_subclass__</code> 的取舍是&quot;显式单个用装饰器、框架级全体子类用钩子&quot;;C++ 无类装饰器,插件注册只能手写 <code>map&lt;string, 工厂&gt;</code> 再手动登记,Python 的 <code>@register</code> 让&quot;声明即注册&quot;省掉易漏的那一行——装数据的容器与定义行为的类,身份都不该被副作用偷偷换掉。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/a23fee41/">https://hespethorn.github.io/posts/a23fee41/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/%E8%A3%85%E9%A5%B0%E5%99%A8/">装饰器</a><a class="post-meta__tags" href="/tags/%E7%B1%BB%E8%A3%85%E9%A5%B0%E5%99%A8/">类装饰器</a><a class="post-meta__tags" href="/tags/%E5%85%83%E7%BC%96%E7%A8%8B/">元编程</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">678</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">829</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">75</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/eva-assistant-code-analysis/" title="EVA智能助手代码深度解析">EVA智能助手代码深度解析</a><time datetime="2026-04-22T16:00:00.000Z" title="Created 2026-04-23 00:00:00">2026-04-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a23fee41/" title="Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）">Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）</a><time datetime="2025-04-16T16:00:00.000Z" title="Created 2025-04-17 00:00:00">2025-04-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8a58ce8c/" title="Python dataclass深度解析：用装饰器干掉手写样板代码">Python dataclass深度解析：用装饰器干掉手写样板代码</a><time datetime="2025-04-09T16:00:00.000Z" title="Created 2025-04-10 00:00:00">2025-04-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/eb898813/" title="Python lru_cache深度解析：用备忘录把递归从指数砍到线性">Python lru_cache深度解析：用备忘录把递归从指数砍到线性</a><time datetime="2025-04-02T16:00:00.000Z" title="Created 2025-04-03 00:00:00">2025-04-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f5b501ef/" title="Python __slots__深度解析：用固定布局干掉实例字典">Python __slots__深度解析：用固定布局干掉实例字典</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-metaclass-deep-dive/" title="Python元类深度解析：用「类的类」在创建期定制类（及C++模板元编程视角）">Python元类深度解析：用「类的类」在创建期定制类（及C++模板元编程视角）</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-asyncio-deep-dive/" title="Python异步编程深度解析：asyncio事件循环与async/await（及与多线程对比）">Python异步编程深度解析：asyncio事件循环与async/await（及与多线程对比）</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-decorator-two-identities/" title="Python装饰器的两种身份：内置语法糖与第三方注册表（及C++视角）">Python装饰器的两种身份：内置语法糖与第三方注册表（及C++视角）</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-context-manager-deep-dive/" title="Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比">Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-scheme-quote-explained/" title="Scheme quote深度解析：求值与数据的边界">Scheme quote深度解析：求值与数据的边界</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-tail-recursion-optimization/" title="尾递归与尾调用优化深度解析：从栈帧到Python的替代方案">尾递归与尾调用优化深度解析：从栈帧到Python的替代方案</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-scheme-interpreter-tutorial/" title="用Python实现Scheme解释器：搭积木式的分步教程">用Python实现Scheme解释器：搭积木式的分步教程</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-comma-vs-scheme-begin/" title="跨越范式的组合艺术：Scheme begin vs Python逗号">跨越范式的组合艺术：Scheme begin vs Python逗号</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-match-vs-cpp-switch-vs-scheme-cond/" title="跨语言多分支控制流深度解析：C++ switch vs Python match vs Scheme cond">跨语言多分支控制流深度解析：C++ switch vs Python match vs Scheme cond</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-slicing-deep-dive/" title="Python切片操作深度解析：从基础到底层内存模型">Python切片操作深度解析：从基础到底层内存模型</a><time datetime="2025-01-15T16:00:00.000Z" title="Created 2025-01-16 00:00:00">2025-01-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-str-format-deep-dive/" title="Python字符串格式化利器：深入解析format()方法">Python字符串格式化利器：深入解析format()方法</a><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-magic-methods-lookup/" title="Python魔法揭秘：特殊名称与内置功能的&quot;暗号&quot;对照表">Python魔法揭秘：特殊名称与内置功能的&quot;暗号&quot;对照表</a><time datetime="2025-01-01T16:00:00.000Z" title="Created 2025-01-02 00:00:00">2025-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-repr-vs-fstring/" title="Python字符串双雄：repr()的精确与f-string的优雅">Python字符串双雄：repr()的精确与f-string的优雅</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-yield-return-yield-from/" title="Python深度解析：Yield, Return与Yield From的时空魔法">Python深度解析：Yield, Return与Yield From的时空魔法</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-inheritance-vs-cpp-access-control/" title="Python继承机制与C++的核心区别：权限控制视角">Python继承机制与C++的核心区别：权限控制视角</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-zip-map-filter-reversed/" title="Python进阶必修课：掌握Zip, Map, Filter, Reversed的优雅之道">Python进阶必修课：掌握Zip, Map, Filter, Reversed的优雅之道</a><time datetime="2024-12-04T16:00:00.000Z" title="Created 2024-12-05 00:00:00">2024-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-mutable-immutable-c-perspective/" title="Python可变与不可变数据：C语言视角的深度解析">Python可变与不可变数据：C语言视角的深度解析</a><time datetime="2024-11-27T16:00:00.000Z" title="Created 2024-11-28 00:00:00">2024-11-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-parameter-passing-truth/" title="Python函数参数传递的真相——为什么你的变量没被修改？">Python函数参数传递的真相——为什么你的变量没被修改？</a><time datetime="2024-11-20T16:00:00.000Z" title="Created 2024-11-21 00:00:00">2024-11-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-function-currying/" title="Python函数柯里化：将多参数函数转化为单参数函数链">Python函数柯里化：将多参数函数转化为单参数函数链</a><time datetime="2024-11-13T16:00:00.000Z" title="Created 2024-11-14 00:00:00">2024-11-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-frame-environment-model/" title="Python函数框架：外框架、内框架与环境模型">Python函数框架：外框架、内框架与环境模型</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-import-like-cpp-header/" title="Python如何像C++引用头文件">Python如何像C++引用头文件</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-generator-iterator/" title="Python 生成器和迭代器深度解析">Python 生成器和迭代器深度解析</a><time datetime="2024-10-22T16:00:00.000Z" title="Created 2024-10-23 00:00:00">2024-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-list-comprehension/" title="Python 列表推导式深度解析">Python 列表推导式深度解析</a><time datetime="2024-10-15T16:00:00.000Z" title="Created 2024-10-16 00:00:00">2024-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-unpacking/" title="Python 解包操作：* 和 ** 深度解析">Python 解包操作：* 和 ** 深度解析</a><time datetime="2024-10-08T16:00:00.000Z" title="Created 2024-10-09 00:00:00">2024-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-pil-library-guide/" title="Python PIL库使用指南">Python PIL库使用指南</a><time datetime="2024-10-01T16:00:00.000Z" title="Created 2024-10-02 00:00:00">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-csv-module-guide/" title="Python CSV模块使用指南">Python CSV模块使用指南</a><time datetime="2024-09-25T16:00:00.000Z" title="Created 2024-09-26 00:00:00">2024-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-magic-methods-deep-dive/" title="拒绝死记硬背！用 C++ 的底层逻辑，彻底搞懂 Python 的“魔术方法”">拒绝死记硬背！用 C++ 的底层逻辑，彻底搞懂 Python 的“魔术方法”</a><time datetime="2024-09-18T16:00:00.000Z" title="Created 2024-09-19 00:00:00">2024-09-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-decorator-essence-deep-dive/" title="Python装饰器本质深度解析">Python装饰器本质深度解析</a><time datetime="2024-09-11T16:00:00.000Z" title="Created 2024-09-12 00:00:00">2024-09-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-re-module-core-features/" title="Python正则表达式re模块核心功能详解">Python正则表达式re模块核心功能详解</a><time datetime="2024-09-02T16:00:00.000Z" title="Created 2024-09-03 00:00:00">2024-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-re-ignorecase-guide/" title="Python正则表达式re.IGNORECASE使用指南">Python正则表达式re.IGNORECASE使用指南</a><time datetime="2024-08-27T16:00:00.000Z" title="Created 2024-08-28 00:00:00">2024-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-modules-and-packages-deep-dive/" title="Python模块与包深度解析">Python模块与包深度解析</a><time datetime="2024-08-20T16:00:00.000Z" title="Created 2024-08-21 00:00:00">2024-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-file-operations-deep-dive/" title="Python文件操作深度解析">Python文件操作深度解析</a><time datetime="2024-08-13T16:00:00.000Z" title="Created 2024-08-14 00:00:00">2024-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-walrus-operator-deep-dive/" title="Python海象运算符深度解析">Python海象运算符深度解析</a><time datetime="2024-08-04T16:00:00.000Z" title="Created 2024-08-05 00:00:00">2024-08-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-exception-hierarchy/" title="Python异常继承体系深度解析">Python异常继承体系深度解析</a><time datetime="2024-07-27T16:00:00.000Z" title="Created 2024-07-28 00:00:00">2024-07-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-exception-handling-deep-dive/" title="Python异常处理深度解析">Python异常处理深度解析</a><time datetime="2024-07-20T16:00:00.000Z" title="Created 2024-07-21 00:00:00">2024-07-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-attribute-access-mechanism/" title="Python的“欺骗性”语法：为什么说 obj.name 本质上就是 obj.getter()？">Python的“欺骗性”语法：为什么说 obj.name 本质上就是 obj.getter()？</a><time datetime="2024-07-13T16:00:00.000Z" title="Created 2024-07-14 00:00:00">2024-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-multiprocessing-deep-dive/" title="Python多进程编程深度解析">Python多进程编程深度解析</a><time datetime="2024-07-06T16:00:00.000Z" title="Created 2024-07-07 00:00:00">2024-07-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-multithreading-deep-dive/" title="Python多线程编程深度解析">Python多线程编程深度解析</a><time datetime="2024-06-27T16:00:00.000Z" title="Created 2024-06-28 00:00:00">2024-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-functional-programming-intro/" title="Python函数式编程入门：高阶函数与“回调”机制的深度解析">Python函数式编程入门：高阶函数与“回调”机制的深度解析</a><time datetime="2024-06-19T16:00:00.000Z" title="Created 2024-06-20 00:00:00">2024-06-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-property-advanced-usage/" title="Python @property高级应用技巧">Python @property高级应用技巧</a><time datetime="2024-06-12T16:00:00.000Z" title="Created 2024-06-13 00:00:00">2024-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-vs-cpp-function-parameters/" title="技术笔记：Python与C++函数参数传递机制差异">技术笔记：Python与C++函数参数传递机制差异</a><time datetime="2024-06-05T16:00:00.000Z" title="Created 2024-06-06 00:00:00">2024-06-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-self-vs-cls/" title="Python self与cls的区别深度解析">Python self与cls的区别深度解析</a><time datetime="2024-05-27T16:00:00.000Z" title="Created 2024-05-28 00:00:00">2024-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-property-decorator-core/" title="Python @property装饰器核心机制解析">Python @property装饰器核心机制解析</a><time datetime="2024-05-19T16:00:00.000Z" title="Created 2024-05-20 00:00:00">2024-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-sorted-key-parameter/" title="Python sorted函数key参数深度解析">Python sorted函数key参数深度解析</a><time datetime="2024-05-12T16:00:00.000Z" title="Created 2024-05-13 00:00:00">2024-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-classmethod-vs-cpp-static/" title="Python @classmethod 本质上就是C++ 的静态成员？">Python @classmethod 本质上就是C++ 的静态成员？</a><time datetime="2024-05-07T16:00:00.000Z" title="Created 2024-05-08 00:00:00">2024-05-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cs50p-week4-libraries/" title="Python库与模块解析">Python库与模块解析</a><time datetime="2024-04-28T16:00:00.000Z" title="Created 2024-04-29 00:00:00">2024-04-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-testing-pytest/" title="Python测试框架：pytest与assert断言">Python测试框架：pytest与assert断言</a><time datetime="2024-04-21T16:00:00.000Z" title="Created 2024-04-22 00:00:00">2024-04-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-no-pointers/" title="Python引用机制：无指针设计与内存管理">Python引用机制：无指针设计与内存管理</a><time datetime="2024-04-14T16:00:00.000Z" title="Created 2024-04-15 00:00:00">2024-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-io-operations/" title="Python IO操作：文件读写与标准输入输出">Python IO操作：文件读写与标准输入输出</a><time datetime="2024-04-12T16:00:00.000Z" title="Created 2024-04-13 00:00:00">2024-04-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-array-dict/" title="Python数据结构：列表与字典操作">Python数据结构：列表与字典操作</a><time datetime="2024-04-07T16:00:00.000Z" title="Created 2024-04-08 00:00:00">2024-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-loops-while-for/" title="Python循环结构：while与for迭代器详解">Python循环结构：while与for迭代器详解</a><time datetime="2024-03-31T16:00:00.000Z" title="Created 2024-04-01 00:00:00">2024-04-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a51cdce/" title="Python匹配语句：match-case与switch对比">Python匹配语句：match-case与switch对比</a><time datetime="2024-03-24T16:00:00.000Z" title="Created 2024-03-25 00:00:00">2024-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/16a1976e/" title="Python异常处理：try-except-finally-else机制">Python异常处理：try-except-finally-else机制</a><time datetime="2024-03-17T16:00:00.000Z" title="Created 2024-03-18 00:00:00">2024-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/56b7777/" title="Python条件表达式：链式比较与短路求值">Python条件表达式：链式比较与短路求值</a><time datetime="2024-03-10T16:00:00.000Z" title="Created 2024-03-11 00:00:00">2024-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/70c320a5/" title="Python条件语句：if-elif-else分支结构">Python条件语句：if-elif-else分支结构</a><time datetime="2024-03-03T16:00:00.000Z" title="Created 2024-03-04 00:00:00">2024-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d17a61c7/" title="Python全局变量：作用域与global关键字">Python全局变量：作用域与global关键字</a><time datetime="2024-02-25T16:00:00.000Z" title="Created 2024-02-26 00:00:00">2024-02-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fa02e126/" title="Python函数副作用：返回值与状态变更">Python函数副作用：返回值与状态变更</a><time datetime="2024-02-18T16:00:00.000Z" title="Created 2024-02-19 00:00:00">2024-02-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3464d813/" title="Python函数定义：def关键字与缩进规则">Python函数定义：def关键字与缩进规则</a><time datetime="2024-02-11T16:00:00.000Z" title="Created 2024-02-12 00:00:00">2024-02-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8e1546a3/" title="Python数值处理：round()函数四舍五入机制">Python数值处理：round()函数四舍五入机制</a><time datetime="2024-02-04T16:00:00.000Z" title="Created 2024-02-05 00:00:00">2024-02-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f45f582/" title="Python类型转换机制及与C++对比">Python类型转换机制及与C++对比</a><time datetime="2024-01-28T16:00:00.000Z" title="Created 2024-01-29 00:00:00">2024-01-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d6f9d5b3/" title="Python交互式编程环境使用指南">Python交互式编程环境使用指南</a><time datetime="2024-01-21T16:00:00.000Z" title="Created 2024-01-22 00:00:00">2024-01-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c9d4403c/" title="Python字符串处理：strip()方法与链式调用">Python字符串处理：strip()方法与链式调用</a><time datetime="2024-01-14T16:00:00.000Z" title="Created 2024-01-15 00:00:00">2024-01-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1276b97d/" title="Python格式化字符串：f-string用法详解">Python格式化字符串：f-string用法详解</a><time datetime="2024-01-04T16:00:00.000Z" title="Created 2024-01-05 00:00:00">2024-01-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6f73d8d8/" title="Python基础：print输出、input输入与注释语法">Python基础：print输出、input输入与注释语法</a><time datetime="2024-01-01T16:00:00.000Z" title="Created 2024-01-02 00:00:00">2024-01-02</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260819/" title="AI 新闻速递｜2026-08-19：Muse Code 入局、OpenCode 破 14 万星、Agility 上市前夜、脑电标注攻数据瓶颈、机器人控制&quot;调音量&quot;">AI 新闻速递｜2026-08-19：Muse Code 入局、OpenCode 破 14 万星、Agility 上市前夜、脑电标注攻数据瓶颈、机器人控制&quot;调音量&quot;</a><time datetime="2026-08-18T16:00:00.000Z" title="Created 2026-08-19 00:00:00">2026-08-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cd1b58ab/" title="维肯湾的摆渡人">维肯湾的摆渡人</a><time datetime="2026-08-18T16:00:00.000Z" title="Created 2026-08-19 00:00:00">2026-08-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260818/" title="AI 新闻速递｜2026-08-18：Agent 运行时开源、AI 反向维护开源库、视频预训练跨形态、机器人进养老院">AI 新闻速递｜2026-08-18：Agent 运行时开源、AI 反向维护开源库、视频预训练跨形态、机器人进养老院</a><time datetime="2026-08-17T16:00:00.000Z" title="Created 2026-08-18 00:00:00">2026-08-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9f2e7c1a/" title="悬丝镇的提线师">悬丝镇的提线师</a><time datetime="2026-08-17T16:00:00.000Z" title="Created 2026-08-18 00:00:00">2026-08-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260817/" title="AI 新闻速递｜2026-08-17：GLM-5.3 登顶开源编程、Agent 安全拉响警报、机器人打通全身协同">AI 新闻速递｜2026-08-17：GLM-5.3 登顶开源编程、Agent 安全拉响警报、机器人打通全身协同</a><time datetime="2026-08-16T16:00:00.000Z" title="Created 2026-08-17 00:00:00">2026-08-17</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
