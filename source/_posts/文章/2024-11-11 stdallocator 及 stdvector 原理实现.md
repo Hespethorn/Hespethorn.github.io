@@ -1,10 +1,8 @@
 ---
 title: 'std::allocator 及 std::vector 原理实现'
 tags:
-  - C++
-  - Foundational Syntax and Core Concepts
-categories:
   - STL
+categories: [C-Code, STL]
 series: STL
 abbrlink: 7334dfaa
 date: 2024-11-11

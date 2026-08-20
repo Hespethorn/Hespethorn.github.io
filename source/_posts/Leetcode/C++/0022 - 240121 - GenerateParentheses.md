@@ -6,7 +6,7 @@ tags:
   - 程序
   - 函数
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 57fc8873
 date: 2023-03-11
 ---

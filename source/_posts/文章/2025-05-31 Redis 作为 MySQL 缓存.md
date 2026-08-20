@@ -2,9 +2,8 @@
 title: Redis 作为 MySQL 缓存选择因素归类
 tags:
   - Redis
-categories:
-  - Redis
-series: Redis
+categories: [Database, Redis]
+series: Database
 abbrlink: de917c5b
 date: 2025-05-31
 ---

@@ -9,8 +9,8 @@ tags:
   - reasoning_content
   - 调试
 categories:
-  - 文章
-series: 技术文章
+  - AI-Applications
+series: AI-Applications
 abbrlink: deepseek-v4-trae-disorder
 date: 2026-04-27
 ---

@@ -3,8 +3,8 @@ title: C/C++ 构建系统与条件编译：#ifndef/#endif 的底层原理与典�
 tags:
   - ifndef
   - endif
-categories:
-  - 编译
+categories: [C-Code, Cmake]
+series: Cmake
 abbrlink: a795a26a
 date: 2025-12-30
 ---

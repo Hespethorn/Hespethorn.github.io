@@ -5,7 +5,7 @@ tags:
   - 递归
 categories: [Leetcode, C++]
   - 递归
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: eed004f4
 date: 2023-10-22
 ---

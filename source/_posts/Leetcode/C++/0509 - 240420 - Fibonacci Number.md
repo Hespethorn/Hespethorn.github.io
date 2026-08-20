@@ -3,7 +3,7 @@ title: Leetcode 0509. Fibonacci Number
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 99808cc9
 date: 2024-01-20
 ---

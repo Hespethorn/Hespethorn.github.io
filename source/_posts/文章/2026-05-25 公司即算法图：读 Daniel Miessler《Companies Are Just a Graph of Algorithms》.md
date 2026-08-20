@@ -7,9 +7,8 @@ tags:
   - 自动化
   - 系统思维
   - 读后感
-categories:
-  - 文章
-series: 文章
+categories: AI-application
+series: AI-application
 abbrlink: companies-graph-of-algorithms
 date: 2026-05-25
 ---

@@ -5,9 +5,8 @@ tags:
   - 智能指针
   - unique_ptr
   - 内存管理
-categories:
-  - 文章
-series: 技术文章
+categories: [Tech-Articles]
+series: Tech-Articles
 abbrlink: 5c6d7e8f
 date: 2026-01-16
 ---

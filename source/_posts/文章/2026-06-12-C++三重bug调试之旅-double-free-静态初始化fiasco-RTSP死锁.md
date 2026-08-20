@@ -7,9 +7,8 @@ tags:
   - RTSP
   - 多线程
   - ZLMediaKit
-categories:
-  - 文章
-series: 文章
+categories: [C-Code, Debugging]
+series: Debugging
 abbrlink: b7e3a912
 date: 2026-06-12
 ---

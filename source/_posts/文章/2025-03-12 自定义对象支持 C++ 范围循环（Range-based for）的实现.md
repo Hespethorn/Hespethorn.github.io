@@ -2,10 +2,8 @@
 title: 自定义对象支持 C++ 范围循环（Range-based for）的实现
 tags:
   - Range-based for
-categories:
-  - C++
-  - Practical System Development
-series: Practical System Development
+categories: [C-Code, Practical-System-Development]
+series: Practical-System-Development
 abbrlink: 7aefcfc3
 date: 2025-03-12
 ---

@@ -3,7 +3,7 @@ title: Leetcode 0071. Simplify Path
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: ed1ccd43
 date: 2023-05-27
 ---

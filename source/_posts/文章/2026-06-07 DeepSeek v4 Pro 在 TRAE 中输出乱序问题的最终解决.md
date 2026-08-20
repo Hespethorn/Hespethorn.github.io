@@ -8,9 +8,8 @@ tags:
   - SSE
   - reasoning_content
   - 调试
-categories:
-  - 文章
-series: 技术文章
+categories: AI-application
+series: AI-application
 abbrlink: deepseek-v4-trae-fix
 date: 2026-06-07
 ---

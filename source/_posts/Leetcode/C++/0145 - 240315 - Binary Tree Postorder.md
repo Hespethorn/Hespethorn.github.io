@@ -4,7 +4,7 @@ tags:
   - leetcode
 categories: [Leetcode, C++]
   - tree
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: '60640130'
 date: 2023-09-18
 ---

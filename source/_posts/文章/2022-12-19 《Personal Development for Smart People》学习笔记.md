@@ -2,7 +2,7 @@
 title: 《Personal Development for Smart People》学习笔记
 tags:
   - 读书笔记
-categories: Essays
+categories: Technical-Articles
 series: 个人文章
 abbrlink: fcebd492
 date: 2022-12-19

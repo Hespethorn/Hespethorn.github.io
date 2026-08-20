@@ -6,9 +6,8 @@ tags:
   - 架构设计
   - C++
   - 软件工程
-categories:
-  - 文章
-series: 文章
+categories: Design-Patterns
+series: Design-Patterns
 abbrlink:
 date: 2026-07-09
 ---

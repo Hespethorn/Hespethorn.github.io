@@ -2,9 +2,8 @@
 title: C++/MySQL/Redis 锁机制 - 2
 tags:
   - MySQL
-categories:
-  - MySQL
-series: MySQL
+categories: [Database, MYSQL, Redis]
+series: Database
 abbrlink: f77ba2fa
 date: 2025-05-10
 ---

@@ -2,9 +2,8 @@
 title: Redis String类型大Key问题
 tags:
   - Redis
-categories:
-  - Redis
-series: Redis
+categories: [Database, Redis]
+series: Database
 abbrlink: 95bc2004
 date: 2025-08-10
 ---

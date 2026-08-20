@@ -3,7 +3,7 @@ title: Leetcode 0151. Reverse Words in a String
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: ef2e4aa2
 date: 2023-10-01
 ---

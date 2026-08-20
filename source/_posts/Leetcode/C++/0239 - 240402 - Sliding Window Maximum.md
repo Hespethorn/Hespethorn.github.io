@@ -3,7 +3,7 @@ title: Leetcode 0239. Sliding Window Maximum
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 8e61f05c
 date: 2023-11-19
 ---

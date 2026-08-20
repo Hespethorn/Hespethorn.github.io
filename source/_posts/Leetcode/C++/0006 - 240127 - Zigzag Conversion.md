@@ -5,7 +5,7 @@ tags:
   - 字符串
   - 模拟
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: d9e0f5b2
 date: 2023-01-17
 ---

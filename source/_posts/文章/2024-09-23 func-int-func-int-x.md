@@ -2,10 +2,8 @@
 title: func(int) & func(int x)
 tags:
   - 形参
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: Foundational Syntax and Core Concepts
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: f175abb2
 date: 2024-09-23
 ---

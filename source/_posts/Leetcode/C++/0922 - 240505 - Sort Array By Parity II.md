@@ -4,7 +4,7 @@ tags:
   - leetcode
   - 双指针
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: '18417049'
 date: 2024-03-15
 ---

@@ -3,7 +3,7 @@ title: Leetcode 0826. Most Profit Assigning Work
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: edc6927a
 date: 2024-02-27
 ---

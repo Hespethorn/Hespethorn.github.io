@@ -3,7 +3,7 @@ title: Leetcode 0076. Minimum Window Substring
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: b6d25d96
 date: 2023-06-13
 ---

@@ -3,10 +3,8 @@ tags:
   - C++
   - partition
   - remove_if
-categories:
-  - C++
-  - Data Structures and Algorithms
-series: C++
+categories: [C-Code, Data-Structures-and-Algorithms]
+series: Data-Structures-and-Algorithms
 abbrlink: a0783a16
 title: 'C++ 算法：remove_if 与 partition '
 date: 2024-07-03

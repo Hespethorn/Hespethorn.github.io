@@ -8,9 +8,8 @@ tags:
   - 自组网
   - 去中心化
   - 读后感
-categories:
-  - 文章
-series: 文章
+categories: Technical-Articles
+series: Computer-Networking
 abbrlink: mesh-networks-meshtastic-reticulum
 date: 2026-05-31
 ---

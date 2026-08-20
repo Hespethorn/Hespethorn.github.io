@@ -2,10 +2,8 @@
 title: C/C++ 中两种结构体 typedef 定义的差异与实践
 tags:
   - C++
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: Foundational Syntax and Core Concepts
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: e34d474
 date: 2025-07-21
 ---

@@ -6,9 +6,8 @@ tags:
   - 现代C++
   - string_view
   - 性能优化
-categories:
-  - 文章
-series: 文章
+categories: [C-Code, Data-Structures-and-Algorithms]]
+series: Data-Structures-and-Algorithms]
 abbrlink:
 date: 2026-07-30
 ---

@@ -6,7 +6,7 @@ tags:
   - Hash Table
   - Matrix
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 4a5b6c7d
 date: 2024-05-29
 ---

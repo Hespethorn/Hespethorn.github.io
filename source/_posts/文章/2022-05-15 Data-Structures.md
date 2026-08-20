@@ -6,8 +6,8 @@ tags:
   - 算法
   - 伪代码
   - 算法优化
-categories: Data-Structures
-series: Data-Structures
+categories: [C-Code, Data-Structures-and-Algorithms]
+series: Data-Structures-and-Algorithms
 abbrlink: 8ca7f13c
 date: 2022-05-15
 swiper_index: 4

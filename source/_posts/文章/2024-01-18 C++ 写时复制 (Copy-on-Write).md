@@ -3,10 +3,8 @@ tags:
   - C++
   - 共享
   - 写时复制
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: C++
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 5c9d9f2f
 title: C++ 写时复制 (Copy-on-Write)
 date: 2024-01-18

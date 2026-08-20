@@ -8,15 +8,15 @@ tags:
   - 函数 
 categories:
   - C-Code
-  - Data Structures and Algorithms
+  - Data-Structures-and-Algorithms
 series: leetcode
 abbrlink: 
 
 ---
 
-Foundational Syntax and Core Concepts（基础语法与核心概念）
-Data Structures and Algorithms（数据结构与算法）
-Practical System Development（实用系统开发）
+Foundational-Syntax-and-Core-Concepts（基础语法与核心概念）
+Data-Structures-and-Algorithms（数据结构与算法）
+Practical-System-Development（实用系统开发）
 
 {% tabs  %}
 

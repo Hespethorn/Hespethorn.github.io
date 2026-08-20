@@ -3,7 +3,7 @@ title: Leetcode 0027. Remove Element
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 559d22c1
 date: 2023-03-29
 ---

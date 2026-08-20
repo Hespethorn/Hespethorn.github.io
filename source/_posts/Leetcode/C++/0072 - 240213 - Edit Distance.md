@@ -3,7 +3,7 @@ title: Leetcode 0072. Edit Distance
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: fc74f62
 date: 2023-05-30
 ---

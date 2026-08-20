@@ -8,9 +8,8 @@ tags:
   - 自组网
   - 信道拥塞
   - QoS
-categories:
-  - 文章
-series: 文章
+categories: Technical-Articles
+series: Computer-Networking
 abbrlink: 2f551e47
 date: 2026-06-05
 ---

@@ -5,9 +5,8 @@ tags:
   - systemd
   - Service
   - OS
-categories:
-  - Linux Internals
-series: Linux Internals
+categories: [Linux, Internals]
+series: Internals
 abbrlink: 5ab37a67
 date: 2025-11-23
 ---

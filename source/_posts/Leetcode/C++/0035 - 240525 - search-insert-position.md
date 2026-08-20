@@ -5,7 +5,7 @@ tags:
   - Array
   - Binary Search
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 7c8d9e0f
 date: 2024-05-25
 ---

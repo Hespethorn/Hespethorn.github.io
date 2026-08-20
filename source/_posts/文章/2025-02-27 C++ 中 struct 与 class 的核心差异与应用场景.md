@@ -3,10 +3,8 @@ title: C++ 中 struct 与 class 的核心差异与应用场景
 tags:
   - class
   - struct
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: C++
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: e7ef88fa
 date: 2025-02-27
 ---

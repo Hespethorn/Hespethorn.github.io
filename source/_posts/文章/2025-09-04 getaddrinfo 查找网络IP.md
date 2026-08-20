@@ -2,10 +2,8 @@
 title: getaddrinfo 查找网络IP
 tags:
   - getaddrinfo
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: Foundational Syntax and Core Concepts
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 70d59293
 date: 2025-09-04
 ---

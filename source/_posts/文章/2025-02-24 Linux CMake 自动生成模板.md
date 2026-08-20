@@ -2,8 +2,7 @@
 title: Linux CMake 自动生成模板：一键清理、零警告编译、多库链接
 tags:
   - CMake
-categories:
-  - CMake
+categories: [Linux, CMake]
 series: CMake
 abbrlink: a03e8116
 date: 2025-02-24

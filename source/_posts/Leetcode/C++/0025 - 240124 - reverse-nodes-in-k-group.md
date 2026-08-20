@@ -3,7 +3,7 @@ title: Leetcode 0025.reverse-nodes-in-k-group
 tags:
   - C++
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: '769e4480'
 date: 2023-03-21
 ---

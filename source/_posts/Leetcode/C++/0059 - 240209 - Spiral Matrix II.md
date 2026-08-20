@@ -4,7 +4,7 @@ tags:
   - leetcode
 categories: [Leetcode, C++]
   - 矩阵
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: e5de6d3b
 date: 2023-05-17
 ---

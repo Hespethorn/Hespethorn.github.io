@@ -4,7 +4,7 @@ tags:
   - leetcode
 categories: [Leetcode, C++]
   - Hash
-series: Leetcode-Cpp-Mysql
+series: Leetcode-C++-Mysql
 abbrlink: d384b331
 date: 2024-04-28
 ---

@@ -4,7 +4,7 @@ tags:
   - leetcode
 categories: [Leetcode, C++]
   - Hash
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 21b9229c
 date: 2023-12-06
 ---

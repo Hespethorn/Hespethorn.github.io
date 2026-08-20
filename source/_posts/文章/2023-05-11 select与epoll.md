@@ -5,7 +5,7 @@ tags:
   - 计算机网络
   - select
   - epoll
-categories: Computer-Networking
+categories: [C-Code, Computer-Networking]
 series: Computer-Networking
 abbrlink: c4667e6
 date: 2023-05-11

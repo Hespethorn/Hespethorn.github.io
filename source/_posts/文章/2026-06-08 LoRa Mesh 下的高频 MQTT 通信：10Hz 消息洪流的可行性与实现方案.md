@@ -8,9 +8,8 @@ tags:
   - 高频通信
   - 序列化
   - 物联网
-categories:
-  - 文章
-series: 文章
+categories: Technical-Articles
+series: Computer-Networking
 abbrlink: lora-mesh-high-frequency-mqtt
 date: 2026-06-08
 ---

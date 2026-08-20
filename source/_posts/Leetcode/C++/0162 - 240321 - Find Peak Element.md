@@ -3,7 +3,7 @@ title: Leetcode 0162. Find Peak Element
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 5783eb6c
 date: 2023-10-09
 ---

@@ -6,9 +6,8 @@ tags:
   - protobuf
   - 分布式系统
   - 数据同步
-categories:
-  - 文章
-series: C++
+categories: [C-Code, Protocol-Buffers]
+series: Protocol-Buffers
 abbrlink: protobuf-large-structure-design
 date: 2026-03-20
 ---

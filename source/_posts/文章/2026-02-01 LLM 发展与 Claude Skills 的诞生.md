@@ -6,9 +6,8 @@ tags:
   - Skills
   - LLM 发展
   - 技术演进
-categories:
-  - 文章
-series: 技术文章
+categories: [AI-Applications]
+series: AI-Applications
 abbrlink: 1a2b3c4d
 date: 2026-02-01
 ---

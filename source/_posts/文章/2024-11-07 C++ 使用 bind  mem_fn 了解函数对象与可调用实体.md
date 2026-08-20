@@ -3,10 +3,8 @@ title: C++ 使用 bind / mem_fn 了解函数对象与可调用实体
 tags:
   - bind
   - mem_fn
-categories:
-  - C++
-  - Practical System Development
-series: C++
+categories: [C-Code, Practical-System-Development]
+series: Practical-System-Development
 abbrlink: 6411a620
 date: 2024-11-07
 ---

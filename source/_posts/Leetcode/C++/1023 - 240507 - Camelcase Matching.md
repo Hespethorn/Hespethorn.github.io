@@ -3,7 +3,7 @@ title: Leetcode 1023. Camelcase Matching
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: b659dbb2
 date: 2024-03-23
 ---

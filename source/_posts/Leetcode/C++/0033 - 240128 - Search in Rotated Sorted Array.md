@@ -4,7 +4,7 @@ tags:
   - leetcode
   - 二分查找
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: a491ad2e
 date: 2023-04-06
 ---

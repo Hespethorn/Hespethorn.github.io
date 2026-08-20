@@ -8,7 +8,7 @@ tags:
   - Bit Manipulation
   - Heap
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 2b3c4d5e
 date: 2024-05-30
 ---

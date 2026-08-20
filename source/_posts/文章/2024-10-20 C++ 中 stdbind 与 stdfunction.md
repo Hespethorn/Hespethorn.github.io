@@ -3,10 +3,8 @@ title: 'C++ 中 std::bind 与 std::function'
 tags:
   - function
   - bind
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: C++
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: a9e5787b
 date: 2024-10-20
 ---

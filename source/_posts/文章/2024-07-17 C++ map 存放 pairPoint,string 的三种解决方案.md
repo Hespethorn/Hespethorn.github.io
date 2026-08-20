@@ -3,10 +3,8 @@ tags:
   - C++
   - map
   - 自定义类
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: C++
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 49b110e8
 title: 'map 存放 pair<Point,string> 的三种解决方案'
 date: 2024-07-17

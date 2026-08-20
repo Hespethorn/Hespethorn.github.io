@@ -3,7 +3,7 @@ title: Leetcode 0082. Remove Duplicates from Sorted List II
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 277ebfd
 date: 2023-06-24
 ---

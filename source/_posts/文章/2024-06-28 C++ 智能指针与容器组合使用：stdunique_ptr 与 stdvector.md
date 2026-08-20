@@ -3,10 +3,8 @@ tags:
   - C++
   - nique_ptr
   - vector
-categories:
-  - C++
-  - Data Structures and Algorithms
-series: C++
+categories: [C-Code, Data-Structures-and-Algorithms]
+series: Data-Structures-and-Algorithms
 abbrlink: ebb68aeb
 title: 'C++ 智能指针与容器组合使用：std::unique_ptr 与 std::vector'
 date: 2024-06-28

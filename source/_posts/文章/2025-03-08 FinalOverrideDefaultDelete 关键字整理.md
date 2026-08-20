@@ -4,10 +4,8 @@ tags:
   - Final
   - Override
   - Default
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: Foundational Syntax and Core Concepts
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 6a5bb7d1
 date: 2025-03-08
 ---

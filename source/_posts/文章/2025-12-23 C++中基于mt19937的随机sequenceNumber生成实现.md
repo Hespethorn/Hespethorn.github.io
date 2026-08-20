@@ -3,9 +3,8 @@ title: C++中基于mt19937的随机sequenceNumber生成实现
 tags:
   - C++
   - sequenceNumber
-categories:
-  - Foundational Syntax and Core Concepts
-series: Foundational Syntax and Core Concepts
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 393e9a0a
 date: 2025-12-23
 ---

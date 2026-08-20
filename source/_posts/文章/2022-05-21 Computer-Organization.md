@@ -5,7 +5,7 @@ tags:
   - 数据结构
   - 硬件描述语言
   - Cache映射策略(LRU/FIFO)
-categories: Computer-Organization
+categories: [C-Code, Computer-Organization]
 series: Computer-Organization
 abbrlink: ed889906
 date: 2022-05-21

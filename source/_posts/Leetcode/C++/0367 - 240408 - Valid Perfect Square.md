@@ -3,7 +3,7 @@ title: Leetcode 0367. Valid Perfect Square
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: daa261f7
 date: 2023-12-09
 ---

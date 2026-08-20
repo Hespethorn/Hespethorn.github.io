@@ -2,9 +2,8 @@
 title: Redis 哨兵模式（Sentinel）
 tags:
   - Redis
-categories:
-  - Redis
-series: Redis
+categories: [Database, Redis]
+series: Database
 abbrlink: 34a12cbb
 date: 2025-06-18
 ---

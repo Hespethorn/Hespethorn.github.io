@@ -4,9 +4,8 @@ tags:
   - OOA
   - OOD
   - OOP
-categories:
-  - 类图
-series: 类图
+categories: [C-Code, UML]
+series: UML
 abbrlink: f2ee0340
 date: 2024-12-01
 ---

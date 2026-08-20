@@ -6,8 +6,7 @@ tags:
   - 符号可见性
   - 静态库
   - 动态库
-categories:
-  - 文章
+categories: [Linux, CMake]
 series: CMake
 abbrlink: 
 date: 2026-06-17

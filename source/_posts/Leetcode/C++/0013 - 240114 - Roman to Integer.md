@@ -3,7 +3,7 @@ title: Leetcode 0013. Roman to Integer
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 'roman-to-integer'
 date: 2023-02-11
 ---

@@ -4,10 +4,8 @@ tags:
   - C++
   - auto
   - 迭代
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: C++
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 9b0faa2d
 date: 2023-12-06
 ---

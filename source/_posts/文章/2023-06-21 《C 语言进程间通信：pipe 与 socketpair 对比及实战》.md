@@ -7,7 +7,7 @@ tags:
   - socketpair
   - 文件描述符
   - fork
-categories: Computer-Networking
+categories: [C-Code, Computer-Networking]
 series: Computer-Networking
 abbrlink: d568c8d6
 date: 2023-06-21

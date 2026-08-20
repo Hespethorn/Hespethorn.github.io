@@ -3,10 +3,8 @@ tags:
   - C++
   - splice
   - sort
-categories:
-  - C++
-  - Data Structures and Algorithms
-series: C++
+categories: [C-Code, Data-Structures-and-Algorithms]
+series: Data-Structures-and-Algorithms
 abbrlink: 59ddcdb1
 title: C++ 容器中的 sort () 与 splice ()
 date: 2024-06-08

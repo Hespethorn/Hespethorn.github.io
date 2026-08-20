@@ -3,7 +3,7 @@ title: Leetcode 0019. Remove Nth Node From End of List
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: e0bb65fe
 date: 2023-03-01
 ---

@@ -3,7 +3,7 @@ title: Leetcode 0105. Construct Binary Tree from Preorder and Inorder Traversal
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: e37153b2
 date: 2023-08-21
 ---

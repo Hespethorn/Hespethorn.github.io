@@ -5,9 +5,8 @@ tags:
   - 多线程
   - 条件变量
   - 竞态条件
-categories:
-  - C++
-series: C++
+categories: [C-Code, Debugging]
+series: Debugging
 abbrlink: 
 date: 2026-06-23
 ---

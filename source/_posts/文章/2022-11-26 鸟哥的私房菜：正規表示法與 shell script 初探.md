@@ -1,7 +1,7 @@
 ---
 title: 鸟哥的私房菜：正规表示法与 shell script 学习整理
 tags: Linux
-categories: Linux
+categories: [Linux, 鸟哥私房菜]
 series: 鸟哥私房菜
 abbrlink: 12b7bb35
 date: 2022-11-26

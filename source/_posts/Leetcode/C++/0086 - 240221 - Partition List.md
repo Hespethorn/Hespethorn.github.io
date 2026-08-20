@@ -3,7 +3,7 @@ title: Leetcode 0086. Partition List
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 1110ab66
 date: 2023-07-02
 ---

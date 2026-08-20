@@ -4,9 +4,8 @@ tags:
   - C++
   - 智能指针
   - shared_ptr
-categories:
-  - 文章
-series: 技术文章
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 4a7b8c9d
 date: 2026-01-10
 ---

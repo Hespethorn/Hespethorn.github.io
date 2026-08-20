@@ -3,7 +3,7 @@ title: Leetcode 0010. Regular Expression Matching
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: b8d9b34
 date: 2023-02-01
 ---

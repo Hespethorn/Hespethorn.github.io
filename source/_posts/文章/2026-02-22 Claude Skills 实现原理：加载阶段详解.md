@@ -6,9 +6,8 @@ tags:
   - Skills
   - 实现原理
   - 加载阶段
-categories:
-  - 文章
-series: 技术文章
+categories: [AI-Applications]
+series: AI-Applications
 abbrlink: 3c4d5e6f
 date: 2026-02-22
 ---

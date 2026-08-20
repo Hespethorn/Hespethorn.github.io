@@ -6,9 +6,8 @@ tags:
   - 代码编辑器
   - 工作原理
   - Agent Loop
-categories:
-  - 文章
-series: 技术文章
+categories: [AI-Applications]
+series: AI-Applications
 abbrlink: 8f9e7d0c
 date: 2026-04-05
 ---

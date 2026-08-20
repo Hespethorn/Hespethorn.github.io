@@ -4,7 +4,7 @@ tags:
   - leetcode
 categories: [Leetcode, C++]
   - 回溯算法
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: f9b1fe92
 date: 2023-09-09
 ---

@@ -3,7 +3,7 @@ title: Leetcode 1201. Ugly Number III
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: 267b35b5
 date: 2024-04-09
 ---

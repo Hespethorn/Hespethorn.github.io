@@ -3,7 +3,7 @@ title: Leetcode 0028. Find the Index of the First Occurrence in a String
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: f6da8f42
 date: 2023-04-03
 ---

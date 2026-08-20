@@ -3,8 +3,7 @@ title: CMake 集成 Lcov 生成代码覆盖率报告
 tags:
   - CMake
   - Lcov
-categories:
-  - Lcov
+categories: [Linux, Lcov]
 series: Lcov
 abbrlink: 6b408243
 date: 2024-10-14

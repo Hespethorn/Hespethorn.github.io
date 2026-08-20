@@ -3,10 +3,8 @@ tags:
   - C++
   - unordered_map
   - 自定义类型
-categories:
-  - C++
-  - Foundational Syntax and Core Concepts
-series: C++
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: d8781b37
 title: unordered_map存放自定义类具体实现
 date: 2024-08-08

@@ -3,7 +3,7 @@ title: Leetcode 0225. Implement Stack using Queues
 tags:
   - leetcode
 categories: [Leetcode, C++]
-series: Leetcode-Cpp
+series: Leetcode-C++
 abbrlink: b38cba9d
 date: 2023-11-06
 ---
