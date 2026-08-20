@@ -4,6 +4,7 @@ date: 2024-09-26
 categories: [CS基础课程, CS61A]
 tags: [Scheme, 尾递归, 解释器, SQL, 声明式]
 abbrlink: c61a0108
+series: [CS基础课程, CS61A]
 ---
 
 > 前七篇都在 Python 里打转。最后一篇，CS61A 故意把你拽进另一种语言——**Scheme（Lisp 方言）**，再让你亲手写一个"能运行 Scheme 的解释器"。

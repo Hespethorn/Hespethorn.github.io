@@ -4,6 +4,7 @@ date: 2024-10-03
 categories: [CS基础课程, CS61B]
 tags: [动态数组, ArrayList, 均摊分析, Java]
 abbrlink: c61b0102
+series: [CS基础课程, CS61B]
 ---
 
 你每天写 `ArrayList`、`vector`、`list.append()`，从没操心过"容量"——它好像永远装得下。但每次"满了"，它其实偷偷把整片数据**搬了一次家**：分配更大的内存、把旧元素逐个复制过去、再扔掉旧的。这一篇把这件"看不见的搬家"讲透，并回答一个反直觉的问题：**为什么扩容是 O(n)，尾部追加却是 O(1)？** 答案叫**均摊分析（amortized analysis）**。
