@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0515. Find Largest Value in Each Tree Row
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 46ac1ea3
 date: 2024-01-25

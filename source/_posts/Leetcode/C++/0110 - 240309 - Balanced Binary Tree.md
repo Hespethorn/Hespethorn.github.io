@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0110. Balanced Binary Tree
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: b5c6d6e4
 date: 2023-09-01

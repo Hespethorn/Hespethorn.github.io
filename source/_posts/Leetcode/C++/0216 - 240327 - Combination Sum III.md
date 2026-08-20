@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0216. Combination Sum III
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - 回溯算法
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 51ba5778
 date: 2023-10-30

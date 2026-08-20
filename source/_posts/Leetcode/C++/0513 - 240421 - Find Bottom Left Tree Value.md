@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0513. Find Bottom Left Tree Value
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 72cf0114
 date: 2024-01-22

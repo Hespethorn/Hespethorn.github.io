@@ -3,7 +3,6 @@ title: Leetcode 0445. Add Two Numbers II
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - null
 series: Leetcode-C++
 abbrlink: ae61c030
 date: 2023-12-27

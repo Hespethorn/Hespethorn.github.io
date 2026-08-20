@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0491. Non-decreasing Subsequences
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - 回溯算法
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 28af2b40
 date: 2024-01-12

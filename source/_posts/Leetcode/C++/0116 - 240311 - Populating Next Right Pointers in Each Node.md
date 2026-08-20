@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0116. Populating Next Right Pointers in Each Node
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 42c77b0c
 date: 2023-09-07

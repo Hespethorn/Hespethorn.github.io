@@ -3,7 +3,6 @@ title: Leetcode 0053. Maximum Subarray
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - 贪心算法
 series: Leetcode-C++
 abbrlink: 3465f1c0
 date: 2023-05-08

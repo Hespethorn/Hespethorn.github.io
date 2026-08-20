@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0106. Construct Binary Tree from Inorder and Postorder Traversal
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: a3d1a0ae
 date: 2023-08-23

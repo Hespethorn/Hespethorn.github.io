@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0131. Palindrome Partitioning
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - 回溯算法
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: f9b1fe92
 date: 2023-09-09

@@ -3,7 +3,6 @@ title: Leetcode 0048. Rotate Image
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - 矩阵
 series: Leetcode-C++
 abbrlink: 876d5341
 date: 2023-05-04

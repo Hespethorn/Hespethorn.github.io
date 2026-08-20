@@ -3,7 +3,6 @@ title: Leetcode 0046. Permutations
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - 回溯算法
 series: Leetcode-C++
 abbrlink: bffc8823
 date: 2023-05-01

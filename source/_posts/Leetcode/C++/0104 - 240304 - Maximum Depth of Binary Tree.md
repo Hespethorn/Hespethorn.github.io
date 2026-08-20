@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0104. Maximum Depth of Binary Tree
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 9c415c5b
 date: 2023-08-17

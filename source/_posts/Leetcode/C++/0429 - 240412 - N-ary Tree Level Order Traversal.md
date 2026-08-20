@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0429. N-ary Tree Level Order Traversal
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 541cfd3d
 date: 2023-12-22

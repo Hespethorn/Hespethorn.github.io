@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0094. Binary Tree Inorder Traversal
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 8c7c98c4
 date: 2023-07-14

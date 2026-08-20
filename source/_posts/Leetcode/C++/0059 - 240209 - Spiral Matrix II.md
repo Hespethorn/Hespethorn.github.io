@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0059. Spiral Matrix II
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - 矩阵
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: e5de6d3b
 date: 2023-05-17

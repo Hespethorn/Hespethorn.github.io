@@ -3,7 +3,6 @@ title: Leetcode 0040. Combination Sum II
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - 回溯算法
 series: Leetcode-C++
 abbrlink: 3b1f13b1
 date: 2023-04-19

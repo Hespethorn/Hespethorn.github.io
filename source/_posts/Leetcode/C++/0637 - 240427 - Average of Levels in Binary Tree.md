@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0637. Average of Levels in Binary Tree
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 790b344d
 date: 2024-02-14

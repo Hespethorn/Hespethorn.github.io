@@ -3,7 +3,6 @@ title: Leetcode 0039. Combination Sum
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - null
 series: Leetcode-C++
 abbrlink: 1af886ae
 date: 2023-04-15

@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0455. Assign Cookies
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - 贪心算法
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 3e66e07f
 date: 2024-01-05

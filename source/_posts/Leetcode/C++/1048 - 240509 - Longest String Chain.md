@@ -3,7 +3,6 @@ title: Leetcode 1048. Longest String Chain
 tags:
   - leetcode
 categories: [Leetcode, C++]
-  - 递归
 series: Leetcode-C++
 abbrlink: 694b7d2
 date: 2024-03-30

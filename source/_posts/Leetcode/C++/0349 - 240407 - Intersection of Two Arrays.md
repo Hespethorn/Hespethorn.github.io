@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0349. Intersection of Two Arrays
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - Hash
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 21b9229c
 date: 2023-12-06

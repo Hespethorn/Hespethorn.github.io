@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0077. Combinations
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - 回溯算法
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: '574072e1'
 date: 2023-06-17

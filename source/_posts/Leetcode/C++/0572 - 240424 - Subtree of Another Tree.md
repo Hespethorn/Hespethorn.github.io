@@ -1,9 +1,8 @@
 ---
 title: Leetcode 0572. Subtree of Another Tree
 tags:
-  - leetcode
-categories: [Leetcode, C++]
   - tree
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: df49a9b5
 date: 2024-02-01
