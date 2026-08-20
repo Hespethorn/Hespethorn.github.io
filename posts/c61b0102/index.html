@@ -1,13 +1,13 @@
-<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>数组与动态数组（ArrayList）及均摊分析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你每天写 ArrayList、vector、list.append()，从没操心过&quot;容量&quot;——它好像永远装得下。但每次&quot;满了&quot;，它其实偷偷把整片数据搬了一次家：分配一块更大的内存，把旧元素逐个复制过去，再扔掉旧的。这一篇就把这件&quot;看不见的搬家&quot;讲透，并回答一个反直觉的问题：为什么翻倍扩容是 O(1)，明明单次搬家是 O(n)？ 答案叫均摊">
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>数组与动态数组（ArrayList）及均摊分析 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你每天写 ArrayList、vector、list.append()，从没操心过&quot;容量&quot;——它好像永远装得下。但每次&quot;满了&quot;，它其实偷偷把整片数据搬了一次家：分配更大的内存、把旧元素逐个复制过去、再扔掉旧的。这一篇把这件&quot;看不见的搬家&quot;讲透，并回答一个反直觉的问题：为什么扩容是 O(n)，尾部追加却是 O(1)？ 答案叫均摊分析（amo">
 <meta property="og:type" content="article">
 <meta property="og:title" content="数组与动态数组（ArrayList）及均摊分析">
 <meta property="og:url" content="https://hespethorn.github.io/posts/c61b0102/">
 <meta property="og:site_name" content="HespethornのBlog">
-<meta property="og:description" content="你每天写 ArrayList、vector、list.append()，从没操心过&quot;容量&quot;——它好像永远装得下。但每次&quot;满了&quot;，它其实偷偷把整片数据搬了一次家：分配一块更大的内存，把旧元素逐个复制过去，再扔掉旧的。这一篇就把这件&quot;看不见的搬家&quot;讲透，并回答一个反直觉的问题：为什么翻倍扩容是 O(1)，明明单次搬家是 O(n)？ 答案叫均摊">
+<meta property="og:description" content="你每天写 ArrayList、vector、list.append()，从没操心过&quot;容量&quot;——它好像永远装得下。但每次&quot;满了&quot;，它其实偷偷把整片数据搬了一次家：分配更大的内存、把旧元素逐个复制过去、再扔掉旧的。这一篇把这件&quot;看不见的搬家&quot;讲透，并回答一个反直觉的问题：为什么扩容是 O(n)，尾部追加却是 O(1)？ 答案叫均摊分析（amo">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
 <meta property="article:published_time" content="2024-10-02T16:00:00.000Z">
-<meta property="article:modified_time" content="2026-08-20T05:23:14.298Z">
+<meta property="article:modified_time" content="2026-08-20T06:10:52.581Z">
 <meta property="article:author" content="Hespethorn">
 <meta property="article:tag" content="动态数组">
 <meta property="article:tag" content="Java">
@@ -21,7 +21,7 @@
   "url": "https://hespethorn.github.io/posts/c61b0102/",
   "image": "https://hespethorn.github.io/img/butterfly-icon.png",
   "datePublished": "2024-10-02T16:00:00.000Z",
-  "dateModified": "2026-08-20T05:23:14.298Z",
+  "dateModified": "2026-08-20T06:10:52.581Z",
   "author": [
     {
       "@type": "Person",
@@ -188,88 +188,23 @@ btf.addGlobalFn('pjaxComplete', () => {
   isToc: false,
   pageType: 'post'
 }</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
-</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">692</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">850</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">78</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">数组与动态数组（ArrayList）及均摊分析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">数组与动态数组（ArrayList）及均摊分析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/">CS基础课程</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你每天写 <code>ArrayList</code>、<code>vector</code>、<code>list.append()</code>，从没操心过&quot;容量&quot;——它好像永远装得下。但每次&quot;满了&quot;，它其实偷偷把整片数据<strong>搬了一次家</strong>：分配一块更大的内存，把旧元素逐个复制过去，再扔掉旧的。这一篇就把这件&quot;看不见的搬家&quot;讲透，并回答一个反直觉的问题：<strong>为什么翻倍扩容是 O(1)，明明单次搬家是 O(n)？</strong> 答案叫<strong>均摊分析（amortized analysis）</strong>。</p>
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">693</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">852</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">78</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">数组与动态数组（ArrayList）及均摊分析</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/36ac6ed9/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/love10000/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">数组与动态数组（ArrayList）及均摊分析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/">CS基础课程</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>5mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你每天写 <code>ArrayList</code>、<code>vector</code>、<code>list.append()</code>，从没操心过&quot;容量&quot;——它好像永远装得下。但每次&quot;满了&quot;，它其实偷偷把整片数据<strong>搬了一次家</strong>：分配更大的内存、把旧元素逐个复制过去、再扔掉旧的。这一篇把这件&quot;看不见的搬家&quot;讲透，并回答一个反直觉的问题：<strong>为什么扩容是 O(n)，尾部追加却是 O(1)？</strong> 答案叫<strong>均摊分析（amortized analysis）</strong>。</p>
 <hr>
 <h2 id="一、静态数组：快，但僵"><a href="#一、静态数组：快，但僵" class="headerlink" title="一、静态数组：快，但僵"></a>一、静态数组：快，但僵</h2><p>数组是最原始的数据结构：N 个同类型元素<strong>连续</strong>摆在内存里，靠下标直接寻址。</p>
 <ul>
 <li><strong>优点</strong>：随机访问 <code>a[i]</code> 是 <strong>O(1)</strong>——CPU 算一下 <code>基地址 + i × 元素大小</code> 就能取到，不依赖数组长度。</li>
-<li><strong>死穴</strong>：容量在创建时就钉死了。想在第 0 位插一个元素？后面所有元素都得往后挪一位，<strong>O(n)</strong>。更糟的是，满了就彻底塞不下了。</li>
+<li><strong>死穴</strong>：容量在创建时就钉死了。想在第 0 位插一个？后面所有元素都得往后挪，<strong>O(n)</strong>。更糟的是，满了就彻底塞不下了。</li>
 </ul>
-<div align="center">
-
-<svg width="460" height="150" viewBox="0 0 460 150" xmlns="http://www.w3.org/2000/svg">
-  <text x="230" y="22" text-anchor="middle" font-size="13" fill="#374151">静态数组：连续内存，容量固定</text>
-  <g font-size="13" fill="#1e40af" text-anchor="middle">
-    <rect x="40"  y="45" width="55" height="42" rx="4" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
-    <rect x="98"  y="45" width="55" height="42" rx="4" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
-    <rect x="156" y="45" width="55" height="42" rx="4" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
-    <rect x="214" y="45" width="55" height="42" rx="4" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.5"/>
-    <rect x="272" y="45" width="55" height="42" rx="4" fill="#e5e7eb" stroke="#9ca3af" stroke-width="1.5"/>
-    <text x="67"  y="71" fill="#1e3a8a">A</text>
-    <text x="125" y="71" fill="#1e3a8a">B</text>
-    <text x="183" y="71" fill="#1e3a8a">C</text>
-    <text x="241" y="71" fill="#1e3a8a">D</text>
-    <text x="299" y="71" fill="#6b7280">·</text>
-  </g>
-  <text x="40"  y="110" font-size="11" fill="#6b7280">下标 0</text>
-  <text x="266" y="110" font-size="11" fill="#6b7280">capacity-1</text>
-  <text x="230" y="138" text-anchor="middle" font-size="11" fill="#b91c1c">已满 → 再 add 直接失败 / 需手动重建</text>
-</svg>
-
-</div>
-
 <p>数组这层&quot;裸&quot;结构，正是上一篇说的&quot;只承诺怎么存、不约束怎么用&quot;。动态数组要解决的，就是给它套一层<strong>自动扩容</strong>的抽象。</p>
 <hr>
 <h2 id="二、动态数组：在数组上套一层-自动扩容"><a href="#二、动态数组：在数组上套一层-自动扩容" class="headerlink" title="二、动态数组：在数组上套一层&quot;自动扩容&quot;"></a>二、动态数组：在数组上套一层&quot;自动扩容&quot;</h2><p>动态数组 &#x3D; <strong>底层静态数组 + 两个计数器</strong>：</p>
 <ul>
 <li><code>capacity</code>：底层数组实际分配的长度（能装多少）。</li>
-<li><code>size</code>：当前装了多少个元素（也叫 <code>length</code> &#x2F; <code>count</code>）。</li>
+<li><code>size</code>：当前装了多少个元素。</li>
 </ul>
-<p>核心操作 <code>add(x)</code>（尾部追加）：</p>
-<ol>
-<li>若 <code>size == capacity</code>（满了），先<strong>扩容</strong>：分配一块 2 倍大的新数组，把旧元素复制过去。</li>
-<li>把 <code>x</code> 写进 <code>a[size]</code>，<code>size++</code>。</li>
-</ol>
-<div align="center">
-
-<svg width="470" height="170" viewBox="0 0 470 170" xmlns="http://www.w3.org/2000/svg">
-  <text x="235" y="20" text-anchor="middle" font-size="12" fill="#374151">扩容：size == capacity 时分配 2× 新数组并复制</text>
-  <!-- 旧数组 -->
-  <g font-size="12" text-anchor="middle">
-    <rect x="30" y="45" width="40" height="36" rx="4" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
-    <rect x="72" y="45" width="40" height="36" rx="4" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
-    <rect x="114" y="45" width="40" height="36" rx="4" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
-    <rect x="156" y="45" width="40" height="36" rx="4" fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
-    <text x="50" y="68" fill="#92400e">A</text><text x="92" y="68" fill="#92400e">B</text>
-    <text x="134" y="68" fill="#92400e">C</text><text x="176" y="68" fill="#92400e">D</text>
-  </g>
-  <text x="103" y="100" text-anchor="middle" font-size="10" fill="#92400e">capacity = 4, 已满</text>
-  <!-- 箭头 -->
-  <line x1="200" y1="63" x2="250" y2="63" stroke="#6b7280" stroke-width="2" marker-end="url(#arr2)"/>
-  <!-- 新数组 -->
-  <g font-size="12" text-anchor="middle">
-    <rect x="255" y="45" width="35" height="34" rx="4" fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
-    <rect x="292" y="45" width="35" height="34" rx="4" fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
-    <rect x="329" y="45" width="35" height="34" rx="4" fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
-    <rect x="366" y="45" width="35" height="34" rx="4" fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
-    <rect x="403" y="45" width="35" height="34" rx="4" fill="#e5e7eb" stroke="#9ca3af" stroke-width="1.5"/>
-    <rect x="440" y="45" width="35" height="34" rx="4" fill="#e5e7eb" stroke="#9ca3af" stroke-width="1.5"/>
-    <text x="272" y="67" fill="#166534">A</text><text x="309" y="67" fill="#166534">B</text>
-    <text x="346" y="67" fill="#166534">C</text><text x="383" y="67" fill="#166534">D</text>
-  </g>
-  <text x="380" y="100" text-anchor="middle" font-size="10" fill="#166534">capacity = 8</text>
-  <defs>
-    <marker id="arr2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L7,3 L0,6 z" fill="#6b7280"/>
-    </marker>
-  </defs>
-  <text x="235" y="145" text-anchor="middle" font-size="11" fill="#374151">旧数组随后被 GC 回收（Java）/ free（C/C++）</text>
-</svg>
-
-</div>
-
+<p>核心操作 <code>add(x)</code>（尾部追加）：若 <code>size == capacity</code>（满了），先<strong>扩容</strong>分配 2 倍大新数组并复制，再把 <code>x</code> 写进 <code>a[size]</code>、<code>size++</code>。</p>
 <p>来一个最小可运行的 Java 版（刻意不依赖标准库，把机制摊开）：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">GrowableIntArray</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span>[] a;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span> size;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">GrowableIntArray</span><span class="params">()</span> &#123;</span><br><span class="line">        a = <span class="keyword">new</span> <span class="title class_">int</span>[<span class="number">1</span>];   <span class="comment">// 初始容量 1</span></span><br><span class="line">        size = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">add</span><span class="params">(<span class="type">int</span> x)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (size == a.length) resize(<span class="number">2</span> * a.length); <span class="comment">// 满了就翻倍</span></span><br><span class="line">        a[size++] = x;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">resize</span><span class="params">(<span class="type">int</span> cap)</span> &#123;</span><br><span class="line">        <span class="type">int</span>[] b = <span class="keyword">new</span> <span class="title class_">int</span>[cap];</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; size; i++) b[i] = a[i];  <span class="comment">// O(n) 复制</span></span><br><span class="line">        a = b;                                        <span class="comment">// 旧数组等待回收</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">public</span> <span class="type">int</span> <span class="title function_">get</span><span class="params">(<span class="type">int</span> i)</span> &#123; <span class="keyword">return</span> a[i]; &#125;</span><br><span class="line">    <span class="keyword">public</span> <span class="type">int</span> <span class="title function_">size</span><span class="params">()</span> &#123; <span class="keyword">return</span> size; &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">GrowableIntArray</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span>[] a;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span> size;</span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">GrowableIntArray</span><span class="params">()</span> &#123; a = <span class="keyword">new</span> <span class="title class_">int</span>[<span class="number">1</span>]; size = <span class="number">0</span>; &#125;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">add</span><span class="params">(<span class="type">int</span> x)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (size == a.length) resize(<span class="number">2</span> * a.length); <span class="comment">// 满了就翻倍</span></span><br><span class="line">        a[size++] = x;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">resize</span><span class="params">(<span class="type">int</span> cap)</span> &#123;</span><br><span class="line">        <span class="type">int</span>[] b = <span class="keyword">new</span> <span class="title class_">int</span>[cap];</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; size; i++) b[i] = a[i];  <span class="comment">// O(n) 复制</span></span><br><span class="line">        a = b;                                        <span class="comment">// 旧数组等待回收</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">public</span> <span class="type">int</span> <span class="title function_">get</span><span class="params">(<span class="type">int</span> i)</span> &#123; <span class="keyword">return</span> a[i]; &#125;</span><br><span class="line">    <span class="keyword">public</span> <span class="type">int</span> <span class="title function_">size</span><span class="params">()</span> &#123; <span class="keyword">return</span> size; &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>客户端完全无感：</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">GrowableIntArray</span> <span class="variable">list</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">GrowableIntArray</span>();</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; <span class="number">5</span>; i++) list.add(i);</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; list.size(); i++) System.out.print(list.get(i) + <span class="string">&quot; &quot;</span>);</span><br></pre></td></tr></table></figure>
@@ -278,51 +213,32 @@ btf.addGlobalFn('pjaxComplete', () => {
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">0 1 2 3 4 </span><br></pre></td></tr></table></figure>
 
 <hr>
-<h2 id="三、坑：为什么要-翻倍-，而不是-每次-1-？"><a href="#三、坑：为什么要-翻倍-，而不是-每次-1-？" class="headerlink" title="三、坑：为什么要&quot;翻倍&quot;，而不是&quot;每次 +1&quot;？"></a>三、坑：为什么要&quot;翻倍&quot;，而不是&quot;每次 +1&quot;？</h2><p>这是动态数组最该想清楚的一点。扩容之所以贵，是因为要<strong>复制所有旧元素</strong>。关键在于——<strong>复制发生的频率</strong>。</p>
-<p><strong>如果每次满了只 +1（capacity 加 1）</strong>：第 1 次 add 不复制，第 2 次复制 1 个，第 3 次复制 2 个……第 n 次复制 n−1 个。n 次 add 的总复制量 &#x3D; 0+1+2+…+(n−1) &#x3D; <strong>O(n²)</strong>，均摊到每次是 <strong>O(n)</strong>——比静态数组还烂，毫无意义。</p>
-<p><strong>如果翻倍</strong>：容量走 1→2→4→8→16……复制只发生在容量边界。n 次 add 的总复制量是 1+2+4+…+2^⌈log₂n⌉，<strong>严格小于 2n</strong>（等比数列求和）。加上 n 次写入，<strong>总工作量 O(n)</strong>，均摊到每次 <strong>O(1)</strong>。一次&quot;贵&quot;的搬家，被后面很多次&quot;便宜&quot;的插入摊薄了。</p>
+<h2 id="三、坑：为什么要-翻倍-，而不是-每次-1-？"><a href="#三、坑：为什么要-翻倍-，而不是-每次-1-？" class="headerlink" title="三、坑：为什么要&quot;翻倍&quot;，而不是&quot;每次 +1&quot;？"></a>三、坑：为什么要&quot;翻倍&quot;，而不是&quot;每次 +1&quot;？</h2><p>扩容之所以贵，是因为要<strong>复制所有旧元素</strong>。关键在于——<strong>复制发生的频率</strong>。</p>
+<ul>
+<li><strong>如果每次满了只 +1</strong>：第 n 次 add 复制 n−1 个。n 次总复制量 &#x3D; 0+1+2+…+(n−1) &#x3D; <strong>O(n²)</strong>，均摊到每次 <strong>O(n)</strong>——比静态数组还烂。</li>
+<li><strong>如果翻倍</strong>：容量走 1→2→4→8→16…，复制只发生在容量边界。n 次总复制量 &#x3D; 1+2+4+…+2^⌈log₂n⌉，<strong>严格小于 2n</strong>（等比数列求和）。加上 n 次写入，总工作量 <strong>O(n)</strong>，均摊到每次 <strong>O(1)</strong>。一次&quot;贵&quot;的搬家，被后面很多次&quot;便宜&quot;的插入摊薄了。</li>
+</ul>
 <blockquote>
-<p><strong>本质一句话</strong>：翻倍让&quot;搬家&quot;越来越稀有（频率指数下降），所以总复制量被压在 O(n) 内——这是&quot;以空间换均摊时间&quot;的典型权衡。</p>
+<p><strong>本质一句话</strong>：翻倍让复制频率几何级稀疏化（任何 &gt;1 的常数因子都行，不止 2×），所以总复制量被压在 O(n) 内——这是&quot;以空间换均摊时间&quot;的典型权衡。</p>
 </blockquote>
 <hr>
-<h2 id="四、均摊分析：三种武器"><a href="#四、均摊分析：三种武器" class="headerlink" title="四、均摊分析：三种武器"></a>四、均摊分析：三种武器</h2><p>&quot;均摊 O(1)&quot;到底怎么严格证明？有三种等价武器，我们用同一个翻倍动态数组各打一遍。</p>
-<h3 id="4-1-聚合分析（Aggregate）"><a href="#4-1-聚合分析（Aggregate）" class="headerlink" title="4.1 聚合分析（Aggregate）"></a>4.1 聚合分析（Aggregate）</h3><p>直接算 n 次 <code>add</code> 的<strong>总代价</strong> T(n)，再除以 n。</p>
+<h2 id="四、均摊-O-1-一眼看穿（聚合分析）"><a href="#四、均摊-O-1-一眼看穿（聚合分析）" class="headerlink" title="四、均摊 O(1) 一眼看穿（聚合分析）"></a>四、均摊 O(1) 一眼看穿（聚合分析）</h2><p>&quot;均摊 O(1)&quot;怎么严格证明？最直观的<strong>聚合分析</strong>就够了：直接算 n 次 <code>add</code> 的<strong>总代价</strong> T(n)，再除以 n。</p>
 <ul>
 <li>写入代价：n 次，共 <strong>n</strong>。</li>
 <li>复制代价：发生在 size 达到 1, 2, 4, 8, … 时，复制量分别为 1, 2, 4, 8, …<br>T(n) ≤ n + (1 + 2 + 4 + … + 2^⌈log₂n⌉) &lt; n + 2n &#x3D; <strong>3n</strong>。</li>
-<li>所以单次的<strong>均摊代价 &#x3D; T(n)&#x2F;n &lt; 3 &#x3D; O(1)</strong>。</li>
+<li>所以单次<strong>均摊代价 &#x3D; T(n)&#x2F;n &lt; 3 &#x3D; O(1)</strong>。</li>
 </ul>
-<p>聚合法最直观，但只给&quot;平均值上界&quot;，看不出每次怎么摊。</p>
-<h3 id="4-2-记账法（Accounting-Banker-s）"><a href="#4-2-记账法（Accounting-Banker-s）" class="headerlink" title="4.2 记账法（Accounting &#x2F; Banker&#39;s）"></a>4.2 记账法（Accounting &#x2F; Banker&#39;s）</h3><p>给每次 <code>add</code> 记一笔 <strong>3 单位</strong>的&quot;费用&quot;：</p>
-<ul>
-<li><strong>1 单位</strong>：支付本次写入的真实代价。</li>
-<li><strong>2 单位</strong>：存进&quot;信用账户&quot;当押金。</li>
-</ul>
-<p>不变量：账户里攒的信用，永远够付下一次搬家。具体地，一次翻倍要复制 <code>capacity</code> 个元素，而这之前刚攒了 <code>capacity</code> 次插入 × 2 单位 &#x3D; 2·capacity 的信用，绰绰有余。既然每次实际只花 3 单位，均摊代价就是 <strong>O(1)</strong>。</p>
-<p>记账法的妙处：把&quot;未来的贵操作&quot;提前用&quot;现在的便宜操作&quot;预付了——像零存整取。</p>
-<h3 id="4-3-势能法（Potential）"><a href="#4-3-势能法（Potential）" class="headerlink" title="4.3 势能法（Potential）"></a>4.3 势能法（Potential）</h3><p>给数据结构定义一个<strong>势能函数 Φ</strong>（类似&quot;被压缩的弹簧能量&quot;），让:</p>
-<blockquote>
-<p><strong>均摊代价 &#x3D; 实际代价 + Φ(之后) − Φ(之前)</strong></p>
-</blockquote>
-<p>我们对翻倍动态数组取 <strong>Φ &#x3D; 2·size − capacity</strong>（始终 ≥ 0）。</p>
-<ul>
-<li><strong>普通插入</strong>（未满，capacity 不变）：实际代价 c &#x3D; 1；ΔΦ &#x3D; 2(size+1) − cap − (2·size − cap) &#x3D; 2。<br>均摊 &#x3D; 1 + 2 &#x3D; <strong>3</strong>。</li>
-<li><strong>触发扩容的插入</strong>（插入前 size &#x3D;&#x3D; capacity）：新 capacity &#x3D; 2·cap，插入后 size &#x3D; cap+1。<br>实际代价 c &#x3D; 1（写）+ cap（复制）&#x3D; cap + 1。<br>扩容前 Φ &#x3D; 2·cap − cap &#x3D; cap；扩容后 Φ &#x3D; 2(cap+1) − 2cap &#x3D; 2。<br>ΔΦ &#x3D; 2 − cap。均摊 &#x3D; (cap + 1) + (2 − cap) &#x3D; <strong>3</strong>。</li>
-</ul>
-<p><strong>每一次插入的均摊代价都恰好是 3</strong>，无论是否触发扩容。这就是势能法的威力：把&quot;偶发尖峰&quot;用势能的涨落彻底抹平。</p>
+<p>也就是说：偶尔出现一次 O(n) 的&quot;搬家尖峰&quot;，但被前后大量 O(1) 的普通插入摊平，平均每次只花常数时间。下面这张图把&quot;尖峰被摊平&quot;画出来：</p>
 <div align="center">
 
 <svg width="430" height="160" viewBox="0 0 430 160" xmlns="http://www.w3.org/2000/svg">
   <text x="215" y="18" text-anchor="middle" font-size="12" fill="#374151">单次 add 的代价：平时 O(1)，容量边界出现 O(n) 尖峰</text>
-  <!-- 基线 -->
   <line x1="40" y1="130" x2="400" y2="130" stroke="#9ca3af" stroke-width="1"/>
-  <!-- 低价柱 -->
   <g fill="#93c5fd" stroke="#2563eb" stroke-width="1">
     <rect x="55"  y="120" width="20" height="10"/>
     <rect x="85"  y="120" width="20" height="10"/>
     <rect x="115" y="120" width="20" height="10"/>
   </g>
-  <!-- 尖峰（扩容） -->
   <rect x="145" y="40" width="20" height="90" fill="#fca5a5" stroke="#dc2626" stroke-width="1"/>
   <g fill="#93c5fd" stroke="#2563eb" stroke-width="1">
     <rect x="175" y="120" width="20" height="10"/>
@@ -333,96 +249,15 @@ btf.addGlobalFn('pjaxComplete', () => {
     <rect x="325" y="120" width="20" height="10"/>
     <rect x="355" y="120" width="20" height="10"/>
   </g>
-  <!-- 大尖峰 -->
   <rect x="385" y="20" width="20" height="110" fill="#fca5a5" stroke="#dc2626" stroke-width="1"/>
   <text x="155" y="148" text-anchor="middle" font-size="9" fill="#dc2626">复制4</text>
   <text x="395" y="148" text-anchor="middle" font-size="9" fill="#dc2626">复制8</text>
   <text x="215" y="148" text-anchor="middle" font-size="10" fill="#6b7280">均摊后每次 ≈ 3，与尖峰无关</text>
 </svg>
-
 </div>
 
 <hr>
-<h2 id="五、Java-ArrayList-与-C-vector-对照"><a href="#五、Java-ArrayList-与-C-vector-对照" class="headerlink" title="五、Java ArrayList 与 C++ vector 对照"></a>五、Java <code>ArrayList</code> 与 C++ <code>vector</code> 对照</h2><p>标准库里的动态数组，机制完全一致，API 各有所长：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Java：java.util.ArrayList</span></span><br><span class="line">ArrayList&lt;Integer&gt; list = <span class="keyword">new</span> <span class="title class_">ArrayList</span>&lt;&gt;();</span><br><span class="line">list.ensureCapacity(<span class="number">100</span>); <span class="comment">// 预分配容量，避免前几次扩容</span></span><br><span class="line">list.add(<span class="number">1</span>);</span><br><span class="line"><span class="type">int</span> <span class="variable">cap</span> <span class="operator">=</span> list.size();    <span class="comment">// 注意：Java 不直接暴露 capacity</span></span><br><span class="line">list.trimToSize();        <span class="comment">// 释放多余容量（收缩）</span></span><br></pre></td></tr></table></figure>
-
-<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// C++：std::vector</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;vector&gt;</span></span></span><br><span class="line">std::vector&lt;<span class="type">int</span>&gt; v;</span><br><span class="line">v.<span class="built_in">reserve</span>(<span class="number">100</span>);           <span class="comment">// 等价于 ensureCapacity</span></span><br><span class="line">v.<span class="built_in">push_back</span>(<span class="number">1</span>);</span><br><span class="line"><span class="type">size_t</span> cap = v.<span class="built_in">capacity</span>();<span class="comment">// C++ 直接暴露 capacity()</span></span><br><span class="line">v.<span class="built_in">shrink_to_fit</span>();        <span class="comment">// C++11：释放多余容量</span></span><br></pre></td></tr></table></figure>
-
-<table>
-<thead>
-<tr>
-<th>维度</th>
-<th>Java <code>ArrayList</code></th>
-<th>C++ <code>vector</code></th>
-</tr>
-</thead>
-<tbody><tr>
-<td>扩容因子</td>
-<td>约 1.5×（JDK 不同版本有差异）</td>
-<td>通常 2×</td>
-</tr>
-<tr>
-<td>预分配</td>
-<td><code>ensureCapacity</code></td>
-<td><code>reserve</code></td>
-</tr>
-<tr>
-<td>查容量</td>
-<td>无直接 API（靠 <code>size</code>）</td>
-<td><code>capacity()</code></td>
-</tr>
-<tr>
-<td>收缩</td>
-<td><code>trimToSize()</code></td>
-<td><code>shrink_to_fit()</code></td>
-</tr>
-<tr>
-<td>缩容时机</td>
-<td><strong>仅显式调用</strong></td>
-<td><strong>仅显式调用</strong></td>
-</tr>
-</tbody></table>
-<blockquote>
-<p>注意两边<strong>都不会自动缩容</strong>：如果装了 10 万再 <code>clear()</code>，底层数组仍占 10 万的空间，除非你显式 <code>trimToSize</code> &#x2F; <code>shrink_to_fit</code>。这是有意为之——避免&quot;扩容↔缩容&quot;反复横跳造成的抖动。</p>
-</blockquote>
-<hr>
-<h2 id="六、代价总表：静态数组-vs-动态数组"><a href="#六、代价总表：静态数组-vs-动态数组" class="headerlink" title="六、代价总表：静态数组 vs 动态数组"></a>六、代价总表：静态数组 vs 动态数组</h2><table>
-<thead>
-<tr>
-<th>操作</th>
-<th>静态数组</th>
-<th>动态数组（均摊）</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>随机访问 <code>get(i)</code></td>
-<td>O(1)</td>
-<td>O(1)</td>
-</tr>
-<tr>
-<td>尾部 <code>add</code></td>
-<td>满则失败</td>
-<td><strong>O(1) 均摊</strong></td>
-</tr>
-<tr>
-<td>中间 <code>insert(i)</code></td>
-<td>O(n) 搬移</td>
-<td>O(n) 搬移</td>
-</tr>
-<tr>
-<td>头部 <code>insert</code></td>
-<td>O(n) 搬移</td>
-<td>O(n) 搬移</td>
-</tr>
-<tr>
-<td>空间占用</td>
-<td>精确 n</td>
-<td>size … 2·size（≤ 2 倍浪费）</td>
-</tr>
-</tbody></table>
-<p>动态数组<strong>赢在&quot;尾部追加快 + 随机访问快&quot;</strong>，代价是&quot;中间&#x2F;头部插入要搬移&quot;以及最多一倍的空间浪费。它牺牲了任意位置 O(1) 插入，换来了自动扩容的便利——这正是后续链表要补的那个洞。</p>
-<hr>
-<h2 id="七、坑：均摊-≠-平均（Amortized-≠-Average）"><a href="#七、坑：均摊-≠-平均（Amortized-≠-Average）" class="headerlink" title="七、坑：均摊 ≠ 平均（Amortized ≠ Average）"></a>七、坑：均摊 ≠ 平均（Amortized ≠ Average）</h2><p>这是面试和考试最爱挖的坑：</p>
+<h2 id="五、坑：均摊-≠-平均（Amortized-≠-Average）"><a href="#五、坑：均摊-≠-平均（Amortized-≠-Average）" class="headerlink" title="五、坑：均摊 ≠ 平均（Amortized ≠ Average）"></a>五、坑：均摊 ≠ 平均（Amortized ≠ Average）</h2><p>这是面试和考试最爱挖的坑：</p>
 <ul>
 <li><strong>平均（average）</strong>：依赖<strong>概率分布</strong>——&quot;随机场景下平均多快&quot;。如果输入有偏（比如总是撑满才插入），平均可能退化。</li>
 <li><strong>均摊（amortized）</strong>：是<strong>最坏情况</strong>下的序列保证——无论输入怎么刁难，任意 n 次操作的总代价都 ≤ c·n。它不赌概率。</li>
@@ -435,13 +270,12 @@ btf.addGlobalFn('pjaxComplete', () => {
 <p>🐾 <strong>小结</strong></p>
 <ul>
 <li>动态数组 &#x3D; 底层数组 + <code>capacity</code>&#x2F;<code>size</code>，满则<strong>翻倍扩容</strong>并复制。</li>
-<li><strong>翻倍</strong>而非 +1，是因为翻倍让复制频率指数下降，总复制量压到 O(n)。</li>
-<li>均摊分析三法：<strong>聚合</strong>（总账÷n）、<strong>记账</strong>（每次预付 3 单位）、<strong>势能</strong>（Φ 抹平尖峰），结论都是每次 add <strong>均摊 O(1)</strong>。</li>
+<li><strong>翻倍</strong>而非 +1，是因为翻倍让复制频率几何级稀疏化，总复制量压到 O(n)，均摊 <strong>O(1)</strong>。</li>
+<li>用<strong>聚合分析</strong>一眼看穿：n 次 add 总代价 &lt; 3n，单次均摊 &lt; 3。</li>
 <li>均摊 ≠ 平均：均摊是最坏情况的序列保证，不依赖概率。</li>
-<li>标准库对照：Java <code>ArrayList</code>(ensureCapacity&#x2F;trimToSize) ↔ C++ <code>vector</code>(reserve&#x2F;shrink_to_fit)；两者都<strong>不自动缩容</strong>，以防抖动。</li>
-<li>动态数组短板（中间插删要搬移）正是链表的主场——而链表用&quot;不连续 + 指针&quot;换掉了随机访问。</li>
+<li>它赢在&quot;尾部追加快 + 随机访问快&quot;，代价是&quot;中间&#x2F;头部插入要搬移&quot;以及最多一倍的空间浪费——这些代价画像，是评估任何一种数据结构时都要反复掂量的维度。</li>
 </ul>
-</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0102/">https://hespethorn.github.io/posts/c61b0102/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%8A%A8%E6%80%81%E6%95%B0%E7%BB%84/">动态数组</a><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/ArrayList/">ArrayList</a><a class="post-meta__tags" href="/tags/%E5%9D%87%E6%91%8A%E5%88%86%E6%9E%90/">均摊分析</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">692</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">850</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">78</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0102/">https://hespethorn.github.io/posts/c61b0102/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%8A%A8%E6%80%81%E6%95%B0%E7%BB%84/">动态数组</a><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/ArrayList/">ArrayList</a><a class="post-meta__tags" href="/tags/%E5%9D%87%E6%91%8A%E5%88%86%E6%9E%90/">均摊分析</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">693</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">852</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">78</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
   const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
   let intervalId;
 
@@ -502,7 +336,7 @@ function updateLoveTime() {
 // 初始调用
 updateLoveTime();
 // 每秒更新一次
-setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/0/" title="Untitled">Untitled</a><time datetime="2026-08-20T05:23:14.298Z" title="Created 2026-08-20 13:23:14">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260820/" title="AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×">AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b4e7a1c9/" title="玉津渡的琢玉人">玉津渡的琢玉人</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260819/" title="AI 新闻速递｜2026-08-19：Muse Code 入局、OpenCode 破 14 万星、Agility 上市前夜、脑电标注攻数据瓶颈、机器人控制&quot;调音量&quot;">AI 新闻速递｜2026-08-19：Muse Code 入局、OpenCode 破 14 万星、Agility 上市前夜、脑电标注攻数据瓶颈、机器人控制&quot;调音量&quot;</a><time datetime="2026-08-18T16:00:00.000Z" title="Created 2026-08-19 00:00:00">2026-08-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cd1b58ab/" title="维肯湾的摆渡人">维肯湾的摆渡人</a><time datetime="2026-08-18T16:00:00.000Z" title="Created 2026-08-19 00:00:00">2026-08-19</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/0/" title="Untitled">Untitled</a><time datetime="2026-08-20T06:10:52.581Z" title="Created 2026-08-20 14:10:52">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260820/" title="AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×">AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b4e7a1c9/" title="玉津渡的琢玉人">玉津渡的琢玉人</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260819/" title="AI 新闻速递｜2026-08-19：Muse Code 入局、OpenCode 破 14 万星、Agility 上市前夜、脑电标注攻数据瓶颈、机器人控制&quot;调音量&quot;">AI 新闻速递｜2026-08-19：Muse Code 入局、OpenCode 破 14 万星、Agility 上市前夜、脑电标注攻数据瓶颈、机器人控制&quot;调音量&quot;</a><time datetime="2026-08-18T16:00:00.000Z" title="Created 2026-08-19 00:00:00">2026-08-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cd1b58ab/" title="维肯湾的摆渡人">维肯湾的摆渡人</a><time datetime="2026-08-18T16:00:00.000Z" title="Created 2026-08-19 00:00:00">2026-08-19</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">知识导航</p><ul class="ft-links"><li><a href="/categories/Linux/">Linux</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/前端/">前端</a><a href="/categories/Computer-Networking/">计算机网络</a></li><li><a href="/categories/C/">C++</a><a href="/categories/Python/">Python</a></li><li><a href="/categories/寓言故事/">寓言故事</a><a href="/categories/文章/">技术文章</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://huggingface.co/"><img src="https://huggingface.co/favicon.ico" alt="Hugging Face" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.openai.com/"><img src="https://www.openai.com/favicon.ico" alt="OpenAI" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.anthropic.com/"><img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.kaggle.com/"><img src="https://www.kaggle.com/favicon.ico" alt="Kaggle" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://hello-algo.com/"><img src="https://www.hello-algo.com/assets/hero/astronaut.png" alt="HelloAlgo" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://ruanyifeng.com/blog/archives.html/"><img src="https://www.ruanyifeng.com/blog/images/person_shot.jpg" alt="JavaScript" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
   const showKatex = () => {
     document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
   }
