@@ -305,7 +305,7 @@ function categoriesChart () {
     var categoriesChart = echarts.init(document.getElementById('categories-chart'), 'light');
     var categoriesOption = {
       title: {
-        text: '文章分类统计图',
+        text: 'Article Categories',
         x: 'center',
         textStyle: {
           color: color
@@ -325,7 +325,7 @@ function categoriesChart () {
         containLabel: true
       },
       xAxis: {
-        name: '文章篇数',
+        name: 'Count',
         type: 'value',
         nameTextStyle: {
           color: color
@@ -366,7 +366,7 @@ function categoriesChart () {
         }
       },
       series: [{
-        name: '文章篇数',
+        name: 'Articles',
         type: 'bar',
         data: ${categoryArrJson},
         barWidth: '60%',
@@ -400,7 +400,7 @@ function categoriesChart () {
         },
         markLine: {
           data: [{
-            name: '平均值',
+            name: 'Average',
             type: 'average',
             label: {
               color: color
