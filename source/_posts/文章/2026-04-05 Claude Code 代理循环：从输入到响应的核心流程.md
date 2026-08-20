@@ -6,8 +6,8 @@ tags:
   - 代码编辑器
   - 工作原理
   - Agent Loop
-categories: [AI-Applications]
-series: AI-Applications
+categories: [AI-applications, Claude]
+series: Claude
 abbrlink: 8f9e7d0c
 date: 2026-04-05
 ---

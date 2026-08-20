@@ -8,9 +8,8 @@ tags:
   - SSE
   - reasoning_content
   - 调试
-categories:
-  - AI-Applications
-series: AI-Applications
+categories: [AI-applications, DeepSeek]
+series: DeepSeek-v4-Pro
 abbrlink: deepseek-v4-trae-disorder
 date: 2026-04-27
 ---

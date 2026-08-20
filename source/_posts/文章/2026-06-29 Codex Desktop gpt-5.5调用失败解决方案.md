@@ -6,9 +6,8 @@ tags:
   - 故障排查
   - AI工具
   - 解决方案
-categories:
-  - 文章
-series: 文章
+categories: [AI-applications, Codex]
+series: Codex
 abbrlink:
 date: 2026-06-29
 ---
