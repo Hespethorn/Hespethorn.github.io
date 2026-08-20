@@ -2,8 +2,7 @@
 title: Leetcode 0040. Combination Sum II
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: 3b1f13b1

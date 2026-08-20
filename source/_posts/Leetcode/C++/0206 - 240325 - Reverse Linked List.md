@@ -3,8 +3,7 @@ title: Leetcode 0206. Reverse Linked List
 tags:
   - leetcode
   - 递归
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 递归
 series: Leetcode-Cpp
 abbrlink: eed004f4

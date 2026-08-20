@@ -3,9 +3,7 @@ title: Leetcode 0035. Search Insert Position
 tags:
   - leetcode
   - 二分查找
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 611ef203
 date: 2023-04-12

@@ -2,8 +2,7 @@
 title: Leetcode 0107. Binary Tree Level Order Traversal II
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: b92a5eaf

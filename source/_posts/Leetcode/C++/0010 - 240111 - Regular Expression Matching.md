@@ -2,9 +2,7 @@
 title: Leetcode 0010. Regular Expression Matching
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 动态规划
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: b8d9b34
 date: 2023-02-01

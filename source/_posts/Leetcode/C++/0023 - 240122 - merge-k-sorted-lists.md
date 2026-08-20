@@ -2,8 +2,7 @@
 title: Leetcode 0023.merge-k-sorted-lists
 tags:
   - queue
-categories:
-  - Lists
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: ab971fff
 date: 2023-03-14

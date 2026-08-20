@@ -5,8 +5,7 @@ tags:
   - python
   - 字符串
   - 模拟
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'c7d8e4a1'
 date: 2024-01-27

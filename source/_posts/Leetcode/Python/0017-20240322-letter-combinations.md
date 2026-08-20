@@ -5,8 +5,7 @@ tags:
   - python
   - 回溯
   - 递归
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'letter-combinations'
 date: 2024-03-22

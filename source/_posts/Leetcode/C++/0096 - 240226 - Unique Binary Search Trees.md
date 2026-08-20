@@ -2,8 +2,7 @@
 title: Leetcode 0096. Unique Binary Search Trees
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 51c50c32

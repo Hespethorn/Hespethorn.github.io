@@ -6,8 +6,7 @@ tags:
   - 回溯
   - dfs
   - 字符串
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'generate-parentheses'
 date: 2024-04-16

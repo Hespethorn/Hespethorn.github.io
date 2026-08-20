@@ -3,9 +3,7 @@ title: Leetcode 0844. Backspace String Compare
 tags:
   - leetcode
   - 双指针
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: d9f37d2f
 date: 2024-03-01

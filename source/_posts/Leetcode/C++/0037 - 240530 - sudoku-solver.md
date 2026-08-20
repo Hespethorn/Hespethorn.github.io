@@ -7,8 +7,7 @@ tags:
   - Matrix
   - Bit Manipulation
   - Heap
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 2b3c4d5e
 date: 2024-05-30

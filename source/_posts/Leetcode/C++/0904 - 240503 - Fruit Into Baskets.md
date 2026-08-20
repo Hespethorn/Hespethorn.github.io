@@ -2,9 +2,7 @@
 title: Leetcode 0904. Fruit Into Baskets
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 哈希表
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 4b5dc48c
 date: 2024-03-06

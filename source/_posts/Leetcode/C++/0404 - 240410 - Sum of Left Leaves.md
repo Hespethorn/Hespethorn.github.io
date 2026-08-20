@@ -2,8 +2,7 @@
 title: Leetcode 0404. Sum of Left Leaves
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 93483f08

@@ -2,8 +2,7 @@
 title: Leetcode 0199. Binary Tree Right Side View
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: c12f9af1

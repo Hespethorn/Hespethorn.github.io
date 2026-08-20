@@ -8,8 +8,7 @@ tags:
   - Manacher
   - 动态规划
   - 字符串
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'b2c6d9f3'
 date: 2024-01-22

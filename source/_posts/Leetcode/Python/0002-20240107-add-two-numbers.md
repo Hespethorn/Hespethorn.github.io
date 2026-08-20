@@ -3,8 +3,7 @@ title: Leetcode 0002. Add Two Numbers
 tags:
   - leetcode
   - 递归
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: '63048128'
 date: 2024-01-07

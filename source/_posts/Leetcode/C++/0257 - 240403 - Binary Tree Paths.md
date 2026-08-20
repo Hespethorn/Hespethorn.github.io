@@ -2,8 +2,7 @@
 title: Leetcode 0257. Binary Tree Paths
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 2cbb7af4

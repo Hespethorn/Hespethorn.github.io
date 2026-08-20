@@ -6,8 +6,7 @@ tags:
   - 链表
   - 递归
   - 迭代
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'swap-nodes-in-pairs'
 date: 2024-04-26

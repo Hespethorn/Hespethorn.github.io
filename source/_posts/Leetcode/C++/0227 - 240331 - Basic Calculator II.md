@@ -2,9 +2,7 @@
 title: Leetcode 0227. Basic Calculator II
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - Stack
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: cb0c2dcd
 date: 2023-11-12

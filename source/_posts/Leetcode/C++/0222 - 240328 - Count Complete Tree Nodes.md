@@ -2,8 +2,7 @@
 title: Leetcode 0222. Count Complete Tree Nodes
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 8b563592

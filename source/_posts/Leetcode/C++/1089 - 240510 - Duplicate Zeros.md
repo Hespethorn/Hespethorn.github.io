@@ -3,9 +3,7 @@ title: Leetcode 1089. Duplicate Zeros
 tags:
   - leetcode
   - 双指针
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 5ddd6610
 date: 2024-04-01

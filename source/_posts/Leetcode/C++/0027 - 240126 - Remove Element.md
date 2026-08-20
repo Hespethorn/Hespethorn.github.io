@@ -2,9 +2,7 @@
 title: Leetcode 0027. Remove Element
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 559d22c1
 date: 2023-03-29

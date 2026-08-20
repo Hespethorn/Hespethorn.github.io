@@ -3,8 +3,7 @@ title: Leetcode 0002. Add Two Numbers
 tags:
   - leetcode
   - 递归
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 92a3ae0a
 date: 2023-01-04

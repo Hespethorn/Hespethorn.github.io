@@ -2,8 +2,7 @@
 title: Leetcode 0145. Binary Tree Postorder Traversal
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: '60640130'

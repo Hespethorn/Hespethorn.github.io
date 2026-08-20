@@ -6,8 +6,7 @@ tags:
   - 动态规划
   - 正则表达式
   - 递归
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'regex-matching-dp'
 date: 2024-02-16

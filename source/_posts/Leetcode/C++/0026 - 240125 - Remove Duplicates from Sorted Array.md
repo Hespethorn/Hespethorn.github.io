@@ -3,9 +3,7 @@ title: Leetcode 0026. Remove Duplicates from Sorted Array
 tags:
   - leetcode
   - 双指针
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 43f159fc
 date: 2023-03-24

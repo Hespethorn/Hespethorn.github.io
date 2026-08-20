@@ -6,8 +6,7 @@ tags:
   - String
   - Stack
   - Dynamic Programming
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 2c4d6e8f
 date: 2024-05-28

@@ -2,9 +2,7 @@
 title: Leetcode 0707. Design Linked List
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - List
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: fb67fadc
 date: 2024-02-20

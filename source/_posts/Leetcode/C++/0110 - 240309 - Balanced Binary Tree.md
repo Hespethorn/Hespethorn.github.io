@@ -2,8 +2,7 @@
 title: Leetcode 0110. Balanced Binary Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: b5c6d6e4

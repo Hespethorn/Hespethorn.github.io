@@ -2,8 +2,7 @@
 title: Leetcode 0101. Symmetric Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: df366c05

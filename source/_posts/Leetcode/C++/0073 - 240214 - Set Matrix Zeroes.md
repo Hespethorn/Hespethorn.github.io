@@ -2,9 +2,7 @@
 title: Leetcode 0073. Set Matrix Zeroes
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 哈希表
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 3be42325
 date: 2023-06-03

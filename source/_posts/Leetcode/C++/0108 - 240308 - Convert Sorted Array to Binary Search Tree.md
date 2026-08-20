@@ -2,8 +2,7 @@
 title: Leetcode 0108. Convert Sorted Array to Binary Search Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 387af610

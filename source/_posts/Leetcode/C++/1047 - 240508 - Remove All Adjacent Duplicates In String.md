@@ -2,9 +2,7 @@
 title: Leetcode 1047. Remove All Adjacent Duplicates In String
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - Stack
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 64e2f268
 date: 2024-03-26

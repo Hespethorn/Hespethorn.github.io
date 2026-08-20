@@ -5,8 +5,7 @@ tags:
   - python
   - 双指针
   - 数组
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'remove-element'
 date: 2024-05-11

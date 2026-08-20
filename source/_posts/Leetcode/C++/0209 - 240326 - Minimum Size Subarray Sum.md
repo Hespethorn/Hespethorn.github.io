@@ -2,9 +2,7 @@
 title: Leetcode 0209. Minimum Size Subarray Sum
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: e9a158c2
 date: 2023-10-27

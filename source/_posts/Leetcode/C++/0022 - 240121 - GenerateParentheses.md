@@ -5,8 +5,7 @@ tags:
   - 数据结构
   - 程序
   - 函数
-categories:
-  - C-Code
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 57fc8873
 date: 2023-03-11

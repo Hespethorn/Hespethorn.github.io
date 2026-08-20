@@ -2,8 +2,7 @@
 title: Leetcode 0226. Invert Binary Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: e977e474

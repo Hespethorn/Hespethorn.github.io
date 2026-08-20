@@ -2,9 +2,7 @@
 title: Leetcode 0011. Container With Most Water
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: b1e67904
 date: 2023-02-04

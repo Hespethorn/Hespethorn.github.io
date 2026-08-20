@@ -2,9 +2,7 @@
 title: Leetcode 0008. String to Integer (atoi)
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - string
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: '513e9683'
 date: 2023-01-24

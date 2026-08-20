@@ -2,9 +2,7 @@
 title: Leetcode 0509. Fibonacci Number
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 动态规划
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 99808cc9
 date: 2024-01-20

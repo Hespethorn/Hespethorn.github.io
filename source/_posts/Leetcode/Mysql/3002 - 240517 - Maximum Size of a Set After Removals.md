@@ -2,8 +2,7 @@
 title: Leetcode 3002. Maximum Size of a Set After Removals
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - Hash
 series: Leetcode-Cpp-Mysql
 abbrlink: d384b331

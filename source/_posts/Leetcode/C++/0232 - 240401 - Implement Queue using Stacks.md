@@ -2,9 +2,7 @@
 title: Leetcode 0232. Implement Queue using Stacks
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - Stack
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: e8433ada
 date: 2023-11-15

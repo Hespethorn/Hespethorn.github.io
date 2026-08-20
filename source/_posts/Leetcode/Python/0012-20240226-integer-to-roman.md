@@ -6,8 +6,7 @@ tags:
   - 贪心算法
   - 字符串
   - match-case
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'integer-to-roman'
 date: 2024-02-26

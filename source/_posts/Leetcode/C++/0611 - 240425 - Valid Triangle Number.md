@@ -2,9 +2,7 @@
 title: Leetcode 0611. Valid Triangle Number
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 7048cf13
 date: 2024-02-06

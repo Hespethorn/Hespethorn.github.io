@@ -2,8 +2,7 @@
 title: Leetcode 0098. Validate Binary Search Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: ad3b6ff4

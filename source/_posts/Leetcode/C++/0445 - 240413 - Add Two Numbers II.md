@@ -2,8 +2,7 @@
 title: Leetcode 0445. Add Two Numbers II
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - null
 series: Leetcode-Cpp
 abbrlink: ae61c030

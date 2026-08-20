@@ -2,9 +2,7 @@
 title: Leetcode 0287. Find the Duplicate Number
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 8a031859
 date: 2023-11-29

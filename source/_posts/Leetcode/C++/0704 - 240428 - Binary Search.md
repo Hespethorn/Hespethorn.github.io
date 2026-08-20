@@ -2,9 +2,7 @@
 title: Leetcode 0704. Binary Search
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 34d48a6b
 date: 2024-02-18

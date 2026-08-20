@@ -6,8 +6,7 @@ tags:
   - 链表
   - 分治
   - 堆
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'merge-k-sorted-lists'
 date: 2024-04-21

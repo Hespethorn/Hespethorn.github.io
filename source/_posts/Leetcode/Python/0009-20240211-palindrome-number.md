@@ -6,8 +6,7 @@ tags:
   - 数学
   - 回文数
   - 双指针
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'c9d2e7f8'
 date: 2024-02-11

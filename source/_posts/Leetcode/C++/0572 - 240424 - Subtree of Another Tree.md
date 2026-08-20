@@ -2,8 +2,7 @@
 title: Leetcode 0572. Subtree of Another Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: df49a9b5

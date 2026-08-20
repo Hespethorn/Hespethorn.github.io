@@ -2,8 +2,7 @@
 title: Leetcode 0429. N-ary Tree Level Order Traversal
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 541cfd3d

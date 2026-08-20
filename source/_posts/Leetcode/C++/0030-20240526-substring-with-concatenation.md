@@ -6,8 +6,7 @@ tags:
   - 滑动窗口
   - 哈希表
   - 字符串
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 'substring-with-concatenation-cpp'
 date: 2024-05-26

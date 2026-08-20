@@ -6,8 +6,7 @@ tags:
   - 字符串匹配
   - KMP
   - 暴力匹配
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'implement-strstr'
 date: 2024-05-16

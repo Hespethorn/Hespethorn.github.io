@@ -4,9 +4,7 @@ tags:
   - leetcode
   - 字符串
   - 模拟
-categories:
-  - Leetcode
-  - 字符串
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: d9e0f5b2
 date: 2023-01-17

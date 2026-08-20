@@ -2,8 +2,7 @@
 title: Leetcode 0099. Recover Binary Search Tree
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: b20ae183

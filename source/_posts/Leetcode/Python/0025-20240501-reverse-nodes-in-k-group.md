@@ -6,8 +6,7 @@ tags:
   - 链表
   - 迭代
   - 头插法
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'reverse-nodes-in-k-group'
 date: 2024-05-01

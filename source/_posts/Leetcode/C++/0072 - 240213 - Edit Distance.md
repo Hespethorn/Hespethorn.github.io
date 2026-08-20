@@ -2,9 +2,7 @@
 title: Leetcode 0072. Edit Distance
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 动态规划
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: fc74f62
 date: 2023-05-30

@@ -3,9 +3,7 @@ title: Leetcode 0977. Squares of a Sorted Array
 tags:
   - leetcode
   - 双指针
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 67872dc4
 date: 2024-03-19

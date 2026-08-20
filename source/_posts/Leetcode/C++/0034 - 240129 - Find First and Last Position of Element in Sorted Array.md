@@ -3,9 +3,7 @@ title: Leetcode 0034. Find First and Last Position of Element in Sorted Array
 tags:
   - leetcode
   - 二分查找
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: f2c6559a
 date: 2023-04-08

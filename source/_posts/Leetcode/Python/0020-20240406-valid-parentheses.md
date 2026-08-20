@@ -5,8 +5,7 @@ tags:
   - python
   - 栈
   - 字符串
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'valid-parentheses'
 date: 2024-04-06

@@ -2,8 +2,7 @@
 title: Leetcode 0077. Combinations
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: '574072e1'

@@ -5,8 +5,7 @@ tags:
   - c++
   - 位运算
   - 数学
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-C++
 abbrlink: 'divide-two-integers-cpp'
 date: 2024-05-21

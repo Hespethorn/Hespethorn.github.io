@@ -2,9 +2,7 @@
 title: Leetcode 0142. Linked List Cycle II
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - List
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 501d35ad
 date: 2023-09-13

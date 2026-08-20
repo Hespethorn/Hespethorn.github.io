@@ -5,8 +5,7 @@ tags:
   - python
   - 哈希数组
   - 滑动窗口
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: '3a5f8e01'
 date: 2024-01-12

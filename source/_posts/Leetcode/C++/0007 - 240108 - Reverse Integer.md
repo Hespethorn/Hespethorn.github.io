@@ -2,9 +2,7 @@
 title: Leetcode 0007. Reverse Integer
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - string
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 1daf065e
 date: 2023-01-20

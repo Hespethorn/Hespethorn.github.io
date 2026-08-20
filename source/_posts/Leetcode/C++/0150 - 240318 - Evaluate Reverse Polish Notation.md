@@ -2,9 +2,7 @@
 title: Leetcode 0150. Evaluate Reverse Polish Notation
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - Stack
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: a5569a6f
 date: 2023-09-28

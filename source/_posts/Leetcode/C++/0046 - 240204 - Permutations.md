@@ -2,8 +2,7 @@
 title: Leetcode 0046. Permutations
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: bffc8823

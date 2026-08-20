@@ -6,8 +6,7 @@ tags:
   - 双指针
   - 贪心算法
   - 数组
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'container-with-most-water'
 date: 2024-02-21

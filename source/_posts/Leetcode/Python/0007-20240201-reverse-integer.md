@@ -5,8 +5,7 @@ tags:
   - python
   - 数学
   - 整数溢出
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'e1f2a3c4'
 date: 2024-02-01

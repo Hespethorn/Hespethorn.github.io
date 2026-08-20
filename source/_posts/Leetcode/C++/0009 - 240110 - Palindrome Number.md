@@ -2,9 +2,7 @@
 title: Leetcode 0009. Palindrome Number
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - string
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 7f1b9ffc
 date: 2023-01-29

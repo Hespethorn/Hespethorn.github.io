@@ -3,8 +3,7 @@ title: Leetcode 0461.hamming-distance
 tags:
   - leetcode
   - Hash Table
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: '42330e94'
 date: 2024-01-10

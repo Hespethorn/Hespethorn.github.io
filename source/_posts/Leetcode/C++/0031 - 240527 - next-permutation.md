@@ -4,8 +4,7 @@ tags:
   - leetcode
   - Array
   - Two Pointers
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 7c8d2e1f
 date: 2024-05-27

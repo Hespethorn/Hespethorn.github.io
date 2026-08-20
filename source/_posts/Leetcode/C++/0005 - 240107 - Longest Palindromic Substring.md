@@ -3,9 +3,7 @@ title: Leetcode 0005. Longest Palindromic Substring
 tags:
   - leetcode
   - 二分查找
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 80ebb657
 date: 2023-01-15

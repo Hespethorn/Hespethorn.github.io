@@ -5,8 +5,7 @@ tags:
   - python
   - 字符串
   - 二分查找
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'longest-common-prefix'
 date: 2024-03-07

@@ -2,8 +2,7 @@
 title: Leetcode 1048. Longest String Chain
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 递归
 series: Leetcode-Cpp
 abbrlink: 694b7d2

@@ -5,8 +5,7 @@ tags:
   - python
   - 链表
   - 双指针
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'remove-nth-from-end'
 date: 2024-04-01

@@ -2,9 +2,7 @@
 title: Leetcode 0070. Climbing Stairs
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 动态规划
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 1eceaa5c
 date: 2023-05-25

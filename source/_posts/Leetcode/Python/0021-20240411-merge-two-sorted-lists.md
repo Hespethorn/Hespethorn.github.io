@@ -6,8 +6,7 @@ tags:
   - 链表
   - 递归
   - 迭代
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'merge-two-sorted-lists'
 date: 2024-04-11

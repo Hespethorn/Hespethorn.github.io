@@ -3,9 +3,7 @@ title: Leetcode 0033. Search in Rotated Sorted Array
 tags:
   - leetcode
   - 二分查找
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: a491ad2e
 date: 2023-04-06

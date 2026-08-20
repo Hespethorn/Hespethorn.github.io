@@ -2,8 +2,7 @@
 title: Leetcode 0144. Binary Tree Preorder Traversal
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 944106b5

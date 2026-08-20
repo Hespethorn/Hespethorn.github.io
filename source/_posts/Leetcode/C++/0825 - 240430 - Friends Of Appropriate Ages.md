@@ -2,9 +2,7 @@
 title: Leetcode 0825. Friends Of Appropriate Ages
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 8b3a0d01
 date: 2024-02-25

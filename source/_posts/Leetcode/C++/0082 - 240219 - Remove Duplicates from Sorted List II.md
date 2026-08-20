@@ -2,9 +2,7 @@
 title: Leetcode 0082. Remove Duplicates from Sorted List II
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 277ebfd
 date: 2023-06-24

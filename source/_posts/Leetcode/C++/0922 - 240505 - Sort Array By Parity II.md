@@ -3,9 +3,7 @@ title: Leetcode 0922. Sort Array By Parity II
 tags:
   - leetcode
   - 双指针
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: '18417049'
 date: 2024-03-15

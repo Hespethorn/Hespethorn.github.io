@@ -5,8 +5,7 @@ tags:
   - python
   - 二分查找
   - 双指针
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: '4b6e9c02'
 date: 2024-01-17

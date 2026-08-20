@@ -2,9 +2,7 @@
 title: Leetcode 0017. Letter Combinations of a Phone Number
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 哈希表
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 1156fe0d
 date: 2023-02-26

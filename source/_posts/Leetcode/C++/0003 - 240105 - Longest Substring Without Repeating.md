@@ -3,8 +3,7 @@ title: Leetcode 0003. Longest Substring Without Repeating Characters
 tags:
   - leetcode
   - Hash Table
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: e19faaa2
 date: 2023-01-08

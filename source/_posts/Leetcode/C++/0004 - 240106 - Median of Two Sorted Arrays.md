@@ -3,9 +3,7 @@ title: Leetcode 0004. Median of Two Sorted Arrays
 tags:
   - leetcode
   - 二分查找
-categories:
-  - Leetcode
-  - 二分查找
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: bde3b15b
 date: 2023-01-13

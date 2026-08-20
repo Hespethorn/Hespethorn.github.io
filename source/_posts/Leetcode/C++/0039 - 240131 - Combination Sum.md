@@ -2,8 +2,7 @@
 title: Leetcode 0039. Combination Sum
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - null
 series: Leetcode-Cpp
 abbrlink: 1af886ae

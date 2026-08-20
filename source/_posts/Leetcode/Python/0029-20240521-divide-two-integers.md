@@ -5,8 +5,7 @@ tags:
   - python
   - 位运算
   - 数学
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 'divide-two-integers'
 date: 2024-05-21

@@ -2,9 +2,7 @@
 title: Leetcode 0024. Swap Nodes in Pairs
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - List
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: b31fb8df
 date: 2023-03-19

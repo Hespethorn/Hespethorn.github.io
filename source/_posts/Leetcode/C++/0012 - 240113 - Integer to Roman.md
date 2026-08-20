@@ -2,9 +2,7 @@
 title: Leetcode 0012. Integer to Roman
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 哈希表
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: ad2ee4f4
 date: 2023-02-09

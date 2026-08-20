@@ -2,9 +2,7 @@
 title: Leetcode 0014. Longest Common Prefix
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - string
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: fe879b15
 date: 2023-02-14

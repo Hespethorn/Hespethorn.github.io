@@ -2,8 +2,7 @@
 title: Leetcode 0053. Maximum Subarray
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 贪心算法
 series: Leetcode-Cpp
 abbrlink: 3465f1c0

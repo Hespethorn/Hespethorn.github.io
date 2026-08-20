@@ -5,8 +5,7 @@ tags:
   - String
   - Stack
   - Dynamic Programming
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: 8d7e1f2c
 date: 2024-05-28

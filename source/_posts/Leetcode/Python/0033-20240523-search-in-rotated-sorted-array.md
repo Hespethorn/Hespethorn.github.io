@@ -5,8 +5,7 @@ tags:
   - python
   - Array
   - Binary Search
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 5e6f7a8b
 date: 2024-05-23

@@ -2,9 +2,7 @@
 title: Leetcode 0020. Valid Parentheses
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - Stack
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: f8df0d33
 date: 2023-03-04

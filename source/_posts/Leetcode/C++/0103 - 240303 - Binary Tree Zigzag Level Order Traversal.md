@@ -2,8 +2,7 @@
 title: Leetcode 0103. Binary Tree Zigzag Level Order Traversal
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - tree
 series: Leetcode-Cpp
 abbrlink: 1e306ca2

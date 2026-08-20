@@ -5,8 +5,7 @@ tags:
   - python
   - Array
   - Two Pointers
-categories:
-  - Leetcode
+categories: [Leetcode, Python]
 series: Leetcode-Python
 abbrlink: 9a5b3c2d
 date: 2024-05-27

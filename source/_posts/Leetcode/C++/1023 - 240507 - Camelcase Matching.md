@@ -2,9 +2,7 @@
 title: Leetcode 1023. Camelcase Matching
 tags:
   - leetcode
-categories:
-  - Leetcode
-  - 双指针
+categories: [Leetcode, C++]
 series: Leetcode-Cpp
 abbrlink: b659dbb2
 date: 2024-03-23

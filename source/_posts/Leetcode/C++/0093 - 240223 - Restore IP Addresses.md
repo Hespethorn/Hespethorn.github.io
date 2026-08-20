@@ -2,8 +2,7 @@
 title: Leetcode 0093. Restore IP Addresses
 tags:
   - leetcode
-categories:
-  - Leetcode
+categories: [Leetcode, C++]
   - 回溯算法
 series: Leetcode-Cpp
 abbrlink: aaa2c424
