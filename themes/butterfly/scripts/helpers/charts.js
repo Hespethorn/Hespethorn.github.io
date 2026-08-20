@@ -19,7 +19,7 @@ hexo.extend.filter.register('after_render:html', function (locals) {
     }
     if (category.length > 0 && $('#categoriesChart').length === 0) {
       if (category.attr('data-encode') === 'true') htmlEncode = true
-      category.after(categoriesChart(category.attr('data-parent')))
+      category.after(categoriesChart())
     }
 
     if (htmlEncode) {
@@ -285,46 +285,24 @@ function tagsChart (len) {
   </script>`
 }
 
-function categoriesChart (dataParent) {
+function categoriesChart () {
   const categoryArr = []
-  let categoryParentFlag = false
   hexo.locals.get('categories').map(function (category) {
-    if (category.parent) categoryParentFlag = true
     categoryArr.push({
       name: category.name,
       value: category.length,
-      path: category.path,
-      id: category._id,
-      parentId: category.parent || '0'
+      path: category.path
     })
   })
-  categoryParentFlag = categoryParentFlag && dataParent === 'true'
-  categoryArr.sort((a, b) => { return b.value - a.value })
-  function translateListToTree (data, parent) {
-    let tree = []
-    let temp
-    data.forEach((item, index) => {
-      if (data[index].parentId == parent) {
-        let obj = data[index];
-        temp = translateListToTree(data, data[index].id);
-        if (temp.length > 0) {
-          obj.children = temp
-        }
-        if (tree.indexOf())
-          tree.push(obj)
-      }
-    })
-    return tree
-  }
+  categoryArr.sort((a, b) => { return a.value - b.value })
+
   const categoryNameJson = JSON.stringify(categoryArr.map(function (category) { return category.name }))
   const categoryArrJson = JSON.stringify(categoryArr)
-  const categoryArrParentJson = JSON.stringify(translateListToTree(categoryArr, '0'))
 
   return `
   <script id="categoriesChart">
     var color = document.documentElement.getAttribute('data-theme') === 'light' ? '#4c4948' : 'rgba(255,255,255,0.7)'
     var categoriesChart = echarts.init(document.getElementById('categories-chart'), 'light');
-    var categoryParentFlag = ${categoryParentFlag}
     var categoriesOption = {
       title: {
         text: '文章分类统计图',
@@ -333,59 +311,104 @@ function categoriesChart (dataParent) {
           color: color
         }
       },
-      legend: {
-        top: 'bottom',
-        data: ${categoryNameJson},
-        textStyle: {
-          color: color
-        }
-      },
       tooltip: {
-        trigger: 'item'
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        }
       },
-      series: []
-    };
-    categoriesOption.series.push(
-      categoryParentFlag ? 
-      {
-        nodeClick :false,
+      grid: {
+        left: '3%',
+        right: '8%',
+        bottom: '3%',
+        top: '15%',
+        containLabel: true
+      },
+      xAxis: {
         name: '文章篇数',
-        type: 'sunburst',
-        radius: ['15%', '90%'],
-        center: ['50%', '55%'],
-        sort: 'desc',
-        data: ${categoryArrParentJson},
-        itemStyle: {
-          borderColor: '#fff',
-          borderWidth: 2,
-          emphasis: {
-            focus: 'ancestor',
-            shadowBlur: 10,
-            shadowOffsetX: 0,
-            shadowColor: 'rgba(255, 255, 255, 0.5)'
-          }
-        }
-      }
-      :
-      {
-        name: '文章篇数',
-        type: 'pie',
-        radius: [30, 80],
-        roseType: 'area',
-        label: {
-          color: color,
-          formatter: '{b} : {c} ({d}%)'
+        type: 'value',
+        nameTextStyle: {
+          color: color
         },
-        data: ${categoryArrJson},
-        itemStyle: {
-          emphasis: {
-            shadowBlur: 10,
-            shadowOffsetX: 0,
-            shadowColor: 'rgba(255, 255, 255, 0.5)'
+        axisTick: {
+          show: false
+        },
+        axisLabel: {
+          color: color
+        },
+        axisLine: {
+          show: true,
+          lineStyle: {
+            color: color
+          }
+        },
+        splitLine: {
+          show: false
+        }
+      },
+      yAxis: {
+        type: 'category',
+        data: ${categoryNameJson},
+        nameTextStyle: {
+          color: color
+        },
+        axisTick: {
+          show: false
+        },
+        axisLabel: {
+          color: color
+        },
+        axisLine: {
+          show: true,
+          lineStyle: {
+            color: color
           }
         }
-      }
-    )
+      },
+      series: [{
+        name: '文章篇数',
+        type: 'bar',
+        data: ${categoryArrJson},
+        barWidth: '60%',
+        itemStyle: {
+          borderRadius: [0, 5, 5, 0],
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{
+            offset: 0,
+            color: 'rgba(128, 255, 165)'
+          },
+          {
+            offset: 1,
+            color: 'rgba(1, 191, 236)'
+          }])
+        },
+        emphasis: {
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{
+              offset: 0,
+              color: 'rgba(128, 255, 195)'
+            },
+            {
+              offset: 1,
+              color: 'rgba(1, 211, 255)'
+            }])
+          }
+        },
+        label: {
+          show: true,
+          position: 'right',
+          color: color
+        },
+        markLine: {
+          data: [{
+            name: '平均值',
+            type: 'average',
+            label: {
+              color: color
+            }
+          }]
+        }
+      }]
+    };
     categoriesChart.setOption(categoriesOption);
     window.addEventListener('resize', () => { 
       categoriesChart.resize();
