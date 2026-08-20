@@ -2,7 +2,7 @@
 title: 'std::allocator 及 std::vector 原理实现'
 tags:
   - STL
-categories: [C-Code, STL]
+categories: [C-Code, Data-Structures-and-Algorithms]
 series: STL
 abbrlink: 7334dfaa
 date: 2024-11-11

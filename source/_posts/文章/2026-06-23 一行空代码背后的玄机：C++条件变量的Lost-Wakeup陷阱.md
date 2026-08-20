@@ -5,8 +5,8 @@ tags:
   - 多线程
   - 条件变量
   - 竞态条件
-categories: [C-Code, Debugging]
-series: Debugging
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 
 date: 2026-06-23
 ---

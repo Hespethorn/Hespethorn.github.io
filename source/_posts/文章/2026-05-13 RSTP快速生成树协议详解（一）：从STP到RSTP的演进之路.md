@@ -6,8 +6,8 @@ tags:
   - STP
   - 生成树
   - 网络冗余
-categories: [C-Code, Rtsp-Protocol]
-series: Rtsp-Protocol
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: rstp-evolution-from-stp
 date: 2026-05-13
 ---

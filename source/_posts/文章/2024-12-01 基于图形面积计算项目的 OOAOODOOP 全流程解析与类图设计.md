@@ -4,7 +4,7 @@ tags:
   - OOA
   - OOD
   - OOP
-categories: [C-Code, UML]
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
 series: UML
 abbrlink: f2ee0340
 date: 2024-12-01
