@@ -6,7 +6,7 @@ tags:
   - git rebase
   - 版本控制
   - 工作流
-categories: [Linux, Git, Version-Control]
+categories: [Linux, Git]
 series: Git
 abbrlink: e3f5a7b1
 date: 2026-06-15

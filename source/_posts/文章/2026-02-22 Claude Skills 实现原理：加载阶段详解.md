@@ -6,7 +6,7 @@ tags:
   - Skills
   - 实现原理
   - 加载阶段
-categories: [AI-applications, Claude]
+categories: [AI-application]
 series: Claude
 abbrlink: 3c4d5e6f
 date: 2026-02-22

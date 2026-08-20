@@ -5,8 +5,8 @@ tags:
   - 智能指针
   - unique_ptr
   - 内存管理
-categories: [Tech-Articles]
-series: Tech-Articles
+categories: [C-Code, Foundational-Syntax-and-Core-Concepts]
+series: Foundational-Syntax-and-Core-Concepts
 abbrlink: 5c6d7e8f
 date: 2026-01-16
 ---

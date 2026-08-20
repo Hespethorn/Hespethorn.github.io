@@ -6,7 +6,7 @@ tags:
   - Skills
   - LLM 发展
   - 技术演进
-categories: [AI-applications, Claude]
+categories: [AI-application]
 series: Claude
 abbrlink: 1a2b3c4d
 date: 2026-02-01

@@ -6,7 +6,7 @@ tags:
   - Skills
   - 核心概念
   - 技术架构
-categories: [AI-applications, Claude]
+categories: [AI-application]
 series: Claude
 abbrlink: 2b3c4d5e
 date: 2026-02-15

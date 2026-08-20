@@ -6,7 +6,7 @@ tags:
   - 大语言模型
   - 位置编码
   - 论文解读
-categories: [AI-applications, RoPE]
+categories: [AI-application]
 series: RoPE
 abbrlink:
 date: 2026-08-09

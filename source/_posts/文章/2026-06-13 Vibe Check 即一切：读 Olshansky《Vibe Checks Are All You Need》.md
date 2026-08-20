@@ -6,7 +6,7 @@ tags:
   - 评估
   - 工程实践
   - 读后感
-categories: [AI-applications, LLM]
+categories: [AI-application]
 series: LLM
 abbrlink: vibe-checks-are-all-you-need
 date: 2026-06-13

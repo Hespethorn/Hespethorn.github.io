@@ -6,7 +6,7 @@ tags:
   - Skills
   - 实现原理
   - 注入调用
-categories: [AI-applications, Claude]
+categories: [AI-application]
 series: Claude
 abbrlink: 4d5e6f7g
 date: 2026-02-29

@@ -6,7 +6,7 @@ tags:
   - 提示工程
   - CoT
   - 论文解读
-categories: [AI-applications, CoT]
+categories: [AI-application]
 series: CoT
 abbrlink:
 date: 2026-07-03
