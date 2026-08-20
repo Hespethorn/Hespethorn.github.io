@@ -1,12 +1,12 @@
 ---
 title: JavaScript 表单交互与现代化重构：从原生弹窗到优雅交互
 tags:
-  - 前端
+  - Technical-Articles
   - JavaScript
   - ES6
   - 表单
 categories:
-  - 前端
+  - Technical-Articles
 series: 前端
 abbrlink: a3c5e7f1
 date: 2025-04-14

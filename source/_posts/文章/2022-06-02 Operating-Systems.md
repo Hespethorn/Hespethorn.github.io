@@ -5,8 +5,8 @@ tags:
   - 进程调度
   - 内存管理
   - 内存映射
-categories: [Operating-Systems, C-Code]
-series: Operating-Systems
+categories: [C-Code, Practical-System-Development]
+series: Practical-System-Development
 abbrlink: e308a55d
 date: 2022-06-02
 swiper_index: 1

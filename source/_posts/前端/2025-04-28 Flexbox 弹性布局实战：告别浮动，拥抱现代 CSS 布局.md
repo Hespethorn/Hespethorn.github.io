@@ -1,12 +1,12 @@
 ---
 title: Flexbox 弹性布局实战：告别浮动，拥抱现代 CSS 布局
 tags:
-  - 前端
+  - Technical-Articles
   - CSS
   - Flexbox
   - 布局
 categories:
-  - 前端
+  - Technical-Articles
 series: 前端
 abbrlink: c3e5f7a9
 date: 2025-04-28
