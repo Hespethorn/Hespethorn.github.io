@@ -2,9 +2,8 @@
 title: C++/MySQL/Redis 锁机制 - 3
 tags:
   - Redis
-categories:
-  - Redis
-series: Redis
+categories: [Database, Redis]
+series: Database
 abbrlink: 807c926c
 date: 2025-05-16
 ---

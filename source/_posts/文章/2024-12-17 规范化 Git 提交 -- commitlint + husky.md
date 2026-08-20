@@ -4,8 +4,7 @@ tags:
   - Git
   - commitlint
   - husky
-categories:
-  - Git
+categories: [Linux, Git]
 series: Git
 abbrlink: 1f0b0ac5
 date: 2024-12-17
