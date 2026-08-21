@@ -1,0 +1,593 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>并查集与排序（归并、快排、堆排） | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="前面几篇都在讲&quot;怎么组织数据、怎么查找&quot;。本篇补两个 CS61B 里极其常用、却容易被低估的工具：**并查集（Union-Find）**管&quot;动态连通性&quot;，三大 O(n log n) 排序管&quot;把数据排好序&quot;。它们一个藏在 Kruskal 最小生成树里，一个藏在 Arrays.sort 背后——看似简单，细节全是坑。  一、并查集：谁和谁是一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="并查集与排序（归并、快排、堆排）">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61b0109/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="前面几篇都在讲&quot;怎么组织数据、怎么查找&quot;。本篇补两个 CS61B 里极其常用、却容易被低估的工具：**并查集（Union-Find）**管&quot;动态连通性&quot;，三大 O(n log n) 排序管&quot;把数据排好序&quot;。它们一个藏在 Kruskal 最小生成树里，一个藏在 Arrays.sort 背后——看似简单，细节全是坑。  一、并查集：谁和谁是一">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-10-27T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-21T08:05:27.209Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="归并排序">
+<meta property="article:tag" content="快速排序">
+<meta property="article:tag" content="堆排序">
+<meta property="article:tag" content="并查集">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "并查集与排序（归并、快排、堆排）",
+  "url": "https://hespethorn.github.io/posts/c61b0109/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-10-27T16:00:00.000Z",
+  "dateModified": "2026-08-21T08:05:27.209Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61b0109/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '并查集与排序（归并、快排、堆排）',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">700</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">870</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">33</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">并查集与排序（归并、快排、堆排）</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">并查集与排序（归并、快排、堆排）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-27T16:00:00.000Z" title="Created 2024-10-28 00:00:00">2024-10-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>7mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>前面几篇都在讲&quot;怎么组织数据、怎么查找&quot;。本篇补两个 CS61B 里极其常用、却容易被低估的工具：**并查集（Union-Find）**管&quot;动态连通性&quot;，<strong>三大 <code>O(n log n)</code> 排序</strong>管&quot;把数据排好序&quot;。它们一个藏在 Kruskal 最小生成树里，一个藏在 <code>Arrays.sort</code> 背后——看似简单，细节全是坑。</p>
+<hr>
+<h2 id="一、并查集：谁和谁是一伙的？"><a href="#一、并查集：谁和谁是一伙的？" class="headerlink" title="一、并查集：谁和谁是一伙的？"></a>一、并查集：谁和谁是一伙的？</h2><p>一句话：<strong>并查集维护若干&quot;不相交集合&quot;，支持两个操作——<code>find(x)</code> 找 x 的祖先（代表），<code>union(x,y)</code> 把 x、y 所在集合合并</strong>。它回答的是&quot;这两个元素连通吗&quot;。</p>
+<p>典型场景：逐步加边建网络，随时问&quot;a 和 b 现在通不通&quot;；或 Kruskal 算法里判断加一条边会不会成环。</p>
+<h3 id="1-1-朴素-vs-优化"><a href="#1-1-朴素-vs-优化" class="headerlink" title="1.1 朴素 vs 优化"></a>1.1 朴素 vs 优化</h3><p>朴素实现 <code>union</code> 直接把一棵树挂到另一棵，<strong>最坏退化成链</strong>，<code>find</code> 变 <code>O(n)</code>。两个经典优化把它压到<strong>几乎 <code>O(1)</code>（反阿克曼函数 α(n)，实际常数级）</strong>：</p>
+<ul>
+<li><strong>按秩&#x2F;大小合并（union by rank&#x2F;size）</strong>：总是把&quot;矮的树&quot;挂到&quot;高的树&quot;下面，避免长高。</li>
+<li><strong>路径压缩（path compression）</strong>：<code>find</code> 时把沿途节点直接接到祖先，扁平化。</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">UnionFind</span> &#123;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span>[] parent, rank;</span><br><span class="line">    UnionFind(<span class="type">int</span> n)&#123;</span><br><span class="line">        parent = <span class="keyword">new</span> <span class="title class_">int</span>[n];</span><br><span class="line">        rank = <span class="keyword">new</span> <span class="title class_">int</span>[n];</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; n; i++) parent[i] = i;   <span class="comment">// 初始各自为营</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="type">int</span> <span class="title function_">find</span><span class="params">(<span class="type">int</span> x)</span>&#123;                                   <span class="comment">// 带路径压缩</span></span><br><span class="line">        <span class="keyword">if</span> (parent[x] != x) parent[x] = find(parent[x]);</span><br><span class="line">        <span class="keyword">return</span> parent[x];</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="type">boolean</span> <span class="title function_">union</span><span class="params">(<span class="type">int</span> x, <span class="type">int</span> y)</span>&#123;                       <span class="comment">// 带按秩合并</span></span><br><span class="line">        <span class="type">int</span> <span class="variable">rx</span> <span class="operator">=</span> find(x), ry = find(y);</span><br><span class="line">        <span class="keyword">if</span> (rx == ry) <span class="keyword">return</span> <span class="literal">false</span>;                    <span class="comment">// 已连通，成环</span></span><br><span class="line">        <span class="keyword">if</span> (rank[rx] &lt; rank[ry]) parent[rx] = ry;</span><br><span class="line">        <span class="keyword">else</span> <span class="keyword">if</span> (rank[rx] &gt; rank[ry]) parent[ry] = rx;</span><br><span class="line">        <span class="keyword">else</span> &#123; parent[ry] = rx; rank[rx]++; &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span>&#123;</span><br><span class="line">    <span class="type">UnionFind</span> <span class="variable">uf</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">UnionFind</span>(<span class="number">5</span>);</span><br><span class="line">    uf.union(<span class="number">0</span>, <span class="number">1</span>); uf.union(<span class="number">2</span>, <span class="number">3</span>); uf.union(<span class="number">1</span>, <span class="number">2</span>);</span><br><span class="line">    System.out.println(<span class="string">&quot;0 与 3 连通? &quot;</span> + (uf.find(<span class="number">0</span>) == uf.find(<span class="number">3</span>)));</span><br><span class="line">    System.out.println(<span class="string">&quot;0 与 4 连通? &quot;</span> + (uf.find(<span class="number">0</span>) == uf.find(<span class="number">4</span>)));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">0 与 3 连通? true</span><br><span class="line">0 与 4 连通? false</span><br></pre></td></tr></table></figure>
+
+<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:8px;margin:16px 0">
+<svg viewBox="0 0 480 120" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <rect x="0" y="0" width="480" height="120" fill="#fff"/>
+  <text x="240" y="16" text-anchor="middle" fill="#1a4731">union(0,1)→union(2,3)→union(1,2)：两棵树合并</text>
+  <circle cx="70" cy="70" r="15" fill="#ddf4e4" stroke="#2da44e"/><text x="70" y="74" text-anchor="middle" fill="#1a4731">0</text>
+  <circle cx="130" cy="70" r="15" fill="#ddf4e4" stroke="#2da44e"/><text x="130" y="74" text-anchor="middle" fill="#1a4731">1</text>
+  <circle cx="250" cy="70" r="15" fill="#e7f5ff" stroke="#1971c2"/><text x="250" y="74" text-anchor="middle" fill="#0b4a8a">2</text>
+  <circle cx="310" cy="70" r="15" fill="#e7f5ff" stroke="#1971c2"/><text x="310" y="74" text-anchor="middle" fill="#0b4a8a">3</text>
+  <circle cx="420" cy="70" r="15" fill="#fff4e6" stroke="#e8590c"/><text x="420" y="74" text-anchor="middle" fill="#9a4a00">4</text>
+  <line x1="85" y1="70" x2="115" y2="70" stroke="#57606a"/>
+  <line x1="265" y1="70" x2="295" y2="70" stroke="#57606a"/>
+  <line x1="130" y1="70" x2="235" y2="70" stroke="#e03131" stroke-dasharray="4 3"/>
+  <text x="182" y="58" text-anchor="middle" fill="#a61e1e">合并</text>
+</svg>
+</div>
+
+<p><strong>坑①</strong>：<code>find</code> 里 <code>parent[x] = find(parent[x])</code> 是<strong>路径压缩的关键一行</strong>，漏写就退回朴素。另：<code>union</code> 返回 <code>false</code> 正说明&quot;已连通&quot;，Kruskal 借此跳过会成环的边——这反而是有用信号，不是错误。</p>
+<hr>
+<h2 id="二、归并排序：稳稳的-O-n-log-n"><a href="#二、归并排序：稳稳的-O-n-log-n" class="headerlink" title="二、归并排序：稳稳的 O(n log n)"></a>二、归并排序：稳稳的 <code>O(n log n)</code></h2><p>分治法：把数组对半切，递归排好左右两半，再<strong>合并两个有序段</strong>（双指针）。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">mergeSort</span><span class="params">(<span class="type">int</span>[] a, <span class="type">int</span> l, <span class="type">int</span> r)</span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (l &gt;= r) <span class="keyword">return</span>;</span><br><span class="line">    <span class="type">int</span> <span class="variable">m</span> <span class="operator">=</span> (l + r) / <span class="number">2</span>;</span><br><span class="line">    mergeSort(a, l, m);</span><br><span class="line">    mergeSort(a, m + <span class="number">1</span>, r);</span><br><span class="line">    merge(a, l, m, r);</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">merge</span><span class="params">(<span class="type">int</span>[] a, <span class="type">int</span> l, <span class="type">int</span> m, <span class="type">int</span> r)</span>&#123;</span><br><span class="line">    <span class="type">int</span>[] tmp = <span class="keyword">new</span> <span class="title class_">int</span>[r - l + <span class="number">1</span>];</span><br><span class="line">    <span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> l, j = m + <span class="number">1</span>, k = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">while</span> (i &lt;= m &amp;&amp; j &lt;= r) tmp[k++] = a[i] &lt;= a[j] ? a[i++] : a[j++];</span><br><span class="line">    <span class="keyword">while</span> (i &lt;= m) tmp[k++] = a[i++];</span><br><span class="line">    <span class="keyword">while</span> (j &lt;= r) tmp[k++] = a[j++];</span><br><span class="line">    System.arraycopy(tmp, <span class="number">0</span>, a, l, tmp.length);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>特性</strong>：稳定、最坏也是 <code>O(n log n)</code>，但要 <code>O(n)</code> 辅助空间。适合<strong>链表排序</strong>（无需额外大空间）和对&quot;稳定性&quot;有要求的场景。</p>
+<hr>
+<h2 id="三、快速排序：平均最快，但怕有序"><a href="#三、快速排序：平均最快，但怕有序" class="headerlink" title="三、快速排序：平均最快，但怕有序"></a>三、快速排序：平均最快，但怕有序</h2><p>选一个<strong>基准（pivot）</strong>，把比它小的放左、大的放右（<strong>partition</strong>），再递归两边。原地、缓存友好，实践中常最快。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">quickSort</span><span class="params">(<span class="type">int</span>[] a, <span class="type">int</span> l, <span class="type">int</span> r)</span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (l &gt;= r) <span class="keyword">return</span>;</span><br><span class="line">    <span class="type">int</span> <span class="variable">p</span> <span class="operator">=</span> partition(a, l, r);     <span class="comment">// 返回基准最终位置</span></span><br><span class="line">    quickSort(a, l, p - <span class="number">1</span>);</span><br><span class="line">    quickSort(a, p + <span class="number">1</span>, r);</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">static</span> <span class="type">int</span> <span class="title function_">partition</span><span class="params">(<span class="type">int</span>[] a, <span class="type">int</span> l, <span class="type">int</span> r)</span>&#123;</span><br><span class="line">    <span class="type">int</span> <span class="variable">pivot</span> <span class="operator">=</span> a[r], i = l;        <span class="comment">// Lomuto 划分，基准取最右</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">j</span> <span class="operator">=</span> l; j &lt; r; j++)</span><br><span class="line">        <span class="keyword">if</span> (a[j] &lt; pivot) &#123; <span class="type">int</span> <span class="variable">t</span> <span class="operator">=</span> a[i]; a[i] = a[j]; a[j] = t; i++; &#125;</span><br><span class="line">    <span class="type">int</span> <span class="variable">t</span> <span class="operator">=</span> a[i]; a[i] = a[r]; a[r] = t;</span><br><span class="line">    <span class="keyword">return</span> i;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:8px;margin:16px 0">
+<svg viewBox="0 0 480 90" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <rect x="0" y="0" width="480" height="90" fill="#fff"/>
+  <text x="240" y="16" text-anchor="middle" fill="#1a4731">partition：基准 5，左小右大</text>
+  <rect x="30" y="40" width="34" height="26" fill="#ddf4e4" stroke="#2da44e"/><text x="47" y="58" text-anchor="middle" fill="#1a4731">3</text>
+  <rect x="70" y="40" width="34" height="26" fill="#ddf4e4" stroke="#2da44e"/><text x="87" y="58" text-anchor="middle" fill="#1a4731">1</text>
+  <rect x="110" y="40" width="34" height="26" fill="#ddf4e4" stroke="#2da44e"/><text x="127" y="58" text-anchor="middle" fill="#1a4731">4</text>
+  <rect x="150" y="40" width="34" height="26" fill="#ffe3e3" stroke="#e03131"/><text x="167" y="58" text-anchor="middle" fill="#a61e1e">5</text>
+  <rect x="190" y="40" width="34" height="26" fill="#fff4e6" stroke="#e8590c"/><text x="207" y="58" text-anchor="middle" fill="#9a4a00">9</text>
+  <rect x="230" y="40" width="34" height="26" fill="#fff4e6" stroke="#e8590c"/><text x="247" y="58" text-anchor="middle" fill="#9a4a00">7</text>
+  <text x="120" y="84" text-anchor="middle" fill="#57606a">≤5</text>
+  <text x="210" y="84" text-anchor="middle" fill="#57606a">&gt;5</text>
+</svg>
+</div>
+
+<p><strong>坑②</strong>：<strong>最坏 <code>O(n²)</code></strong>——当数组已序且 pivot 总取最值（每次只削掉一个元素）。工程上用<strong>随机 pivot</strong> 或<strong>三数取中</strong>来规避；<code>Arrays.sort</code> 对基本类型用的是&quot;双轴快排 + 切换到插排&quot;的混合体（introsort 思路）。</p>
+<hr>
+<h2 id="四、堆排序：原地、稳定-O-n-log-n-但欠稳"><a href="#四、堆排序：原地、稳定-O-n-log-n-但欠稳" class="headerlink" title="四、堆排序：原地、稳定 O(n log n) 但欠稳"></a>四、堆排序：原地、稳定 <code>O(n log n)</code> 但欠稳</h2><p>先 <code>O(n)</code> 建堆，然后反复 <code>extractMin</code> 把最值放到末尾。<strong>原地、最坏 <code>O(n log n)</code></strong>，但<strong>不稳定</strong>，且缓存表现不如快排。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">heapSort</span><span class="params">(<span class="type">int</span>[] a)</span>&#123;</span><br><span class="line">    <span class="type">int</span> <span class="variable">n</span> <span class="operator">=</span> a.length;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> n / <span class="number">2</span> - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i--) siftDown(a, i, n);  <span class="comment">// 建堆 O(n)</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">end</span> <span class="operator">=</span> n - <span class="number">1</span>; end &gt; <span class="number">0</span>; end--)&#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">t</span> <span class="operator">=</span> a[<span class="number">0</span>]; a[<span class="number">0</span>] = a[end]; a[end] = t;             <span class="comment">// 堆顶换到末尾</span></span><br><span class="line">        siftDown(a, <span class="number">0</span>, end);                                 <span class="comment">// 下沉恢复</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">siftDown</span><span class="params">(<span class="type">int</span>[] a, <span class="type">int</span> i, <span class="type">int</span> n)</span>&#123;</span><br><span class="line">    <span class="keyword">while</span> (<span class="number">2</span> * i + <span class="number">1</span> &lt; n)&#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> <span class="number">2</span> * i + <span class="number">1</span>;</span><br><span class="line">        <span class="keyword">if</span> (c + <span class="number">1</span> &lt; n &amp;&amp; a[c + <span class="number">1</span>] &gt; a[c]) c++;</span><br><span class="line">        <span class="keyword">if</span> (a[i] &gt;= a[c]) <span class="keyword">break</span>;</span><br><span class="line">        <span class="type">int</span> <span class="variable">t</span> <span class="operator">=</span> a[i]; a[i] = a[c]; a[c] = t; i = c;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="五、三排序-并查集：一张总表"><a href="#五、三排序-并查集：一张总表" class="headerlink" title="五、三排序 + 并查集：一张总表"></a>五、三排序 + 并查集：一张总表</h2><table>
+<thead>
+<tr>
+<th>算法</th>
+<th>平均</th>
+<th>最坏</th>
+<th>空间</th>
+<th>稳定</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>归并排序</td>
+<td><code>O(n log n)</code></td>
+<td><code>O(n log n)</code></td>
+<td><code>O(n)</code></td>
+<td>✅</td>
+<td>适合链表、外部排序</td>
+</tr>
+<tr>
+<td>快速排序</td>
+<td><code>O(n log n)</code></td>
+<td><code>O(n²)</code></td>
+<td><code>O(log n)</code></td>
+<td>❌</td>
+<td>平均最快，怕有序</td>
+</tr>
+<tr>
+<td>堆排序</td>
+<td><code>O(n log n)</code></td>
+<td><code>O(n log n)</code></td>
+<td><code>O(1)</code></td>
+<td>❌</td>
+<td>原地、最坏稳，缓存差</td>
+</tr>
+<tr>
+<td>并查集（含两优化）</td>
+<td><code>O(α(n))</code></td>
+<td><code>O(α(n))</code></td>
+<td><code>O(n)</code></td>
+<td>—</td>
+<td>动态连通性</td>
+</tr>
+</tbody></table>
+<p><strong>本质一句话</strong>：排序三兄弟都是 <code>O(n log n)</code>，差别在&quot;稳定与否、要不要额外空间、最坏怕不怕&quot;；并查集则是个不同赛道——它不排序，只回答&quot;连通吗&quot;，却靠两个小优化达到近乎常数。</p>
+<hr>
+<h2 id="六、Java-与-C-：库里到底用了谁？"><a href="#六、Java-与-C-：库里到底用了谁？" class="headerlink" title="六、Java 与 C++：库里到底用了谁？"></a>六、Java 与 C++：库里到底用了谁？</h2><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>Java</th>
+<th>C++</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>对象数组排序</td>
+<td><code>Arrays.sort</code> → <strong>TimSort</strong>（稳定）</td>
+<td><code>std::sort</code> → <strong>introsort</strong>（不稳定）</td>
+</tr>
+<tr>
+<td>基本类型排序</td>
+<td>双轴快排变体</td>
+<td>introsort（快排+堆排+插排）</td>
+</tr>
+<tr>
+<td>并查集</td>
+<td>无内置，自写</td>
+<td>无内置，自写（或 Boost）</td>
+</tr>
+</tbody></table>
+<p><strong>坑③</strong>：别以为 <code>Arrays.sort</code> 一定是快排——对<strong>对象</strong>它用 TimSort（稳定、归并系），对<strong>基本类型</strong>才用快排系。混用 <code>Integer[]</code> 与 <code>int[]</code> 排序，稳定性天差地别。</p>
+<hr>
+<h2 id="七、小结"><a href="#七、小结" class="headerlink" title="七、小结"></a>七、小结</h2><ul>
+<li><strong>是什么</strong>：并查集管动态连通（<code>find</code>&#x2F;<code>union</code> + 路径压缩 + 按秩合并）；归并&#x2F;快排&#x2F;堆排是三种 <code>O(n log n)</code> 排序。</li>
+<li><strong>坑</strong>：并查集漏写路径压缩会退化；快排遇有序最坏 <code>O(n²)</code>；堆排不稳定；Java 对象排序稳定、基本类型不稳定。</li>
+<li><strong>本质一句话</strong>：<strong>要连通性用并查集，要全序用排序</strong>；排序里&quot;要稳定选归并、要原地选堆排、要平均最快选快排&quot;——按约束挑，别无脑快排。</li>
+</ul>
+<p>带着三个问题读每一篇会更有收获：<strong>① 我的数据需要连通判断还是排序？前者并查集，后者排序。 ② 排序要稳定吗？要就归并&#x2F;TimSort。 ③ 快排最坏怎么防？随机 pivot 或 introsort。</strong></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0109/">https://hespethorn.github.io/posts/c61b0109/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%BD%92%E5%B9%B6%E6%8E%92%E5%BA%8F/">归并排序</a><a class="post-meta__tags" href="/tags/%E5%BF%AB%E9%80%9F%E6%8E%92%E5%BA%8F/">快速排序</a><a class="post-meta__tags" href="/tags/%E5%A0%86%E6%8E%92%E5%BA%8F/">堆排序</a><a class="post-meta__tags" href="/tags/%E5%B9%B6%E6%9F%A5%E9%9B%86/">并查集</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">700</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">870</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">33</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="算法复杂度实战与收尾">算法复杂度实战与收尾</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="并查集与排序（归并、快排、堆排）">并查集与排序（归并、快排、堆排）</a><time datetime="2024-10-27T16:00:00.000Z" title="Created 2024-10-28 00:00:00">2024-10-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="图：表示、DFS、BFS 与 Dijkstra">图：表示、DFS、BFS 与 Dijkstra</a><time datetime="2024-10-23T16:00:00.000Z" title="Created 2024-10-24 00:00:00">2024-10-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="堆与优先队列（二叉堆）">堆与优先队列（二叉堆）</a><time datetime="2024-10-20T16:00:00.000Z" title="Created 2024-10-21 00:00:00">2024-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="哈希表：散列函数、冲突解决与扩容">哈希表：散列函数、冲突解决与扩容</a><time datetime="2024-10-16T16:00:00.000Z" title="Created 2024-10-17 00:00:00">2024-10-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="树：BST、平衡树（AVL/红黑简介）与 B 树">树：BST、平衡树（AVL/红黑简介）与 B 树</a><time datetime="2024-10-13T16:00:00.000Z" title="Created 2024-10-14 00:00:00">2024-10-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="栈与队列：LIFO 与 FIFO 的两种世界观">栈与队列：LIFO 与 FIFO 的两种世界观</a><time datetime="2024-10-09T16:00:00.000Z" title="Created 2024-10-10 00:00:00">2024-10-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="链表（单/双）与哨兵">链表（单/双）与哨兵</a><time datetime="2024-10-06T16:00:00.000Z" title="Created 2024-10-07 00:00:00">2024-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="数组与动态数组（ArrayList）及均摊分析">数组与动态数组（ArrayList）及均摊分析</a><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="数据结构导论：从数组到抽象数据类型（ADT）">数据结构导论：从数组到抽象数据类型（ADT）</a><time datetime="2024-09-29T16:00:00.000Z" title="Created 2024-09-30 00:00:00">2024-09-30</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2026-08-21T08:05:27.219Z" title="Created 2026-08-21 16:05:27">2026-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260821/" title="AI 新闻速递｜2026-08-21：Grok Bot 走红硅谷、DeepSeek V3.1 双模式合一、Qwen-UI-Agent 把屏幕当接口、宇树提「物理 AI 自进化」+ 万元机械臂、机器人演出沙盒审批">AI 新闻速递｜2026-08-21：Grok Bot 走红硅谷、DeepSeek V3.1 双模式合一、Qwen-UI-Agent 把屏幕当接口、宇树提「物理 AI 自进化」+ 万元机械臂、机器人演出沙盒审批</a><time datetime="2026-08-20T16:00:00.000Z" title="Created 2026-08-21 00:00:00">2026-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7d2f4b6a/" title="雪原驿马站的哑仆">雪原驿马站的哑仆</a><time datetime="2026-08-20T16:00:00.000Z" title="Created 2026-08-21 00:00:00">2026-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260820/" title="AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×">AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b4e7a1c9/" title="玉津渡的琢玉人">玉津渡的琢玉人</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-News/">AI News</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Python/">Python</a><a href="/categories/AI-application/">AI Application</a></li><li><a href="/posts/FamilyProse/">Family Prose</a><a href="/posts/LoveDays/">Love Days</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
