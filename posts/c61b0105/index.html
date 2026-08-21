@@ -1,0 +1,906 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>树：BST、平衡树（AVL/红黑简介）与 B 树 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你有没有想过一个尴尬的局面：有序数组查找快（二分 O(log n)），可一旦插入新元素，得把后面一半整体后挪，O(n)；链表插入是 O(1)，可查找又退化成 O(n)。有没有一种结构，能既要查找快、又要插入&#x2F;删除也快？ 答案就是本篇的主角——树，更准确地说是**二叉搜索树（BST）**以及它的「打补丁」版本：平衡树（AVL &#x2F; 红黑树）和多路平衡树（B 树）。它们把「有序」从「">
+<meta property="og:type" content="article">
+<meta property="og:title" content="树：BST、平衡树（AVL&#x2F;红黑简介）与 B 树">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61b0105/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="你有没有想过一个尴尬的局面：有序数组查找快（二分 O(log n)），可一旦插入新元素，得把后面一半整体后挪，O(n)；链表插入是 O(1)，可查找又退化成 O(n)。有没有一种结构，能既要查找快、又要插入&#x2F;删除也快？ 答案就是本篇的主角——树，更准确地说是**二叉搜索树（BST）**以及它的「打补丁」版本：平衡树（AVL &#x2F; 红黑树）和多路平衡树（B 树）。它们把「有序」从「">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-10-13T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-21T02:43:53.032Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="二叉搜索树">
+<meta property="article:tag" content="红黑树">
+<meta property="article:tag" content="平衡树">
+<meta property="article:tag" content="B树">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "树：BST、平衡树（AVL/红黑简介）与 B 树",
+  "url": "https://hespethorn.github.io/posts/c61b0105/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-10-13T16:00:00.000Z",
+  "dateModified": "2026-08-21T02:43:53.032Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61b0105/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '树：BST、平衡树（AVL/红黑简介）与 B 树',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">695</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">856</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">33</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">树：BST、平衡树（AVL/红黑简介）与 B 树</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">树：BST、平衡树（AVL/红黑简介）与 B 树</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-13T16:00:00.000Z" title="Created 2024-10-14 00:00:00">2024-10-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>15mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你有没有想过一个尴尬的局面：<strong>有序数组</strong>查找快（二分 <code>O(log n)</code>），可一旦插入新元素，得把后面一半整体后挪，<code>O(n)</code>；<strong>链表</strong>插入是 <code>O(1)</code>，可查找又退化成 <code>O(n)</code>。有没有一种结构，能<strong>既要查找快、又要插入&#x2F;删除也快</strong>？</p>
+<p>答案就是本篇的主角——<strong>树</strong>，更准确地说是**二叉搜索树（BST）**以及它的「打补丁」版本：平衡树（AVL &#x2F; 红黑树）和多路平衡树（B 树）。它们把「有序」从「数组的连续内存」里解放出来，变成「节点之间的偏序关系」，于是插入、删除不再需要搬移整段数据。我们先从最朴素的 BST 讲起，再看它哪里会翻车，以及三个补丁分别怎么修。</p>
+<hr>
+<h2 id="一、二叉搜索树（BST）：定义与不变式"><a href="#一、二叉搜索树（BST）：定义与不变式" class="headerlink" title="一、二叉搜索树（BST）：定义与不变式"></a>一、二叉搜索树（BST）：定义与不变式</h2><p><strong>BST &#x3D; 一棵二叉树，且满足「左小右大」的递归不变式</strong>：</p>
+<blockquote>
+<p>对树上任意一个节点 <code>x</code>：其<strong>左子树</strong>中所有 key 都 <code>&lt; x.key</code>，其<strong>右子树</strong>中所有 key 都 <code>&gt; x.key</code>。</p>
+</blockquote>
+<p>注意是「严格」的偏序，通常不允许重复 key（要支持重复就改成「≤ 放左 &#x2F; ≥ 放右」，本篇按不允许重复讲，逻辑最干净）。这条不变式是 BST 一切能力的根基——因为它意味着<strong>中序遍历（左→根→右）必然得到升序序列</strong>。</p>
+<div align="center">
+
+<svg width="320" height="180" viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg">
+  <line x1="160" y1="38" x2="90" y2="80" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="160" y1="38" x2="230" y2="80" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="90" y1="98" x2="50" y2="140" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="90" y1="98" x2="130" y2="140" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="230" y1="98" x2="190" y2="140" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="230" y1="98" x2="270" y2="140" stroke="#9ca3af" stroke-width="2"/>
+  <circle cx="160" cy="30" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="160" y="35" text-anchor="middle" font-size="13" fill="#1e3a8a">50</text>
+  <circle cx="90" cy="90" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="90" y="95" text-anchor="middle" font-size="13" fill="#1e3a8a">30</text>
+  <circle cx="230" cy="90" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="230" y="95" text-anchor="middle" font-size="13" fill="#1e3a8a">70</text>
+  <circle cx="50" cy="150" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="50" y="155" text-anchor="middle" font-size="13" fill="#1e3a8a">20</text>
+  <circle cx="130" cy="150" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="130" y="155" text-anchor="middle" font-size="13" fill="#1e3a8a">40</text>
+  <circle cx="190" cy="150" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="190" y="155" text-anchor="middle" font-size="13" fill="#1e3a8a">60</text>
+  <circle cx="270" cy="150" r="18" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="270" y="155" text-anchor="middle" font-size="13" fill="#1e3a8a">80</text>
+</svg>
+
+</div>
+
+<p>中序遍历这棵树：<code>20 → 30 → 40 → 50 → 60 → 70 → 80</code>，完美升序。这就是 BST 的「免费排序」特性。</p>
+<hr>
+<h2 id="二、BST-的核心操作（Java-实现）"><a href="#二、BST-的核心操作（Java-实现）" class="headerlink" title="二、BST 的核心操作（Java 实现）"></a>二、BST 的核心操作（Java 实现）</h2><p>下面是一份<strong>可直接编译运行</strong>的 BST 骨架：插入、查找、中序遍历、删除。注意删除有两子节点的情况——我们找**右子树的最小节点（中序后继）**来顶替被删节点，从而保住不变式。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">BST</span> &#123;</span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">class</span> <span class="title class_">Node</span> &#123;</span><br><span class="line">        <span class="type">int</span> key;</span><br><span class="line">        Node left, right;</span><br><span class="line">        Node(<span class="type">int</span> k) &#123; key = k; &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    Node root;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 插入（忽略重复 key）</span></span><br><span class="line">    <span class="keyword">void</span> <span class="title function_">insert</span><span class="params">(<span class="type">int</span> key)</span> &#123; root = insert(root, key); &#125;</span><br><span class="line">    <span class="keyword">private</span> Node <span class="title function_">insert</span><span class="params">(Node n, <span class="type">int</span> key)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (n == <span class="literal">null</span>) <span class="keyword">return</span> <span class="keyword">new</span> <span class="title class_">Node</span>(key);</span><br><span class="line">        <span class="keyword">if</span> (key &lt; n.key)      n.left  = insert(n.left, key);</span><br><span class="line">        <span class="keyword">else</span> <span class="keyword">if</span> (key &gt; n.key) n.right = insert(n.right, key);</span><br><span class="line">        <span class="keyword">return</span> n;                       <span class="comment">// 相等：什么都不做</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 查找</span></span><br><span class="line">    <span class="type">boolean</span> <span class="title function_">contains</span><span class="params">(<span class="type">int</span> key)</span> &#123; <span class="keyword">return</span> contains(root, key); &#125;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">boolean</span> <span class="title function_">contains</span><span class="params">(Node n, <span class="type">int</span> key)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (n == <span class="literal">null</span>) <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">        <span class="keyword">if</span> (key == n.key) <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">        <span class="keyword">return</span> key &lt; n.key ? contains(n.left, key) : contains(n.right, key);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 中序遍历（左-根-右）</span></span><br><span class="line">    <span class="keyword">void</span> <span class="title function_">inorder</span><span class="params">()</span> &#123; inorder(root); System.out.println(); &#125;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">inorder</span><span class="params">(Node n)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (n == <span class="literal">null</span>) <span class="keyword">return</span>;</span><br><span class="line">        inorder(n.left);</span><br><span class="line">        System.out.print(n.key + <span class="string">&quot; &quot;</span>);</span><br><span class="line">        inorder(n.right);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 删除</span></span><br><span class="line">    <span class="keyword">void</span> <span class="title function_">delete</span><span class="params">(<span class="type">int</span> key)</span> &#123; root = delete(root, key); &#125;</span><br><span class="line">    <span class="keyword">private</span> Node <span class="title function_">delete</span><span class="params">(Node n, <span class="type">int</span> key)</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (n == <span class="literal">null</span>) <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">        <span class="keyword">if</span> (key &lt; n.key)      n.left  = delete(n.left, key);</span><br><span class="line">        <span class="keyword">else</span> <span class="keyword">if</span> (key &gt; n.key) n.right = delete(n.right, key);</span><br><span class="line">        <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> (n.left == <span class="literal">null</span>)  <span class="keyword">return</span> n.right;   <span class="comment">// 无左子</span></span><br><span class="line">            <span class="keyword">if</span> (n.right == <span class="literal">null</span>) <span class="keyword">return</span> n.left;    <span class="comment">// 无右子</span></span><br><span class="line">            n.key = minKey(n.right);               <span class="comment">// 两子皆有：用后继顶替</span></span><br><span class="line">            n.right = delete(n.right, n.key);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> n;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span> <span class="title function_">minKey</span><span class="params">(Node n)</span> &#123; <span class="keyword">while</span> (n.left != <span class="literal">null</span>) n = n.left; <span class="keyword">return</span> n.key; &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] a)</span> &#123;</span><br><span class="line">        <span class="type">BST</span> <span class="variable">t</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">BST</span>();</span><br><span class="line">        <span class="type">int</span>[] ks = &#123;<span class="number">50</span>, <span class="number">30</span>, <span class="number">70</span>, <span class="number">20</span>, <span class="number">40</span>, <span class="number">60</span>, <span class="number">80</span>&#125;;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> k : ks) t.insert(k);</span><br><span class="line"></span><br><span class="line">        System.out.print(<span class="string">&quot;插入后中序: &quot;</span>); t.inorder();</span><br><span class="line">        System.out.println(<span class="string">&quot;contains(40) = &quot;</span> + t.contains(<span class="number">40</span>));</span><br><span class="line">        System.out.println(<span class="string">&quot;contains(99) = &quot;</span> + t.contains(<span class="number">99</span>));</span><br><span class="line"></span><br><span class="line">        t.delete(<span class="number">50</span>);                              <span class="comment">// 删根（两子皆有）</span></span><br><span class="line">        System.out.print(<span class="string">&quot;删除 50 后中序: &quot;</span>); t.inorder();</span><br><span class="line">        t.delete(<span class="number">20</span>);                              <span class="comment">// 删叶子</span></span><br><span class="line">        System.out.print(<span class="string">&quot;再删 20 后中序: &quot;</span>); t.inorder();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>编译运行后输出：</p>
+</blockquote>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">插入后中序: 20 30 40 50 60 70 80</span><br><span class="line">contains(40) = true</span><br><span class="line">contains(99) = false</span><br><span class="line">删除 50 后中序: 20 30 40 60 70 80</span><br><span class="line">再删 20 后中序: 30 40 60 70 80</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>小观察：删掉根 <code>50</code> 后，顶替它的是右子树最小者 <code>60</code>，于是新根变成 <code>60</code>，中序序列依旧有序。这条「用后继顶替」的规则，是 BST 删除不出错的关键。</p>
+</blockquote>
+<hr>
+<h2 id="三、BST-的软肋：退化成链表"><a href="#三、BST-的软肋：退化成链表" class="headerlink" title="三、BST 的软肋：退化成链表"></a>三、BST 的软肋：退化成链表</h2><p>BST 的查询复杂度<strong>不是固定的 <code>O(log n)</code></strong>，而是等于<strong>树高</strong>。如果插入顺序恰好是升序（或降序），树会退化成一条链：</p>
+<div align="center">
+
+<svg width="240" height="200" viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg">
+  <line x1="60" y1="28" x2="90" y2="68" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="90" y1="78" x2="120" y2="118" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="120" y1="128" x2="150" y2="168" stroke="#9ca3af" stroke-width="2"/>
+  <circle cx="55" cy="20" r="16" fill="#fecaca" stroke="#dc2626" stroke-width="2"/>
+  <text x="55" y="25" text-anchor="middle" font-size="12" fill="#7f1d1d">10</text>
+  <circle cx="95" cy="76" r="16" fill="#fecaca" stroke="#dc2626" stroke-width="2"/>
+  <text x="95" y="81" text-anchor="middle" font-size="12" fill="#7f1d1d">20</text>
+  <circle cx="125" cy="122" r="16" fill="#fecaca" stroke="#dc2626" stroke-width="2"/>
+  <text x="125" y="127" text-anchor="middle" font-size="12" fill="#7f1d1d">30</text>
+  <circle cx="155" cy="178" r="16" fill="#fecaca" stroke="#dc2626" stroke-width="2"/>
+  <text x="155" y="183" text-anchor="middle" font-size="12" fill="#7f1d1d">40</text>
+  <text x="200" y="100" font-size="12" fill="#dc2626">只剩右链</text>
+  <text x="200" y="116" font-size="12" fill="#dc2626">h = n</text>
+</svg>
+
+</div>
+
+<p>此时树高 &#x3D; 节点数，所有操作退化到 <code>O(n)</code>——<strong>和普通链表没两样</strong>。问题的本质是：BST 没有约束「左右子树要差不多高」。于是引出第一个补丁：<strong>平衡树</strong>，它的全部努力就是「别让树歪了」。</p>
+<hr>
+<h2 id="四、平衡树：用「旋转」把树拉直"><a href="#四、平衡树：用「旋转」把树拉直" class="headerlink" title="四、平衡树：用「旋转」把树拉直"></a>四、平衡树：用「旋转」把树拉直</h2><p>**旋转（rotation）**是平衡树的核心原子操作：它在不破坏 BST 不变式（中序序列不变）的前提下，重新组织局部结构，降低树高。最常见的是右旋（right rotation）和左旋（left rotation），互为镜像。</p>
+<div align="center">
+
+<svg width="420" height="170" viewBox="0 0 420 170" xmlns="http://www.w3.org/2000/svg">
+  <text x="90" y="20" text-anchor="middle" font-size="12" fill="#374151">右旋前（LL 型）</text>
+  <circle cx="120" cy="55" r="16" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
+  <text x="120" y="60" text-anchor="middle" font-size="12" fill="#7c2d12">y</text>
+  <circle cx="80" cy="110" r="16" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="80" y="115" text-anchor="middle" font-size="12" fill="#1e3a8a">x</text>
+  <circle cx="160" cy="110" r="16" fill="#e5e7eb" stroke="#6b7280" stroke-width="2"/>
+  <text x="160" y="115" text-anchor="middle" font-size="12" fill="#374151">c</text>
+  <circle cx="40" cy="150" r="14" fill="#e5e7eb" stroke="#6b7280" stroke-width="2"/>
+  <text x="40" y="154" text-anchor="middle" font-size="11" fill="#374151">a</text>
+  <circle cx="110" cy="150" r="14" fill="#e5e7eb" stroke="#6b7280" stroke-width="2"/>
+  <text x="110" y="154" text-anchor="middle" font-size="11" fill="#374151">b</text>
+  <line x1="120" y1="69" x2="80" y2="96" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="120" y1="69" x2="160" y2="96" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="80" y1="124" x2="40" y2="138" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="80" y1="124" x2="110" y2="138" stroke="#9ca3af" stroke-width="2"/>
+  <text x="230" y="90" text-anchor="middle" font-size="18" fill="#6b7280">&rarr;</text>
+  <text x="330" y="20" text-anchor="middle" font-size="12" fill="#374151">右旋后</text>
+  <circle cx="300" cy="110" r="16" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <text x="300" y="115" text-anchor="middle" font-size="12" fill="#1e3a8a">x</text>
+  <circle cx="260" cy="55" r="16" fill="#e5e7eb" stroke="#6b7280" stroke-width="2"/>
+  <text x="260" y="60" text-anchor="middle" font-size="12" fill="#374151">a</text>
+  <circle cx="340" cy="55" r="16" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
+  <text x="340" y="60" text-anchor="middle" font-size="12" fill="#7c2d12">y</text>
+  <circle cx="380" cy="110" r="16" fill="#e5e7eb" stroke="#6b7280" stroke-width="2"/>
+  <text x="380" y="115" text-anchor="middle" font-size="12" fill="#374151">c</text>
+  <circle cx="300" cy="150" r="14" fill="#e5e7eb" stroke="#6b7280" stroke-width="2"/>
+  <text x="300" y="154" text-anchor="middle" font-size="11" fill="#374151">b</text>
+  <line x1="300" y1="94" x2="260" y2="69" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="300" y1="94" x2="340" y2="69" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="340" y1="69" x2="380" y2="96" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="300" y1="124" x2="300" y2="138" stroke="#9ca3af" stroke-width="2"/>
+</svg>
+
+</div>
+
+<p>右旋前后，中序序列都是 <code>a → x → b → y → c</code>，<strong>顺序丝毫没变</strong>，但原本以 <code>y</code> 为根、左子树过深的结构被「掰直」了。下面给出 AVL 里最基础的两种旋转（带高度维护）：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">class</span> <span class="title class_">AVLNode</span> &#123;</span><br><span class="line">    <span class="type">int</span> key, height;</span><br><span class="line">    AVLNode left, right;</span><br><span class="line">    AVLNode(<span class="type">int</span> k) &#123; key = k; height = <span class="number">1</span>; &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">static</span> <span class="type">int</span> <span class="title function_">h</span><span class="params">(AVLNode n)</span> &#123; <span class="keyword">return</span> n == <span class="literal">null</span> ? <span class="number">0</span> : n.height; &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 右旋：y 的左子 x 上位</span></span><br><span class="line"><span class="keyword">static</span> AVLNode <span class="title function_">rightRotate</span><span class="params">(AVLNode y)</span> &#123;</span><br><span class="line">    <span class="type">AVLNode</span> <span class="variable">x</span> <span class="operator">=</span> y.left, t = x.right;</span><br><span class="line">    x.right = y;</span><br><span class="line">    y.left  = t;</span><br><span class="line">    y.height = <span class="number">1</span> + Math.max(h(y.left), h(y.right));</span><br><span class="line">    x.height = <span class="number">1</span> + Math.max(h(x.left), h(x.right));</span><br><span class="line">    <span class="keyword">return</span> x;                       <span class="comment">// 新子树根</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// 左旋是右旋的镜像：y 的右子 x 上位，x.left 接到 y.right</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="AVL-树：严格平衡"><a href="#AVL-树：严格平衡" class="headerlink" title="AVL 树：严格平衡"></a>AVL 树：严格平衡</h3><p>AVL 给每个节点加一个<strong>平衡因子 <code>bf = h(left) − h(right)</code></strong>，并强制 <strong><code>|bf| ≤ 1</code></strong>。一旦插入&#x2F;删除破坏了这个条件，就按四种情形之一做旋转：<strong>LL（右旋）、RR（左旋）、LR（先左后右）、RL（先右后左）</strong>。代价是每次操作都要维护高度和做可能的旋转，插入&#x2F;删除略慢，但查询极快（<code>O(log n)</code> 且常数很小），适合<strong>查询远多于写入</strong>的场景。</p>
+<h3 id="红黑树：近似平衡"><a href="#红黑树：近似平衡" class="headerlink" title="红黑树：近似平衡"></a>红黑树：近似平衡</h3><p>红黑树放宽了要求，改用「颜色」约束——这正是下一节的主角，也是 BST 家族里工程最常用的一种。</p>
+<blockquote>
+<p><strong>本质一句话（提前剧透）</strong>：平衡树 &#x3D; BST + 「用旋转维持树高 ≈ log n」。AVL 偏「严」（查询快），红黑树偏「松」（增删快），殊途同归都是 <code>O(log n)</code>。</p>
+</blockquote>
+<hr>
+<h2 id="五、红黑树：近似平衡的精髓"><a href="#五、红黑树：近似平衡的精髓" class="headerlink" title="五、红黑树：近似平衡的精髓"></a>五、红黑树：近似平衡的精髓</h2><p>红黑树和 AVL 干的是同一件事——<strong>给 BST 上一把「平衡锁」，防止退化成链表</strong>。区别只在锁的松紧：</p>
+<ul>
+<li><strong>AVL</strong>：锁得死，<code>|平衡因子| ≤ 1</code>，查询极快，但每次插入删除可能触发多次旋转。</li>
+<li><strong>红黑树</strong>：锁得松，只要求「近似平衡」，旋转次数更少、增删更快，查询只比 AVL 略慢。</li>
+</ul>
+<p>工程里红黑树更常见：<code>TreeMap</code>、<code>std::map</code>、很多语言的有序容器底层都是它。<strong>取舍很清晰：用一点点查询速度，换大量增删速度。</strong></p>
+<p>下面这棵树是合法的红黑树，先让它把五条性质变具体：</p>
+<div align="center">
+
+<svg width="100%" viewBox="0 0 680 240" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Red-black tree example</title>
+  <desc>一个合法红黑树：黑根 13，黑子 8 与 17，红叶 1、11、15、25。每条根到叶路径含 2 个黑节点（黑高相等），且无相邻红节点。</desc>
+  <line x1="340" y1="64" x2="200" y2="86" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="340" y1="64" x2="480" y2="86" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="200" y1="134" x2="110" y2="166" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="200" y1="134" x2="290" y2="166" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="480" y1="134" x2="430" y2="166" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="480" y1="134" x2="610" y2="166" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="340" cy="40" r="24" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="340" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">13</text>
+  <circle cx="200" cy="110" r="24" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="200" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">8</text>
+  <circle cx="480" cy="110" r="24" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="480" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">17</text>
+  <circle cx="110" cy="190" r="24" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="110" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">1</text>
+  <circle cx="290" cy="190" r="24" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="290" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">11</text>
+  <circle cx="430" cy="190" r="24" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="430" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">15</text>
+  <circle cx="610" cy="190" r="24" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="610" y="190" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">25</text>
+  <text x="340" y="232" text-anchor="middle" font-size="12" fill="#5F5E5A">黑高=2（各路径黑节点数相等）；无连续红节点 → 树高 ≤ 2·log₂n</text>
+</svg>
+
+</div>
+
+<h3 id="5-条性质，以及每条「为什么存在」"><a href="#5-条性质，以及每条「为什么存在」" class="headerlink" title="5 条性质，以及每条「为什么存在」"></a>5 条性质，以及每条「为什么存在」</h3><table>
+<thead>
+<tr>
+<th>#</th>
+<th>性质</th>
+<th>为什么需要它</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>节点非红即黑</td>
+<td>定义</td>
+</tr>
+<tr>
+<td>2</td>
+<td>根必须是黑</td>
+<td>让边界统一，少一种特例</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>红节点的子节点必为黑</strong>（无连续红）</td>
+<td>高度界的关键之一</td>
+</tr>
+<tr>
+<td>4</td>
+<td>任一节点到所有叶子（NIL）的路径，<strong>黑节点数相等</strong>（黑高相等）</td>
+<td>高度界的关键之二</td>
+</tr>
+<tr>
+<td>5</td>
+<td>叶子（NIL）为黑</td>
+<td>和 2 一起让边界好处理</td>
+</tr>
+</tbody></table>
+<p>注意：<strong>(3) 和 (4) 才是真正起作用的两条</strong>，其余几条主要是让算法实现少分情况。</p>
+<h3 id="高度界推导：把「≈-log-n」从直觉变成不等式"><a href="#高度界推导：把「≈-log-n」从直觉变成不等式" class="headerlink" title="高度界推导：把「≈ log n」从直觉变成不等式"></a>高度界推导：把「≈ log n」从直觉变成不等式</h3><p>这是红黑树最该想通的一点，分两步。</p>
+<p><strong>第一步：由 (3)+(4) 得到 <code>h ≤ 2·bh</code>。</strong></p>
+<ul>
+<li>因为 (3)「无连续红」：任意一条路径上，红节点不能挨着红节点，所以黑节点至少占一半（最密也就是红黑红黑交替，1:1）。</li>
+<li>因为 (4)「黑高相等」：设黑高为 <code>bh</code>，那么<strong>最短路径</strong>就是一路全黑 &#x3D; <code>bh</code> 个节点；<strong>最长路径</strong>就是红黑交替 &#x3D; <code>2·bh</code> 个节点。</li>
+<li>于是 <strong>最长路径 ≤ 2 × 最短路径</strong>，整棵树高度 <code>h ≤ 2·bh</code>。</li>
+</ul>
+<p><strong>第二步：用「二叉树的逻辑」把 <code>bh</code> 和 <code>n</code> 连起来。</strong></p>
+<p>黑高为 <code>bh</code> 的树，节点数至少有 <code>2^bh − 1</code> 个。为什么？把红节点全部隐去，剩下的<strong>黑骨架</strong>本身是一棵二叉树：</p>
+<div align="center">
+
+<svg width="100%" viewBox="0 0 680 200" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Black skeleton gives the binary-tree lower bound</title>
+  <desc>左：完整红黑树；右：隐去红节点后的黑骨架，是一棵 bh=2 的二叉树，至少 2^2-1=3 个黑节点。</desc>
+  <line x1="160" y1="50" x2="120" y2="80" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="160" y1="50" x2="200" y2="80" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="120" y1="110" x2="80" y2="140" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="120" y1="110" x2="140" y2="140" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="200" y1="110" x2="180" y2="140" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="200" y1="110" x2="240" y2="140" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="160" cy="35" r="15" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="160" y="35" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">13</text>
+  <circle cx="120" cy="95" r="15" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="120" y="95" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">8</text>
+  <circle cx="200" cy="95" r="15" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="200" y="95" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">17</text>
+  <circle cx="80" cy="155" r="15" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="80" y="155" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">1</text>
+  <circle cx="140" cy="155" r="15" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="140" y="155" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">11</text>
+  <circle cx="180" cy="155" r="15" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="180" y="155" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">15</text>
+  <circle cx="240" cy="155" r="15" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="240" y="155" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">25</text>
+  <text x="345" y="100" text-anchor="middle" font-size="20" fill="#5F5E5A">&rarr;</text>
+  <line x1="500" y1="50" x2="460" y2="80" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="500" y1="50" x2="540" y2="80" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="460" y1="110" x2="460" y2="142" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="540" y1="110" x2="540" y2="142" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 3"/>
+  <circle cx="500" cy="35" r="15" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="500" y="35" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">13</text>
+  <circle cx="460" cy="95" r="15" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="460" y="95" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">8</text>
+  <circle cx="540" cy="95" r="15" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="540" y="95" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#FFFFFF">17</text>
+  <circle cx="460" cy="150" r="8" fill="none" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="540" cy="150" r="8" fill="none" stroke="#5F5E5A" stroke-width="1"/>
+  <text x="340" y="185" text-anchor="middle" font-size="12" fill="#5F5E5A">隐去红节点 → 黑骨架是一棵 bh=2 的二叉树，至少 2^2-1 = 3 个黑节点（13·8·17）</text>
+</svg>
+
+</div>
+
+<ul>
+<li>黑骨架要从根到每个叶子都恰好走过 <code>bh</code> 个黑节点（性质 4）；</li>
+<li>一棵高度为 <code>bh</code> 的二叉树，<strong>最少</strong>也有 <code>2^bh − 1</code> 个节点（满二叉树才达到这个下界，缺一个枝就到不了 <code>bh</code> 层）；</li>
+<li>我们隐去红节点只是「拿走」了一部分，黑骨架节点数只会比总节点数少、不会多；红节点本来就是额外加在黑骨架上的。</li>
+</ul>
+<p>所以：<strong>黑节点数 ≥ <code>2^bh − 1</code>，进而总节点数 <code>n ≥ 2^bh − 1</code></strong> → <code>bh ≤ log₂(n+1)</code>。</p>
+<p>联立两步：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">h ≤ 2·bh           （来自 无红红 + 黑高相等）</span><br><span class="line">bh ≤ log₂(n+1)     （来自 二叉树下界 2^bh − 1 ≤ n）</span><br><span class="line">──────────────────</span><br><span class="line">h ≤ 2·log₂(n+1) = O(log n)    常数因子 ≤ 2</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>这正是普通二叉树的底层事实——「高为 H 的二叉树至少 <code>2^H − 1</code> 个节点」——只不过这里把「高」换成了「黑高」。二分查找的 <code>log n</code> 也是同一个不等式倒过来，所以红黑树的高度天然落在 <code>log n</code> 量级。<strong>(3)+(4) 两条性质，通过这串不等式硬推出来「高度 ≈ log n」；二叉树的 <code>2^H − 1</code> 下界，就是连接 <code>bh</code> 与 <code>n</code> 的那座桥。</strong></p>
+</blockquote>
+<h3 id="内拐-外拐：插入修复看形状"><a href="#内拐-外拐：插入修复看形状" class="headerlink" title="内拐 &#x2F; 外拐：插入修复看形状"></a>内拐 &#x2F; 外拐：插入修复看形状</h3><p>插入红节点 <code>z</code> 后，它和父 <code>y</code>（红）冲突（红红）。此时祖父 <code>x</code>（黑）必然是黑（否则插入前就不合法）。看 <code>x、y、z</code> 三个点的形状，决定转几次：</p>
+<div align="center">
+
+<svg width="100%" viewBox="0 0 680 260" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Red-black insert: outer vs inner cases</title>
+  <desc>左：外拐 LL，祖-父-子同向成直线；右：内拐 LR，父与子反向成之字。</desc>
+  <text x="160" y="22" text-anchor="middle" font-size="14" fill="#2C2C2A">外拐（LL）</text>
+  <line x1="170" y1="62" x2="120" y2="92" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="120" y1="120" x2="70" y2="150" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="170" cy="40" r="22" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="170" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">x</text>
+  <circle cx="120" cy="110" r="22" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="120" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">y</text>
+  <circle cx="70" cy="180" r="22" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="70" y="180" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">z</text>
+  <text x="95" y="212" text-anchor="middle" font-size="11" fill="#5F5E5A">y左、z左（都偏左）</text>
+  <text x="500" y="22" text-anchor="middle" font-size="14" fill="#2C2C2A">内拐（LR）</text>
+  <line x1="500" y1="62" x2="450" y2="92" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="450" y1="120" x2="510" y2="150" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="500" cy="40" r="22" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="500" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">x</text>
+  <circle cx="450" cy="110" r="22" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="450" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">y</text>
+  <circle cx="510" cy="180" r="22" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="510" y="180" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">z</text>
+  <text x="480" y="212" text-anchor="middle" font-size="11" fill="#5F5E5A">y左、z右（反向）</text>
+  <text x="340" y="245" text-anchor="middle" font-size="12" fill="#5F5E5A">外拐→在祖父 x 上单旋；内拐→先转父 y 再转祖 x（双旋）</text>
+</svg>
+
+</div>
+
+<ul>
+<li><strong>外拐（outer &#x2F; 直线 &#x2F; LL·RR）</strong>：<code>z</code> 在「外侧」——<code>y</code> 和 <code>z</code> 相对 <code>x</code> 偏向同一侧（<code>y</code> 左孩子、<code>z</code> 也左孩子，或都右）。三点成一条线 → <strong>在祖父 <code>x</code> 上单旋</strong>即可，再重新染色。</li>
+<li><strong>内拐（inner &#x2F; 之字 &#x2F; LR·RL）</strong>：<code>z</code> 在「内侧」——<code>y</code> 和 <code>z</code> 反向（<code>y</code> 左孩子、<code>z</code> 右孩子，或反过来）。三点成之字形 → <strong>先转父 <code>y</code> 把自己掰直成外拐，再转祖 <code>x</code></strong>（双旋）。</li>
+</ul>
+<p>这和 AVL 完全同构：AVL 里 LL&#x2F;RR 单旋、LR&#x2F;RL 双旋；红黑「外拐单旋、内拐双旋」是同一个几何直觉，只是红黑还额外伴随重新染色。</p>
+<h3 id="插入修复的-before-after"><a href="#插入修复的-before-after" class="headerlink" title="插入修复的 before &#x2F; after"></a>插入修复的 before &#x2F; after</h3><p><strong>外拐（LL）</strong>：左边是插入 <code>1</code> 后出现的红红冲突，右边是修完的样子。</p>
+<div align="center">
+
+<svg width="100%" viewBox="0 0 680 220" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Outer LL case: before and after fix</title>
+  <desc>左：3黑-2红-1红 成直线且红红冲突；右：右旋+染色后得到 2黑 挂 1红、3红 的合法树。</desc>
+  <line x1="140" y1="60" x2="100" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="100" y1="130" x2="60" y2="150" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="140" cy="40" r="20" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="140" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">3</text>
+  <circle cx="100" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="100" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">2</text>
+  <circle cx="60" cy="170" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="60" y="170" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">1</text>
+  <text x="305" y="105" text-anchor="middle" font-size="22" fill="#5F5E5A">&rarr;</text>
+  <line x1="450" y1="60" x2="410" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="450" y1="60" x2="490" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="450" cy="40" r="20" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="450" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">2</text>
+  <circle cx="410" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="410" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">1</text>
+  <circle cx="490" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="490" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">3</text>
+  <text x="100" y="205" text-anchor="middle" font-size="12" fill="#5F5E5A">改前：红红冲突</text>
+  <text x="450" y="205" text-anchor="middle" font-size="12" fill="#5F5E5A">改后：合法平衡</text>
+</svg>
+
+</div>
+
+<p><strong>内拐（LR）</strong>：它多了一步——先「转父」把自己掰直成外拐，再「转祖」得到同样结果。</p>
+<div align="center">
+
+<svg width="100%" viewBox="0 0 680 220" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Inner LR case: three steps to fix</title>
+  <desc>左：3黑-1红-2红 之字冲突；中：左转父1后变成直线外拐；右：右转祖3后收敛为合法小三角。</desc>
+  <line x1="95" y1="60" x2="60" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="60" y1="130" x2="100" y2="150" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="95" cy="40" r="20" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="95" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">3</text>
+  <circle cx="60" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="60" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">1</text>
+  <circle cx="100" cy="170" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="100" y="170" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">2</text>
+  <text x="205" y="105" text-anchor="middle" font-size="20" fill="#5F5E5A">&rarr;</text>
+  <line x1="315" y1="60" x2="315" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="315" y1="130" x2="280" y2="150" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="315" cy="40" r="20" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="315" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">3</text>
+  <circle cx="315" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="315" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">2</text>
+  <circle cx="280" cy="170" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="280" y="170" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">1</text>
+  <text x="430" y="105" text-anchor="middle" font-size="20" fill="#5F5E5A">&rarr;</text>
+  <line x1="545" y1="60" x2="510" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <line x1="545" y1="60" x2="580" y2="90" stroke="#5F5E5A" stroke-width="1"/>
+  <circle cx="545" cy="40" r="20" fill="#2C2C2A" stroke="#444441" stroke-width="0.5"/>
+  <text x="545" y="40" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">2</text>
+  <circle cx="510" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="510" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">1</text>
+  <circle cx="580" cy="110" r="20" fill="#E24B4A" stroke="#A32D2D" stroke-width="0.5"/>
+  <text x="580" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#FFFFFF">3</text>
+  <text x="95" y="205" text-anchor="middle" font-size="12" fill="#5F5E5A">改前：之字</text>
+  <text x="315" y="205" text-anchor="middle" font-size="12" fill="#5F5E5A">转父后：直线</text>
+  <text x="545" y="205" text-anchor="middle" font-size="12" fill="#5F5E5A">改后：合法</text>
+</svg>
+
+</div>
+
+<h3 id="插入算法总览"><a href="#插入算法总览" class="headerlink" title="插入算法总览"></a>插入算法总览</h3><ol>
+<li>先按 BST 规则插入，<strong>新节点一律染红</strong>（染红不会破坏性质 (4) 黑高，最多只破坏 (3) 无红红 或 (2) 根黑——把风险缩到最小）。</li>
+<li>若破坏，只在局部动手：<ul>
+<li><strong>叔节点是红</strong> → 重新染色，把「红红冲突」往上推一层（像把麻烦甩给老爸）；</li>
+<li><strong>叔节点是黑、且是「内拐」</strong> → 先转一下变成「外拐」；</li>
+<li><strong>叔节点是黑、且是「外拐」</strong> → 旋转 + 染色，一次性修好。</li>
+</ul>
+</li>
+<li>最后算法强制<strong>根必为黑</strong>。</li>
+</ol>
+<p>无论内拐外拐，修复完都收敛成「<strong>黑根 + 两个红孩子</strong>」的合法小三角，树高被压平。这就是红黑树插入的全部武器：recolor（叔红时） + rotate（叔黑时），外拐单旋、内拐双旋。</p>
+<blockquote>
+<p>删除比插入难：删掉黑节点会破坏 (4) 黑高，得靠「借黑 &#x2F; 转移黑」来补，情况更多（会出现「红-黑-黑」叠加态）。本篇聚焦插入修复，删除留作后续专题。</p>
+</blockquote>
+<hr>
+<h2 id="六、B-树：为磁盘-数据库而生的多路平衡树"><a href="#六、B-树：为磁盘-数据库而生的多路平衡树" class="headerlink" title="六、B 树：为磁盘 &#x2F; 数据库而生的多路平衡树"></a>六、B 树：为磁盘 &#x2F; 数据库而生的多路平衡树</h2><p>前面这些树都假设整棵树在内存里、比较一次代价极低。可数据库要把数据放在磁盘上，磁盘 IO 一次就读一「页」（几 KB），而树高每多一层就多一次随机 IO。普通 BST&#x2F;AVL 每个节点只存一个 key、分两叉，树高 <code>log₂n</code>——一亿条数据就得 <code>log₂(10⁸) ≈ 27</code> 层，也就是 27 次磁盘 IO，<strong>太慢</strong>。</p>
+<p><strong>B 树</strong>的解法是：让一个节点存<strong>多个 key、分多叉</strong>，把「矮胖」做到极致。</p>
+<div align="center">
+
+<svg width="380" height="150" viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg">
+  <rect x="40" y="30" width="300" height="44" rx="4" fill="#d1fae5" stroke="#059669" stroke-width="2"/>
+  <line x1="140" y1="30" x2="140" y2="74" stroke="#059669" stroke-width="2"/>
+  <line x1="240" y1="30" x2="240" y2="74" stroke="#059669" stroke-width="2"/>
+  <text x="90" y="58" text-anchor="middle" font-size="14" fill="#065f46">10</text>
+  <text x="190" y="58" text-anchor="middle" font-size="14" fill="#065f46">20</text>
+  <text x="290" y="58" text-anchor="middle" font-size="14" fill="#065f46">30</text>
+  <text x="20" y="20" font-size="11" fill="#374151">一个磁盘页（节点）</text>
+  <line x1="40" y1="74" x2="40" y2="110" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="140" y1="74" x2="140" y2="110" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="240" y1="74" x2="240" y2="110" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="340" y1="74" x2="340" y2="110" stroke="#9ca3af" stroke-width="1.5"/>
+  <rect x="20" y="110" width="40" height="26" rx="3" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="40" y="128" text-anchor="middle" font-size="10" fill="#374151">&lt;10</text>
+  <rect x="120" y="110" width="40" height="26" rx="3" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="140" y="128" text-anchor="middle" font-size="10" fill="#374151">10-20</text>
+  <rect x="220" y="110" width="40" height="26" rx="3" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="240" y="128" text-anchor="middle" font-size="10" fill="#374151">20-30</text>
+  <rect x="320" y="110" width="40" height="26" rx="3" fill="#e5e7eb" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="340" y="128" text-anchor="middle" font-size="10" fill="#374151">&gt;30</text>
+</svg>
+
+</div>
+
+<p>B 树要求：<strong>所有叶子在同一层</strong>（真正外存友好的关键），每个内部节点有 <code>m</code> 个 key、<code>m+1</code> 个分叉（<code>m</code> 即「阶」）。同样是 1 亿条数据，若每页存 100 个 key，树高降到 <code>log₁₀₀(10⁸) ≈ 4</code> 层——<strong>4 次 IO 就能定位</strong>，比 27 次快了一个数量级。这也是为什么 MySQL（InnoDB）、PostgreSQL 的索引几乎都建立在 B 树（及其变体 B+ 树）之上。</p>
+<h3 id="三种树的适用场景对比"><a href="#三种树的适用场景对比" class="headerlink" title="三种树的适用场景对比"></a>三种树的适用场景对比</h3><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>平衡方式</th>
+<th>树高</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AVL</td>
+<td>高度严格平衡（&#96;</td>
+<td>bf</td>
+<td>≤1&#96;）</td>
+</tr>
+<tr>
+<td>红黑树</td>
+<td>颜色近似平衡（≤2×）</td>
+<td>低</td>
+<td>内存中、增删频繁（如 <code>TreeMap</code>）</td>
+</tr>
+<tr>
+<td>B &#x2F; B+ 树</td>
+<td>多路、叶子同层</td>
+<td>极矮（按页）</td>
+<td>磁盘 &#x2F; 数据库索引</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="七、C-对照速览"><a href="#七、C-对照速览" class="headerlink" title="七、C++ 对照速览"></a>七、C++ 对照速览</h2><p>在 C++ 标准库里，树的影子无处不在，只是被封装成了容器：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;map&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unordered_map&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::map&lt;<span class="type">int</span>, std::string&gt; m;      <span class="comment">// 红黑树，key 有序，O(log n)</span></span><br><span class="line">    m[<span class="number">50</span>] = <span class="string">&quot;a&quot;</span>; m[<span class="number">30</span>] = <span class="string">&quot;b&quot;</span>; m[<span class="number">70</span>] = <span class="string">&quot;c&quot;</span>;</span><br><span class="line">    <span class="keyword">for</span> (<span class="keyword">auto</span>&amp; kv : m) std::cout &lt;&lt; kv.first &lt;&lt; <span class="string">&quot; &quot;</span>; <span class="comment">// 升序：30 50 70</span></span><br><span class="line"></span><br><span class="line">    std::unordered_map&lt;<span class="type">int</span>, std::string&gt; u; <span class="comment">// 哈希表，平均 O(1)，无序</span></span><br><span class="line">    u[<span class="number">50</span>] = <span class="string">&quot;a&quot;</span>; u[<span class="number">30</span>] = <span class="string">&quot;b&quot;</span>;</span><br><span class="line">    <span class="comment">// 遍历顺序不确定</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>要点对照：</p>
+<ul>
+<li><strong><code>std::map</code> &#x2F; <code>std::set</code></strong> 底层是<strong>红黑树</strong>，遍历有序、单次操作 <code>O(log n)</code>——和 Java 的 <code>TreeMap</code> 是同一个思路。</li>
+<li><strong><code>std::unordered_map</code></strong> 底层是<strong>哈希表</strong>，平均 <code>O(1)</code> 但<strong>无序</strong>——当你不需要有序、只求快时用它。</li>
+<li>Java 侧对应物：<code>TreeMap</code>（红黑树，有序）vs <code>HashMap</code>（哈希，无序）。选型逻辑在两种语言里完全一致。</li>
+</ul>
+<p>如果手写 BST 插入，C++ 与 Java 几乎同构，只是内存管理从「GC」换成「<code>new</code> &#x2F; 裸指针（或 <code>unique_ptr</code>）」：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">Node</span> &#123; <span class="type">int</span> key; Node* left = <span class="literal">nullptr</span>; Node* right = <span class="literal">nullptr</span>; &#125;;</span><br><span class="line"><span class="function">Node* <span class="title">insert</span><span class="params">(Node* n, <span class="type">int</span> k)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (!n) <span class="keyword">return</span> <span class="keyword">new</span> Node&#123;k&#125;;</span><br><span class="line">    <span class="keyword">if</span> (k &lt; n-&gt;key) n-&gt;left  = <span class="built_in">insert</span>(n-&gt;left, k);</span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (k &gt; n-&gt;key) n-&gt;right = <span class="built_in">insert</span>(n-&gt;right, k);</span><br><span class="line">    <span class="keyword">return</span> n;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="八、收尾：一句话带走"><a href="#八、收尾：一句话带走" class="headerlink" title="八、收尾：一句话带走"></a>八、收尾：一句话带走</h2><blockquote>
+<p><strong>本质一句话</strong>：树把「有序」从数组的连续内存搬到了节点间的偏序关系上，于是插入&#x2F;删除不再搬运整段数据。<strong>BST 是地基，平衡树（AVL &#x2F; 红黑）用旋转把树高压在 <code>log n</code>，B 树用「多路 + 同层叶子」把树高压到能塞进几次磁盘 IO</strong>——从内存到数据库，一以贯之。</p>
+</blockquote>
+<p>本篇从 BST 的「免费排序」讲到它的退化软肋，再用旋转引出平衡树；重点拆透了红黑树：五条性质为什么存在、<code>(3)+(4)</code> 如何借二叉树的 <code>2^H−1</code> 下界推出高度 <code>≤ 2·log n</code>、内&#x2F;外拐如何决定单旋还是双旋，最后用 B 树把视角从内存拉到磁盘。</p>
+<p><em>本篇对应 CS61B 第 5 讲：树。代码均可在本地 JDK &#x2F; 支持 C++17 的编译器直接编译运行。</em></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0105/">https://hespethorn.github.io/posts/c61b0105/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E4%BA%8C%E5%8F%89%E6%90%9C%E7%B4%A2%E6%A0%91/">二叉搜索树</a><a class="post-meta__tags" href="/tags/%E7%BA%A2%E9%BB%91%E6%A0%91/">红黑树</a><a class="post-meta__tags" href="/tags/%E5%B9%B3%E8%A1%A1%E6%A0%91/">平衡树</a><a class="post-meta__tags" href="/tags/B%E6%A0%91/">B树</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">695</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">856</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">33</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="树：BST、平衡树（AVL/红黑简介）与 B 树">树：BST、平衡树（AVL/红黑简介）与 B 树</a><time datetime="2024-10-13T16:00:00.000Z" title="Created 2024-10-14 00:00:00">2024-10-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="栈与队列：LIFO 与 FIFO 的两种世界观">栈与队列：LIFO 与 FIFO 的两种世界观</a><time datetime="2024-10-09T16:00:00.000Z" title="Created 2024-10-10 00:00:00">2024-10-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="链表（单/双）与哨兵">链表（单/双）与哨兵</a><time datetime="2024-10-06T16:00:00.000Z" title="Created 2024-10-07 00:00:00">2024-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="数组与动态数组（ArrayList）及均摊分析">数组与动态数组（ArrayList）及均摊分析</a><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="数据结构导论：从数组到抽象数据类型（ADT）">数据结构导论：从数组到抽象数据类型（ADT）</a><time datetime="2024-09-29T16:00:00.000Z" title="Created 2024-09-30 00:00:00">2024-09-30</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2026-08-21T02:43:53.043Z" title="Created 2026-08-21 10:43:53">2026-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260821/" title="AI 新闻速递｜2026-08-21：Grok Bot 走红硅谷、DeepSeek V3.1 双模式合一、Qwen-UI-Agent 把屏幕当接口、宇树提「物理 AI 自进化」+ 万元机械臂、机器人演出沙盒审批">AI 新闻速递｜2026-08-21：Grok Bot 走红硅谷、DeepSeek V3.1 双模式合一、Qwen-UI-Agent 把屏幕当接口、宇树提「物理 AI 自进化」+ 万元机械臂、机器人演出沙盒审批</a><time datetime="2026-08-20T16:00:00.000Z" title="Created 2026-08-21 00:00:00">2026-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7d2f4b6a/" title="雪原驿马站的哑仆">雪原驿马站的哑仆</a><time datetime="2026-08-20T16:00:00.000Z" title="Created 2026-08-21 00:00:00">2026-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260820/" title="AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×">AI 新闻速递｜2026-08-20：世界机器人大会开幕、小米 XR-1 开源 VLA、Copilot Autopilot GA、MongoDB 给 Agent 接生产库、Cursor 构建提速 3×</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b4e7a1c9/" title="玉津渡的琢玉人">玉津渡的琢玉人</a><time datetime="2026-08-19T16:00:00.000Z" title="Created 2026-08-20 00:00:00">2026-08-20</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-News/">AI News</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Python/">Python</a><a href="/categories/AI-application/">AI Application</a></li><li><a href="/posts/FamilyProse/">Family Prose</a><a href="/posts/LoveDays/">Love Days</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
