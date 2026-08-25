@@ -1,0 +1,862 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>RISC-V 汇编基础 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="上一课我们把 C 语言的指针和位运算拽到了门电路旁边。现在还有一道缝没填上：sum +&#x3D; a[i] 这么一行字，CPU 里那几十亿个门到底是&quot;照着什么&quot;动起来的？答案是指令——一串二进制码，每一条都对应硬件里一小段被点亮的通路。汇编就是这串二进制的人类可读写法。 这一篇只干一件事：把 RV32I 这套指令集讲透到&quot;你能手写一个循环、并且知道每条指令在硬件里意味着什么&amp;">
+<meta property="og:type" content="article">
+<meta property="og:title" content="RISC-V 汇编基础">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61c0102/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="上一课我们把 C 语言的指针和位运算拽到了门电路旁边。现在还有一道缝没填上：sum +&#x3D; a[i] 这么一行字，CPU 里那几十亿个门到底是&quot;照着什么&quot;动起来的？答案是指令——一串二进制码，每一条都对应硬件里一小段被点亮的通路。汇编就是这串二进制的人类可读写法。 这一篇只干一件事：把 RV32I 这套指令集讲透到&quot;你能手写一个循环、并且知道每条指令在硬件里意味着什么&amp;">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-11-06T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-25T09:21:07.687Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="RISC-V">
+<meta property="article:tag" content="汇编">
+<meta property="article:tag" content="指令集">
+<meta property="article:tag" content="寄存器">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "RISC-V 汇编基础",
+  "url": "https://hespethorn.github.io/posts/c61c0102/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-11-06T16:00:00.000Z",
+  "dateModified": "2026-08-25T09:21:07.687Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61c0102/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'RISC-V 汇编基础',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">709</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">886</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">34</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">RISC-V 汇编基础</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">RISC-V 汇编基础</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61C/">CS61C</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>16mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>上一课我们把 C 语言的指针和位运算拽到了门电路旁边。现在还有一道缝没填上：<code>sum += a[i]</code> 这么一行字，CPU 里那几十亿个门到底是&quot;照着什么&quot;动起来的？答案是<strong>指令</strong>——一串二进制码，每一条都对应硬件里一小段被点亮的通路。汇编就是这串二进制的人类可读写法。</p>
+<p>这一篇只干一件事：把 RV32I 这套指令集讲透到&quot;你能手写一个循环、并且知道每条指令在硬件里意味着什么&quot;的程度。</p>
+<h2 id="1-指令集是硬件与软件之间的合同"><a href="#1-指令集是硬件与软件之间的合同" class="headerlink" title="1. 指令集是硬件与软件之间的合同"></a>1. 指令集是硬件与软件之间的合同</h2><p>CPU 不认识 C，也不认识 Java。它只认识一件事：从内存里取一个 32 位的数，按事先约定好的规则解码，然后驱动相应的电路。这份&quot;事先约定好的规则&quot;就是 <strong>ISA（Instruction Set Architecture，指令集架构）</strong>。</p>
+<p>ISA 规定了三样东西，一样都不能少：</p>
+<table>
+<thead>
+<tr>
+<th>ISA 规定什么</th>
+<th>具体内容</th>
+<th>为什么必须由 ISA 定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>有哪些寄存器</td>
+<td>RV32I：32 个 32 位通用寄存器</td>
+<td>编译器要知道往哪儿放变量</td>
+</tr>
+<tr>
+<td>有哪些指令</td>
+<td>add &#x2F; lw &#x2F; beq ……</td>
+<td>二进制码怎么解码是硬连线的</td>
+</tr>
+<tr>
+<td>指令怎么编码</td>
+<td>每条 32 位，字段位置固定</td>
+<td>取指译码电路按位切分</td>
+</tr>
+</tbody></table>
+<p><strong>本质一句话</strong>：ISA 是一份合同——编译器承诺只生成合同内的指令，硬件承诺合同内的指令都能正确执行。x86、ARM、RISC-V 就是三份不同的合同。</p>
+<p>RISC-V 这份合同的特点是<strong>模块化</strong>：<code>RV32I</code> 是必须实现的基础整数指令集（32 位，Integer），只有约 40 条指令；乘除法（<code>M</code>）、原子操作（<code>A</code>）、单精度浮点（<code>F</code>）、压缩指令（<code>C</code>）都是可选扩展，拼起来写作 <code>RV32IMAC</code>。所以&quot;精简&quot;不是指指令少得不能用，而是指<strong>基础集合小、扩展靠拼</strong>。</p>
+<h2 id="2-32-个格子：寄存器堆"><a href="#2-32-个格子：寄存器堆" class="headerlink" title="2. 32 个格子：寄存器堆"></a>2. 32 个格子：寄存器堆</h2><p>RV32I 有 32 个通用寄存器，编号 <code>x0</code>–<code>x31</code>，每个 32 位。它们是 CPU 里唯一&quot;零延迟&quot;的存储——所有算术运算的操作数都必须先在寄存器里。</p>
+<div align="center">
+<svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <rect x="0" y="0" width="680" height="210" fill="#fbfbfd"/>
+  <text x="20" y="24" fill="#333" font-size="13">RV32I 寄存器堆（ABI 约定的角色）</text>
+
+  <rect x="20" y="38" width="120" height="34" rx="5" fill="#fce8e6" stroke="#ea4335"/>
+  <text x="34" y="53" fill="#c5221f">x0 = zero</text>
+  <text x="34" y="67" fill="#666">恒为 0，写入被丢弃</text>
+
+  <rect x="152" y="38" width="120" height="34" rx="5" fill="#e8f0fe" stroke="#4285f4"/>
+  <text x="166" y="53" fill="#1a73e8">x1 = ra</text>
+  <text x="166" y="67" fill="#666">返回地址</text>
+
+  <rect x="284" y="38" width="120" height="34" rx="5" fill="#e8f0fe" stroke="#4285f4"/>
+  <text x="298" y="53" fill="#1a73e8">x2 = sp</text>
+  <text x="298" y="67" fill="#666">栈指针</text>
+
+  <rect x="416" y="38" width="244" height="34" rx="5" fill="#f1f3f4" stroke="#9aa0a6"/>
+  <text x="430" y="53" fill="#333">x3 = gp / x4 = tp</text>
+  <text x="430" y="67" fill="#666">全局指针 / 线程指针，日常极少手动碰</text>
+
+  <rect x="20" y="86" width="300" height="42" rx="5" fill="#fef7e0" stroke="#fbbc04"/>
+  <text x="34" y="103" fill="#b06000">x5–x7, x28–x31 = t0–t6　临时寄存器</text>
+  <text x="34" y="120" fill="#666">调用者保存：函数调用后内容可能已被改掉</text>
+
+  <rect x="332" y="86" width="328" height="42" rx="5" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="346" y="103" fill="#188038">x8–x9, x18–x27 = s0–s11　保存寄存器</text>
+  <text x="346" y="120" fill="#666">被调用者保存：谁改谁负责恢复，跨调用安全</text>
+
+  <rect x="20" y="142" width="640" height="42" rx="5" fill="#e8f0fe" stroke="#4285f4"/>
+  <text x="34" y="159" fill="#1a73e8">x10–x17 = a0–a7　参数 / 返回值</text>
+  <text x="34" y="176" fill="#666">前 8 个整型参数走 a0–a7；返回值放 a0（必要时 a0+a1 拼 64 位）</text>
+
+<p>  <text x="20" y="200" fill="#666">共 32 个 × 32 位 &#x3D; 128 字节。这就是 CPU 全部的&quot;手边空间&quot;。</text><br></svg></p>
+</div>
+
+<p><code>x0</code> 值得单独说一句。它硬连线为 0，写它没有任何效果。看似浪费了一个格子，实际上它让一大批操作免费复用了现成指令：</p>
+<table>
+<thead>
+<tr>
+<th>想做的事</th>
+<th>借 x0 实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>寄存器清零</td>
+<td><code>add t0, x0, x0</code></td>
+<td>不需要专门的 clear 指令</td>
+</tr>
+<tr>
+<td>装载小常数</td>
+<td><code>addi t0, x0, 42</code></td>
+<td>不需要专门的 load-immediate</td>
+</tr>
+<tr>
+<td>寄存器拷贝</td>
+<td><code>addi t1, t0, 0</code></td>
+<td>不需要专门的 mov</td>
+</tr>
+<tr>
+<td>无条件不做事</td>
+<td><code>addi x0, x0, 0</code></td>
+<td>这就是 <code>nop</code></td>
+</tr>
+<tr>
+<td>判断是否为 0</td>
+<td><code>beq t0, x0, L</code></td>
+<td>不需要专门的 test 指令</td>
+</tr>
+</tbody></table>
+<h2 id="3-三类指令，一张表讲完"><a href="#3-三类指令，一张表讲完" class="headerlink" title="3. 三类指令，一张表讲完"></a>3. 三类指令，一张表讲完</h2><p>RV32I 的日常用法可以粗暴归成三类。先记住这张表，后面全是它的展开：</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>代表指令</th>
+<th>语义</th>
+<th>关键限制</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>算术 &#x2F; 逻辑</td>
+<td><code>add sub and or xor slt</code></td>
+<td>寄存器 ← 寄存器 op 寄存器</td>
+<td>三个操作数都是寄存器</td>
+</tr>
+<tr>
+<td>带立即数</td>
+<td><code>addi andi ori slli srli srai</code></td>
+<td>寄存器 ← 寄存器 op 常数</td>
+<td>立即数只有 12 位（<code>slli</code> 系为 5 位）</td>
+</tr>
+<tr>
+<td>访存</td>
+<td><code>lw lh lb sw sh sb</code></td>
+<td>寄存器 ↔ 内存</td>
+<td>只有这类能碰内存</td>
+</tr>
+<tr>
+<td>控制流</td>
+<td><code>beq bne blt bge jal jalr</code></td>
+<td>改写 PC</td>
+<td>分支偏移以 2 字节为单位</td>
+</tr>
+</tbody></table>
+<p>最需要提前咬住的一条规则：<strong>RISC-V 是 load&#x2F;store 架构</strong>。除了 <code>lw</code>&#x2F;<code>sw</code> 这一类，没有任何指令能直接操作内存。C 里一行 <code>a[i] += 1</code>，在 RISC-V 里必然拆成&quot;取出来 → 算 → 写回去&quot;三步。x86 可以写 <code>add [rax], 1</code> 一步搞定，RISC-V 不行——这是有意的取舍：指令简单了，流水线才好做。</p>
+<h2 id="4-每条指令-32-位：编码格式与-12-位立即数之谜"><a href="#4-每条指令-32-位：编码格式与-12-位立即数之谜" class="headerlink" title="4. 每条指令 32 位：编码格式与 12 位立即数之谜"></a>4. 每条指令 32 位：编码格式与 12 位立即数之谜</h2><p>RV32I 的每条指令都是恰好 32 位，字段位置严格固定。译码电路不需要先&quot;读一遍看多长&quot;，直接按位切开就行。</p>
+<div align="center">
+<svg viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="11">
+  <rect x="0" y="0" width="680" height="230" fill="#fbfbfd"/>
+  <text x="20" y="22" fill="#333" font-size="13">R 型：add rd, rs1, rs2　（三个寄存器）</text>
+  <rect x="20" y="32" width="150" height="30" fill="#e8f0fe" stroke="#4285f4"/><text x="52" y="51" fill="#1a73e8">funct7 [7]</text>
+  <rect x="170" y="32" width="110" height="30" fill="#fef7e0" stroke="#fbbc04"/><text x="200" y="51" fill="#b06000">rs2 [5]</text>
+  <rect x="280" y="32" width="110" height="30" fill="#fef7e0" stroke="#fbbc04"/><text x="310" y="51" fill="#b06000">rs1 [5]</text>
+  <rect x="390" y="32" width="90" height="30" fill="#e6f4ea" stroke="#34a853"/><text x="405" y="51" fill="#188038">funct3</text>
+  <rect x="480" y="32" width="90" height="30" fill="#fce8e6" stroke="#ea4335"/><text x="502" y="51" fill="#c5221f">rd [5]</text>
+  <rect x="570" y="32" width="90" height="30" fill="#f1f3f4" stroke="#9aa0a6"/><text x="580" y="51" fill="#333">opcode</text>
+  <text x="20" y="76" fill="#666">bit 31 ←──────────────────────────────────────────────→ bit 0</text>
+
+<p>  <text x="20" y="110" fill="#333" font-size="13">I 型：addi rd, rs1, imm　&#x2F;　lw rd, imm(rs1)</text><br>  <rect x="20" y="120" width="260" height="30" fill="#fde7f3" stroke="#c2185b"/><text x="110" y="139" fill="#c2185b">imm [12]</text><br>  <rect x="280" y="120" width="110" height="30" fill="#fef7e0" stroke="#fbbc04"/><text x="310" y="139" fill="#b06000">rs1 [5]</text><br>  <rect x="390" y="120" width="90" height="30" fill="#e6f4ea" stroke="#34a853"/><text x="405" y="139" fill="#188038">funct3</text><br>  <rect x="480" y="120" width="90" height="30" fill="#fce8e6" stroke="#ea4335"/><text x="502" y="139" fill="#c5221f">rd [5]</text><br>  <rect x="570" y="120" width="90" height="30" fill="#f1f3f4" stroke="#9aa0a6"/><text x="580" y="139" fill="#333">opcode</text></p>
+<p>  <text x="20" y="180" fill="#333">R 型腾出的 funct7 + rs2 共 12 位 → I 型正好拿去装立即数。</text><br>  <text x="20" y="200" fill="#666">所以 imm 只有 12 位，且是有符号：范围 −2048 … +2047。</text><br>  <text x="20" y="220" fill="#666">rs1&#x2F;rs2&#x2F;rd 各 5 位 → 恰好编号 32 个寄存器，这也是&quot;为什么是 32 个&quot;。</text><br></svg></p>
+</div>
+
+<p>这张图解释了两件常被当成&quot;死记硬背&quot;的事：</p>
+<ul>
+<li><strong>为什么寄存器是 32 个</strong>：字段留了 5 位，<code>2^5 = 32</code>。多一个都编不进去。</li>
+<li><strong>为什么 <code>addi</code> 的常数不能超过 2047</strong>：I 型只剩 12 位放立即数，还得留一位做符号。想装 <code>addi t0, x0, 100000</code> 汇编器会直接报错，得改用 <code>lui</code> + <code>addi</code> 两条拼（伪指令 <code>li</code> 就是自动帮你拼这个）。</li>
+</ul>
+<h2 id="5-访存：lw-sw、偏移寻址与小端"><a href="#5-访存：lw-sw、偏移寻址与小端" class="headerlink" title="5. 访存：lw &#x2F; sw、偏移寻址与小端"></a>5. 访存：lw &#x2F; sw、偏移寻址与小端</h2><p>访存指令的写法是 <code>lw rd, offset(rs1)</code>：地址 &#x3D; 寄存器 <code>rs1</code> 的值 + 立即数 <code>offset</code>。这个&quot;基址 + 偏移&quot;的形式不是随便设计的——它刚好覆盖了两个最常见的场景：结构体字段（基址是对象指针，偏移是字段位置）和栈上局部变量（基址是 <code>sp</code>，偏移是槽位）。</p>
+<div align="center">
+<svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <rect x="0" y="0" width="680" height="190" fill="#fbfbfd"/>
+  <text x="20" y="22" fill="#333" font-size="13">int a[4] = {3, 1, 4, 1}; 在内存里（小端，基址 0x1000）</text>
+
+<p>  <text x="20" y="52" fill="#666">地址低 →</text><br>  <rect x="90" y="38" width="140" height="26" fill="#e8f0fe" stroke="#4285f4"/><br>  <rect x="230" y="38" width="140" height="26" fill="#e6f4ea" stroke="#34a853"/><br>  <rect x="370" y="38" width="140" height="26" fill="#fef7e0" stroke="#fbbc04"/><br>  <rect x="510" y="38" width="140" height="26" fill="#fce8e6" stroke="#ea4335"/><br>  <text x="140" y="56" fill="#1a73e8">a[0]</text><br>  <text x="280" y="56" fill="#188038">a[1]</text><br>  <text x="420" y="56" fill="#b06000">a[2]</text><br>  <text x="560" y="56" fill="#c5221f">a[3]</text></p>
+<p>  <text x="90" y="82" fill="#666">0x1000</text><br>  <text x="230" y="82" fill="#666">0x1004</text><br>  <text x="370" y="82" fill="#666">0x1008</text><br>  <text x="510" y="82" fill="#666">0x100C</text></p>
+<p>  <text x="20" y="118" fill="#333">a[0] &#x3D; 3 的 4 个字节（小端：低位字节放低地址）</text><br>  <rect x="90" y="128" width="60" height="26" fill="#fff" stroke="#4285f4"/><text x="108" y="146" fill="#333">03</text><br>  <rect x="150" y="128" width="60" height="26" fill="#fff" stroke="#4285f4"/><text x="168" y="146" fill="#333">00</text><br>  <rect x="210" y="128" width="60" height="26" fill="#fff" stroke="#4285f4"/><text x="228" y="146" fill="#333">00</text><br>  <rect x="270" y="128" width="60" height="26" fill="#fff" stroke="#4285f4"/><text x="288" y="146" fill="#333">00</text><br>  <text x="345" y="146" fill="#666">lb 取到 0x03；lw 取到 0x00000003</text><br>  <text x="20" y="176" fill="#666">lw t0, 8(a0) → 地址 &#x3D; a0 + 8 &#x3D; 0x1008 → 取到 a[2] &#x3D; 4</text><br></svg></p>
+</div>
+
+<p>三个必须记住的细节：</p>
+<ol>
+<li><strong>加载有宽度和符号之分</strong>：<code>lw</code>（4 字节）、<code>lh</code>（2 字节，符号扩展）、<code>lhu</code>（2 字节，零扩展）、<code>lb</code>&#x2F;<code>lbu</code> 同理。把 <code>char</code> 当成有符号还是无符号读错，一个 0xFF 就会变成 −1 或 255 两个结果。</li>
+<li><strong>偏移也是 12 位有符号</strong>。所以 <code>lw t0, 5000(a0)</code> 编不进去，必须先 <code>addi</code> 把基址推过去。</li>
+<li><strong>对齐</strong>：<code>lw</code> 要求地址是 4 的倍数。RV32I 规范允许实现不支持非对齐访问，真实的嵌入式核上一个非对齐 <code>lw</code> 就是一发异常。</li>
+</ol>
+<h2 id="6-控制流：把-C-的-for-循环拆成分支"><a href="#6-控制流：把-C-的-for-循环拆成分支" class="headerlink" title="6. 控制流：把 C 的 for 循环拆成分支"></a>6. 控制流：把 C 的 for 循环拆成分支</h2><p>RISC-V 没有&quot;标志位寄存器&quot;这种东西。x86 是 <code>cmp</code> 先设 flags、再 <code>jz</code> 看 flags；RISC-V 把比较和跳转压进了同一条指令：</p>
+<table>
+<thead>
+<tr>
+<th>指令</th>
+<th>含义</th>
+<th>有符号?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>beq rs1, rs2, L</code></td>
+<td>相等则跳</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>bne rs1, rs2, L</code></td>
+<td>不等则跳</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>blt rs1, rs2, L</code></td>
+<td>rs1 &lt; rs2 则跳</td>
+<td>有符号</td>
+</tr>
+<tr>
+<td><code>bge rs1, rs2, L</code></td>
+<td>rs1 ≥ rs2 则跳</td>
+<td>有符号</td>
+</tr>
+<tr>
+<td><code>bltu</code> &#x2F; <code>bgeu</code></td>
+<td>同上</td>
+<td><strong>无符号</strong></td>
+</tr>
+</tbody></table>
+<p>有符号和无符号版本的区别是实打实的坑：比较 <code>-1</code> 和 <code>1</code>，<code>blt</code> 认为 −1 小（对），<code>bltu</code> 把 −1 当成 0xFFFFFFFF，认为它更大。指针和长度比较请用 <code>u</code> 版，带负数的循环变量用普通版。</p>
+<p>把一个 C 循环手工翻译一遍，对应关系就清楚了：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">sum_array</span><span class="params">(<span class="type">int</span> *a, <span class="type">int</span> n)</span> &#123;</span><br><span class="line">    <span class="type">int</span> s = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; n; i++) s += a[i];</span><br><span class="line">    <span class="keyword">return</span> s;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对应的 RV32I 汇编（<code>a0</code> &#x3D; 数组基址，<code>a1</code> &#x3D; n，返回值放 <code>a0</code>）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">sum_array:</span><br><span class="line">    li   t0, 0          # s = 0</span><br><span class="line">    li   t1, 0          # i = 0</span><br><span class="line">loop:</span><br><span class="line">    bge  t1, a1, done   # if (i &gt;= n) 跳出——注意条件取反了</span><br><span class="line">    slli t2, t1, 2      # t2 = i * 4   （左移 2 位 = 乘 4，一个 int 4 字节）</span><br><span class="line">    add  t3, a0, t2     # t3 = &amp;a[i]</span><br><span class="line">    lw   t4, 0(t3)      # t4 = a[i]</span><br><span class="line">    add  t0, t0, t4     # s += a[i]</span><br><span class="line">    addi t1, t1, 1      # i++</span><br><span class="line">    j    loop</span><br><span class="line">done:</span><br><span class="line">    mv   a0, t0         # 返回值放 a0</span><br><span class="line">    ret                 # 跳回 ra</span><br></pre></td></tr></table></figure>
+
+<p>两处值得停一下：</p>
+<ul>
+<li><strong>循环条件被取反了</strong>。C 写的是&quot;<code>i &lt; n</code> 就继续&quot;，汇编写的是&quot;<code>i &gt;= n</code> 就跳走&quot;。因为分支指令只能表达&quot;满足则跳&quot;，而循环体在顺序位置上紧跟其后。</li>
+<li><strong><code>slli t2, t1, 2</code> 就是 C 里隐式的指针算术</strong>。<code>a[i]</code> 在 C 里看着像一次索引，在机器上是&quot;乘元素大小、加基址、再访存&quot;三条指令。这也是为什么遍历 <code>int</code> 数组和遍历 40 字节的结构体数组，代价并不一样。</li>
+</ul>
+<h2 id="7-让它真的跑起来：60-行的-RV32I-解释器"><a href="#7-让它真的跑起来：60-行的-RV32I-解释器" class="headerlink" title="7. 让它真的跑起来：60 行的 RV32I 解释器"></a>7. 让它真的跑起来：60 行的 RV32I 解释器</h2><p>汇编最难受的一点是&quot;看不见状态&quot;。与其装一整套交叉编译工具链，不如直接写一个只支持上面这几条指令的迷你解释器——寄存器就是一个长度 32 的数组，内存就是一个 <code>bytearray</code>，取指译码执行三步循环。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line">MASK = <span class="number">0xFFFFFFFF</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">s32</span>(<span class="params">x</span>):                      <span class="comment"># 无符号 32 位 -&gt; 有符号</span></span><br><span class="line">    x &amp;= MASK</span><br><span class="line">    <span class="keyword">return</span> x - (<span class="number">1</span> &lt;&lt; <span class="number">32</span>) <span class="keyword">if</span> x &amp; <span class="number">0x80000000</span> <span class="keyword">else</span> x</span><br><span class="line"></span><br><span class="line">ABI = &#123;<span class="string">&quot;zero&quot;</span>:<span class="number">0</span>,<span class="string">&quot;ra&quot;</span>:<span class="number">1</span>,<span class="string">&quot;sp&quot;</span>:<span class="number">2</span>,<span class="string">&quot;a0&quot;</span>:<span class="number">10</span>,<span class="string">&quot;a1&quot;</span>:<span class="number">11</span>,</span><br><span class="line">       <span class="string">&quot;t0&quot;</span>:<span class="number">5</span>,<span class="string">&quot;t1&quot;</span>:<span class="number">6</span>,<span class="string">&quot;t2&quot;</span>:<span class="number">7</span>,<span class="string">&quot;t3&quot;</span>:<span class="number">28</span>,<span class="string">&quot;t4&quot;</span>:<span class="number">29</span>&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">rnum</span>(<span class="params">name</span>):</span><br><span class="line">    <span class="keyword">if</span> name <span class="keyword">in</span> ABI: <span class="keyword">return</span> ABI[name]</span><br><span class="line">    <span class="keyword">if</span> name.startswith(<span class="string">&quot;x&quot;</span>): <span class="keyword">return</span> <span class="built_in">int</span>(name[<span class="number">1</span>:])</span><br><span class="line">    <span class="keyword">raise</span> ValueError(name)</span><br><span class="line"></span><br><span class="line">PROG = <span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">li   t0, 0</span></span><br><span class="line"><span class="string">li   t1, 0</span></span><br><span class="line"><span class="string">loop:</span></span><br><span class="line"><span class="string">bge  t1, a1, done</span></span><br><span class="line"><span class="string">slli t2, t1, 2</span></span><br><span class="line"><span class="string">add  t3, a0, t2</span></span><br><span class="line"><span class="string">lw   t4, 0(t3)</span></span><br><span class="line"><span class="string">add  t0, t0, t4</span></span><br><span class="line"><span class="string">addi t1, t1, 1</span></span><br><span class="line"><span class="string">j    loop</span></span><br><span class="line"><span class="string">done:</span></span><br><span class="line"><span class="string">mv   a0, t0</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 汇编：拆标签</span></span><br><span class="line">labels, code = &#123;&#125;, []</span><br><span class="line"><span class="keyword">for</span> line <span class="keyword">in</span> PROG.strip().splitlines():</span><br><span class="line">    line = line.split(<span class="string">&quot;#&quot;</span>)[<span class="number">0</span>].strip()</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> line: <span class="keyword">continue</span></span><br><span class="line">    <span class="keyword">if</span> line.endswith(<span class="string">&quot;:&quot;</span>):</span><br><span class="line">        labels[line[:-<span class="number">1</span>]] = <span class="built_in">len</span>(code); <span class="keyword">continue</span></span><br><span class="line">    op, _, rest = line.partition(<span class="string">&quot; &quot;</span>)</span><br><span class="line">    args = [a.strip() <span class="keyword">for</span> a <span class="keyword">in</span> rest.split(<span class="string">&quot;,&quot;</span>) <span class="keyword">if</span> a.strip()]</span><br><span class="line">    code.append((op, args))</span><br><span class="line"></span><br><span class="line"><span class="comment"># 执行环境：寄存器 + 一小片&quot;内存&quot;（字节数组）</span></span><br><span class="line">reg = [<span class="number">0</span>] * <span class="number">32</span></span><br><span class="line">mem = <span class="built_in">bytearray</span>(<span class="number">64</span>)</span><br><span class="line">DATA = [<span class="number">3</span>, <span class="number">1</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">5</span>, <span class="number">9</span>, <span class="number">2</span>, <span class="number">6</span>]</span><br><span class="line"><span class="keyword">for</span> i, v <span class="keyword">in</span> <span class="built_in">enumerate</span>(DATA):</span><br><span class="line">    mem[i*<span class="number">4</span>:i*<span class="number">4</span>+<span class="number">4</span>] = v.to_bytes(<span class="number">4</span>, <span class="string">&quot;little&quot;</span>)   <span class="comment"># 小端存放</span></span><br><span class="line">reg[ABI[<span class="string">&quot;a0&quot;</span>]] = <span class="number">0</span>            <span class="comment"># 数组基址 = 内存偏移 0</span></span><br><span class="line">reg[ABI[<span class="string">&quot;a1&quot;</span>]] = <span class="built_in">len</span>(DATA)    <span class="comment"># n</span></span><br><span class="line"></span><br><span class="line">pc, steps = <span class="number">0</span>, <span class="number">0</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;<span class="subst">&#123;<span class="string">&#x27;step&#x27;</span>:&gt;<span class="number">4</span>&#125;</span> <span class="subst">&#123;<span class="string">&#x27;pc&#x27;</span>:&gt;<span class="number">3</span>&#125;</span> <span class="subst">&#123;<span class="string">&#x27;指令&#x27;</span>:&lt;<span class="number">20</span>&#125;</span> <span class="subst">&#123;<span class="string">&#x27;t0(和)&#x27;</span>:&gt;<span class="number">7</span>&#125;</span> <span class="subst">&#123;<span class="string">&#x27;t1(i)&#x27;</span>:&gt;<span class="number">6</span>&#125;</span> <span class="subst">&#123;<span class="string">&#x27;t4(取到)&#x27;</span>:&gt;<span class="number">8</span>&#125;</span>&quot;</span>)</span><br><span class="line"><span class="keyword">while</span> pc &lt; <span class="built_in">len</span>(code):</span><br><span class="line">    op, a = code[pc]</span><br><span class="line">    nxt = pc + <span class="number">1</span></span><br><span class="line">    <span class="keyword">if</span>   op == <span class="string">&quot;li&quot;</span>:   reg[rnum(a[<span class="number">0</span>])] = <span class="built_in">int</span>(a[<span class="number">1</span>]) &amp; MASK</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;mv&quot;</span>:   reg[rnum(a[<span class="number">0</span>])] = reg[rnum(a[<span class="number">1</span>])]</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;addi&quot;</span>: reg[rnum(a[<span class="number">0</span>])] = (reg[rnum(a[<span class="number">1</span>])] + <span class="built_in">int</span>(a[<span class="number">2</span>])) &amp; MASK</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;add&quot;</span>:  reg[rnum(a[<span class="number">0</span>])] = (reg[rnum(a[<span class="number">1</span>])] + reg[rnum(a[<span class="number">2</span>])]) &amp; MASK</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;slli&quot;</span>: reg[rnum(a[<span class="number">0</span>])] = (reg[rnum(a[<span class="number">1</span>])] &lt;&lt; <span class="built_in">int</span>(a[<span class="number">2</span>])) &amp; MASK</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;lw&quot;</span>:</span><br><span class="line">        off, _, base = a[<span class="number">1</span>].partition(<span class="string">&quot;(&quot;</span>)</span><br><span class="line">        addr = reg[rnum(base.rstrip(<span class="string">&quot;)&quot;</span>))] + <span class="built_in">int</span>(off)</span><br><span class="line">        reg[rnum(a[<span class="number">0</span>])] = <span class="built_in">int</span>.from_bytes(mem[addr:addr+<span class="number">4</span>], <span class="string">&quot;little&quot;</span>)</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;bge&quot;</span>:</span><br><span class="line">        <span class="keyword">if</span> s32(reg[rnum(a[<span class="number">0</span>])]) &gt;= s32(reg[rnum(a[<span class="number">1</span>])]): nxt = labels[a[<span class="number">2</span>]]</span><br><span class="line">    <span class="keyword">elif</span> op == <span class="string">&quot;j&quot;</span>:    nxt = labels[a[<span class="number">0</span>]]</span><br><span class="line">    <span class="keyword">else</span>: <span class="keyword">raise</span> ValueError(op)</span><br><span class="line">    reg[<span class="number">0</span>] = <span class="number">0</span>                <span class="comment"># x0 永远为 0</span></span><br><span class="line">    steps += <span class="number">1</span></span><br><span class="line">    <span class="keyword">if</span> op == <span class="string">&quot;add&quot;</span> <span class="keyword">and</span> a[<span class="number">0</span>] == <span class="string">&quot;t0&quot;</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;<span class="subst">&#123;steps:&gt;<span class="number">4</span>&#125;</span> <span class="subst">&#123;pc:&gt;<span class="number">3</span>&#125;</span> <span class="subst">&#123;op+<span class="string">&#x27; &#x27;</span>+<span class="string">&#x27;,&#x27;</span>.join(a):&lt;<span class="number">20</span>&#125;</span> &quot;</span></span><br><span class="line">              <span class="string">f&quot;<span class="subst">&#123;reg[ABI[<span class="string">&#x27;t0&#x27;</span>]]:&gt;<span class="number">7</span>&#125;</span> <span class="subst">&#123;reg[ABI[<span class="string">&#x27;t1&#x27;</span>]]:&gt;<span class="number">6</span>&#125;</span> <span class="subst">&#123;reg[ABI[<span class="string">&#x27;t4&#x27;</span>]]:&gt;<span class="number">8</span>&#125;</span>&quot;</span>)</span><br><span class="line">    pc = nxt</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;\n共执行 <span class="subst">&#123;steps&#125;</span> 条指令，a0（返回值）= <span class="subst">&#123;reg[ABI[<span class="string">&#x27;a0&#x27;</span>]]&#125;</span>，期望 = <span class="subst">&#123;<span class="built_in">sum</span>(DATA)&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>运行输出（只打印累加那一步）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">step  pc 指令                     t0(和)  t1(i)   t4(取到)</span><br><span class="line">   7   6 add t0,t0,t4               3      0        3</span><br><span class="line">  14   6 add t0,t0,t4               4      1        1</span><br><span class="line">  21   6 add t0,t0,t4               8      2        4</span><br><span class="line">  28   6 add t0,t0,t4               9      3        1</span><br><span class="line">  35   6 add t0,t0,t4              14      4        5</span><br><span class="line">  42   6 add t0,t0,t4              23      5        9</span><br><span class="line">  49   6 add t0,t0,t4              25      6        2</span><br><span class="line">  56   6 add t0,t0,t4              31      7        6</span><br><span class="line"></span><br><span class="line">共执行 60 条指令，a0（返回值）= 31，期望 = 31</span><br></pre></td></tr></table></figure>
+
+<p>八个元素求和，跑掉了 <strong>60 条指令</strong>——平均每个元素 7 条多。这个数字很有意思：C 里那句 <code>s += a[i]</code> 看着是&quot;一次操作&quot;，在机器层面是循环判断、地址计算、访存、累加、自增、回跳六件事。真机上编译器会把它优化掉一大半（把 <code>&amp;a[i]</code> 变成递增指针省掉 <code>slli</code>+<code>add</code>，把回跳换成末尾判断少跳一次），但优化不会改变这个事实：<strong>高级语言的一行，是机器的一小段</strong>。</p>
+<h2 id="8-那些-其实不存在-的指令"><a href="#8-那些-其实不存在-的指令" class="headerlink" title="8. 那些&quot;其实不存在&quot;的指令"></a>8. 那些&quot;其实不存在&quot;的指令</h2><p>上面代码里的 <code>li</code>、<code>mv</code>、<code>j</code>、<code>ret</code>、<code>nop</code> 都不是真指令，是<strong>伪指令（pseudo-instruction）</strong>——汇编器负责翻译成真指令：</p>
+<table>
+<thead>
+<tr>
+<th>伪指令</th>
+<th>汇编器实际展开</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>li t0, 42</code></td>
+<td><code>addi t0, x0, 42</code></td>
+<td>常数超 12 位时展开成 <code>lui</code> + <code>addi</code></td>
+</tr>
+<tr>
+<td><code>mv t1, t0</code></td>
+<td><code>addi t1, t0, 0</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>nop</code></td>
+<td><code>addi x0, x0, 0</code></td>
+<td>写 x0，等于什么都没干</td>
+</tr>
+<tr>
+<td><code>j label</code></td>
+<td><code>jal x0, label</code></td>
+<td>返回地址扔进 x0 即丢弃</td>
+</tr>
+<tr>
+<td><code>ret</code></td>
+<td><code>jalr x0, 0(ra)</code></td>
+<td>跳到 ra 保存的地址</td>
+</tr>
+<tr>
+<td><code>not t0, t1</code></td>
+<td><code>xori t0, t1, -1</code></td>
+<td>全 1 异或 &#x3D; 按位取反</td>
+</tr>
+<tr>
+<td><code>beqz t0, L</code></td>
+<td><code>beq t0, x0, L</code></td>
+<td></td>
+</tr>
+</tbody></table>
+<p>伪指令是&quot;人类友好层&quot;，反汇编时看到的往往是展开后的样子。碰上 <code>objdump</code> 输出里全是 <code>addi x0, x0, 0</code> 不要慌，那是一串 <code>nop</code>。</p>
+<h2 id="9-坑合集"><a href="#9-坑合集" class="headerlink" title="9. 坑合集"></a>9. 坑合集</h2><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>原因 &#x2F; 正确做法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>立即数溢出</td>
+<td>汇编器报 <code>immediate out of range</code></td>
+<td>I 型只有 12 位有符号，用 <code>li</code> 让汇编器拼 <code>lui</code>+<code>addi</code></td>
+</tr>
+<tr>
+<td>写 <code>x0</code> 没反应</td>
+<td><code>addi x0, t0, 0</code> 之后 x0 还是 0</td>
+<td>x0 硬连线为 0，写入被丢弃——这是特性不是 bug</td>
+</tr>
+<tr>
+<td><code>srli</code> vs <code>srai</code></td>
+<td>负数右移后变成巨大正数</td>
+<td><code>srli</code> 补 0，<code>srai</code> 补符号位；有符号数除以 2 要用 <code>srai</code></td>
+</tr>
+<tr>
+<td><code>blt</code> 比较指针</td>
+<td>大地址被判成&quot;小于&quot;</td>
+<td>地址是无符号语义，用 <code>bltu</code>&#x2F;<code>bgeu</code></td>
+</tr>
+<tr>
+<td>非对齐 <code>lw</code></td>
+<td>嵌入式核上直接异常</td>
+<td>地址须 4 字节对齐；按字节读再拼</td>
+</tr>
+<tr>
+<td>忘了 <code>t</code> 与 <code>s</code> 的区别</td>
+<td>函数调用回来后 <code>t0</code> 变了</td>
+<td><code>t0–t6</code> 调用者保存，跨调用要用 <code>s0–s11</code> 或压栈</td>
+</tr>
+<tr>
+<td>分支目标太远</td>
+<td><code>relocation truncated</code></td>
+<td>B 型分支偏移 ±4KB，远跳要用 <code>jal</code>&#x2F;<code>jalr</code></td>
+</tr>
+</tbody></table>
+<p>倒数第二条那个&quot;跨调用寄存器被改&quot;的问题，是手写汇编函数时几乎必踩的一个：它背后是一整套调用约定——谁保存哪些寄存器、参数怎么传、栈帧怎么开。写任何跨函数的汇编之前，这本账必须先算清楚。</p>
+<h2 id="10-寄存器机与栈机：一个中性对照"><a href="#10-寄存器机与栈机：一个中性对照" class="headerlink" title="10. 寄存器机与栈机：一个中性对照"></a>10. 寄存器机与栈机：一个中性对照</h2><p>如果你同时写 C 和 Java，会注意到两边的&quot;底层&quot;长得不太一样。JVM 字节码是<strong>栈式</strong>虚拟机，RISC-V 是<strong>寄存器式</strong>真实机器。同一个 <code>a + b</code>：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>RISC-V（寄存器机）</th>
+<th>JVM 字节码（栈机）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>a + b</code> 怎么写</td>
+<td><code>add t0, t1, t2</code></td>
+<td><code>iload_1; iload_2; iadd</code></td>
+</tr>
+<tr>
+<td>操作数在哪</td>
+<td>显式指定 3 个寄存器编号</td>
+<td>隐式取栈顶两个</td>
+</tr>
+<tr>
+<td>指令长度</td>
+<td>固定 32 位</td>
+<td>变长（多数 1 字节）</td>
+</tr>
+<tr>
+<td>指令条数</td>
+<td>少（1 条）</td>
+<td>多（3 条）</td>
+</tr>
+<tr>
+<td>编码密度</td>
+<td>低</td>
+<td>高</td>
+</tr>
+<tr>
+<td>谁负责分配寄存器</td>
+<td>编译器（静态）</td>
+<td>JIT 在运行时把栈操作映射到真实寄存器</td>
+</tr>
+</tbody></table>
+<p>两种设计各有其道理：栈式编码紧凑、跨平台分发方便、不必假设目标机有多少寄存器；寄存器式一条指令干更多事、更贴近硬件、便于流水线与乱序执行。JVM 选前者是因为它要在&quot;任何机器&quot;上分发；RISC-V 选后者是因为它本身就是那台机器。字节码最终仍要被 JIT 翻译成某种寄存器机指令——很可能就是 RISC-V 或 ARM 的这几条。</p>
+<h2 id="11-🐾-小结"><a href="#11-🐾-小结" class="headerlink" title="11. 🐾 小结"></a>11. 🐾 小结</h2><table>
+<thead>
+<tr>
+<th>要点</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ISA 是什么</td>
+<td>硬件与编译器之间的合同：寄存器 + 指令 + 编码</td>
+</tr>
+<tr>
+<td>RV32I 规模</td>
+<td>约 40 条基础整数指令，扩展（M&#x2F;A&#x2F;F&#x2F;C）按需拼</td>
+</tr>
+<tr>
+<td>32 个寄存器</td>
+<td>因为编码字段留了 5 位；<code>x0</code> 恒 0，撑起一批伪指令</td>
+</tr>
+<tr>
+<td>load&#x2F;store 架构</td>
+<td>只有 <code>lw</code>&#x2F;<code>sw</code> 一类能碰内存，算术必须先进寄存器</td>
+</tr>
+<tr>
+<td>12 位立即数</td>
+<td>R 型腾出的 funct7+rs2 正好 12 位，范围 −2048…2047</td>
+</tr>
+<tr>
+<td>分支设计</td>
+<td>比较与跳转合成一条，没有标志位；注意有符号&#x2F;无符号两套</td>
+</tr>
+<tr>
+<td><code>a[i]</code> 的真身</td>
+<td>移位算偏移 + 加基址 + <code>lw</code>，三条指令</td>
+</tr>
+<tr>
+<td>伪指令</td>
+<td><code>li/mv/j/ret/nop</code> 都是汇编器的糖，真指令是 <code>addi</code>&#x2F;<code>jal</code>&#x2F;<code>jalr</code></td>
+</tr>
+<tr>
+<td>最大的收获</td>
+<td>高级语言的一行 &#x3D; 机器的一小段；心里有这把尺，性能直觉才立得住</td>
+</tr>
+</tbody></table>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61c0102/">https://hespethorn.github.io/posts/c61c0102/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/RISC-V/">RISC-V</a><a class="post-meta__tags" href="/tags/%E6%B1%87%E7%BC%96/">汇编</a><a class="post-meta__tags" href="/tags/%E6%8C%87%E4%BB%A4%E9%9B%86/">指令集</a><a class="post-meta__tags" href="/tags/%E5%AF%84%E5%AD%98%E5%99%A8/">寄存器</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">709</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">886</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">34</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0102/" title="RISC-V 汇编基础">RISC-V 汇编基础</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0101/" title="数字逻辑与 C 语言回顾">数字逻辑与 C 语言回顾</a><time datetime="2024-11-03T16:00:00.000Z" title="Created 2024-11-04 00:00:00">2024-11-04</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2026-08-25T09:21:07.700Z" title="Created 2026-08-25 17:21:07">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260825/" title="AI 新闻速递｜2026-08-25：编程工具掀起千亿整合潮、模型默认权换防、终端 Agent 上云、具身智能卡在&quot;数据鸡生蛋&quot;、人形机器人迈进家门">AI 新闻速递｜2026-08-25：编程工具掀起千亿整合潮、模型默认权换防、终端 Agent 上云、具身智能卡在&quot;数据鸡生蛋&quot;、人形机器人迈进家门</a><time datetime="2026-08-24T16:00:00.000Z" title="Created 2026-08-25 00:00:00">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3f7c9d2/" title="青崖镇的驯鹰人">青崖镇的驯鹰人</a><time datetime="2026-08-24T16:00:00.000Z" title="Created 2026-08-25 00:00:00">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260824/" title="AI 新闻速递｜2026-08-24：人形机器人上球场当&quot;考官&quot;、Copilot 插件标准破壁、开发智能体接管 DevOps、Claude Code 锁资源、Oracle 给 AI 代码设红线">AI 新闻速递｜2026-08-24：人形机器人上球场当&quot;考官&quot;、Copilot 插件标准破壁、开发智能体接管 DevOps、Claude Code 锁资源、Oracle 给 AI 代码设红线</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e5b1c8f2/" title="银湾渡口的敲钟徒">银湾渡口的敲钟徒</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-News/">AI News</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Python/">Python</a><a href="/categories/AI-application/">AI Application</a></li><li><a href="/posts/FamilyProse/">Family Prose</a><a href="/posts/LoveDays/">Love Days</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>

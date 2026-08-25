@@ -1,0 +1,654 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>数字逻辑与 C 语言回顾 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="不管你平时写 Java 还是 C，这台计算机底下其实没有任何&quot;对象&quot;，只有一堆在 0 和 1 之间反复横跳的晶体管。CS61C 要做的，就是把&quot;软件&quot;一路拽回&quot;硬件&quot;的起点。这一篇干两件事：先用数字逻辑把&quot;软件&quot;接回&quot;硬件&quot;（门电路、加法器、补码），再系统回顾 C 语言里最容易踩的坑——指针、手动内">
+<meta property="og:type" content="article">
+<meta property="og:title" content="数字逻辑与 C 语言回顾">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61c0101/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="不管你平时写 Java 还是 C，这台计算机底下其实没有任何&quot;对象&quot;，只有一堆在 0 和 1 之间反复横跳的晶体管。CS61C 要做的，就是把&quot;软件&quot;一路拽回&quot;硬件&quot;的起点。这一篇干两件事：先用数字逻辑把&quot;软件&quot;接回&quot;硬件&quot;（门电路、加法器、补码），再系统回顾 C 语言里最容易踩的坑——指针、手动内">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-11-03T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-25T09:21:07.686Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="指针">
+<meta property="article:tag" content="C语言">
+<meta property="article:tag" content="位运算">
+<meta property="article:tag" content="数字逻辑">
+<meta property="article:tag" content="补码">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "数字逻辑与 C 语言回顾",
+  "url": "https://hespethorn.github.io/posts/c61c0101/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-11-03T16:00:00.000Z",
+  "dateModified": "2026-08-25T09:21:07.686Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61c0101/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '数字逻辑与 C 语言回顾',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">709</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">886</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">34</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">数字逻辑与 C 语言回顾</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">数字逻辑与 C 语言回顾</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-11-03T16:00:00.000Z" title="Created 2024-11-04 00:00:00">2024-11-04</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61C/">CS61C</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>不管你平时写 Java 还是 C，这台计算机底下其实没有任何&quot;对象&quot;，只有一堆在 0 和 1 之间反复横跳的晶体管。CS61C 要做的，就是把&quot;软件&quot;一路拽回&quot;硬件&quot;的起点。这一篇干两件事：先用数字逻辑把&quot;软件&quot;接回&quot;硬件&quot;（门电路、加法器、补码），再系统回顾 C 语言里最容易踩的坑——指针、手动内存、位运算。</p>
+<h2 id="1-什么是-位-：一切从开关开始"><a href="#1-什么是-位-：一切从开关开始" class="headerlink" title="1. 什么是&quot;位&quot;：一切从开关开始"></a>1. 什么是&quot;位&quot;：一切从开关开始</h2><p>计算机最底层没有整数、没有字符串，只有一个个能表示两种状态的元件——通电 &#x2F; 断电，记为 <strong>1 &#x2F; 0</strong>，这就是一个 <strong>bit（位）</strong>。把若干 bit 并排，就能表示更大的数：8 个 bit 叫 1 字节（byte），32 个 bit 是常见 <code>int</code> 的宽度。</p>
+<p>单个 bit 太弱，于是我们用&quot;门电路（gate）&quot;把 bit 组合运算。<strong>门</strong>是接受若干 0&#x2F;1 输入、输出一个 0&#x2F;1 的小电路，由晶体管搭成。最基础的几种：</p>
+<div align="center">
+<svg viewBox="0 0 680 150" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="14">
+  <rect x="0" y="0" width="680" height="150" fill="#fbfbfd"/>
+  <!-- AND -->
+  <text x="20" y="30" fill="#333">AND</text>
+  <circle cx="55" cy="45" r="3" fill="#333"/><circle cx="55" cy="65" r="3" fill="#333"/>
+  <rect x="60" y="35" width="40" height="30" rx="6" fill="#e8f0fe" stroke="#4285f4"/>
+  <text x="68" y="55" fill="#1a73e8">&amp;</text>
+  <line x1="100" y1="50" x2="140" y2="50" stroke="#333"/>
+  <text x="145" y="55" fill="#333">1&amp;1=1, 其余=0</text>
+  <!-- OR -->
+  <text x="20" y="100" fill="#333">OR</text>
+  <circle cx="55" cy="115" r="3" fill="#333"/><circle cx="55" cy="135" r="3" fill="#333"/>
+  <rect x="60" y="105" width="40" height="30" rx="6" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="74" y="125" fill="#188038">|</text>
+  <line x1="100" y1="120" x2="140" y2="120" stroke="#333"/>
+  <text x="145" y="125" fill="#333">0|0=0, 其余=1</text>
+  <!-- NOT -->
+  <text x="400" y="100" fill="#333">NOT</text>
+  <circle cx="440" cy="115" r="3" fill="#333"/>
+  <rect x="445" y="105" width="40" height="30" rx="6" fill="#fce8e6" stroke="#ea4335"/>
+  <text x="458" y="125" fill="#c5221f">!</text>
+  <line x1="485" y1="120" x2="525" y2="120" stroke="#333"/>
+  <text x="530" y="125" fill="#333">!1=0, !0=1</text>
+  <!-- XOR -->
+  <text x="400" y="30" fill="#333">XOR</text>
+  <circle cx="440" cy="45" r="3" fill="#333"/><circle cx="440" cy="65" r="3" fill="#333"/>
+  <rect x="445" y="35" width="40" height="30" rx="6" fill="#fef7e0" stroke="#fbbc04"/>
+  <text x="458" y="55" fill="#b06000">^</text>
+  <line x1="485" y1="50" x2="525" y2="50" stroke="#333"/>
+  <text x="530" y="55" fill="#333">相异为1, 相同为0</text>
+</svg>
+</div>
+
+<p><strong>本质一句话</strong>：门电路就是&quot;对 0&#x2F;1 做布尔运算的微型黑盒&quot;，再复杂的 CPU 也只是几十亿个这样的门叠出来的。</p>
+<h2 id="2-把-1-位加法做成电路：全加器"><a href="#2-把-1-位加法做成电路：全加器" class="headerlink" title="2. 把 1 位加法做成电路：全加器"></a>2. 把 1 位加法做成电路：全加器</h2><p>有了 AND&#x2F;OR&#x2F;XOR，就能拼出&quot;计算 1 比特加法&quot;的电路——<strong>全加器（full adder）</strong>。它吃三个输入：两位加数 <code>a</code>、<code>b</code>，以及来自低位的进位 <code>cin</code>；吐两个输出：本位和 <code>sum</code>、向高位的进位 <code>cout</code>。</p>
+<ul>
+<li><code>sum  = a ^ b ^ cin</code>（三个里恰有奇数个 1 时本位为 1）</li>
+<li><code>cout = (a &amp; b) | (cin &amp; (a ^ b))</code>（任意两个及以上为 1 就向前进位）</li>
+</ul>
+<div align="center">
+<svg viewBox="0 0 680 170" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="14">
+  <rect x="0" y="0" width="680" height="170" fill="#fbfbfd"/>
+  <text x="250" y="25" fill="#333" font-size="13">全加器 Full Adder</text>
+  <circle cx="120" cy="60" r="3" fill="#333"/><text x="60" y="64" fill="#333">a</text>
+  <circle cx="120" cy="90" r="3" fill="#333"/><text x="50" y="94" fill="#333">b</text>
+  <circle cx="120" cy="120" r="3" fill="#333"/><text x="35" y="124" fill="#333">cin</text>
+  <rect x="125" y="55" width="120" height="70" rx="10" fill="#eef" stroke="#5f6368"/>
+  <text x="150" y="95" fill="#333">FA</text><text x="178" y="95" fill="#333">逻辑</text>
+  <line x1="245" y1="75" x2="320" y2="75" stroke="#333"/>
+  <line x1="245" y1="115" x2="320" y2="115" stroke="#333"/>
+  <text x="325" y="80" fill="#188038">sum</text>
+  <text x="325" y="120" fill="#c5221f">cout</text>
+  <text x="60" y="155" fill="#666" font-size="12">把 32 个全加器串成一列 → 就是 32 位整数加法器</text>
+</svg>
+</div>
+
+<p>把 32 个这样的全加器按 <code>cout→cin</code> 串起来，就得到一个能算 32 位整数加法的电路。英特尔那颗芯片里，数以亿计的门干的就是这种事——只是更快、更密。</p>
+<h2 id="3-为什么是二进制：补码（two-s-complement）"><a href="#3-为什么是二进制：补码（two-s-complement）" class="headerlink" title="3. 为什么是二进制：补码（two&#39;s complement）"></a>3. 为什么是二进制：补码（two&#39;s complement）</h2><p>能表示 0&#x2F;1 之后，怎么表示<strong>负数</strong>？最自然也最巧妙的方案是 <strong>补码（two&#39;s complement）</strong>：最高位（最左）当符号位，且负数 &#x3D; 对应正数按位取反再加 1。</p>
+<p>它的妙处：加法器<strong>不需要特判正负</strong>，同一套电路既算 <code>3 + 5</code> 也算 <code>3 + (-5)</code>；而且 <code>-1</code> 的 32 位补码就是全 1（<code>0xFFFFFFFF</code>）。看一段 C 代码验证：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> x = <span class="number">-1</span>;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">int</span> u = (<span class="type">unsigned</span> <span class="type">int</span>)x;          <span class="comment">// 把同样的位模式当无符号看</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;int  -1 的位模式(按 unsigned 看): %u (0x%08X)\n&quot;</span>, u, u);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(int) = %zu 字节 = %d 位\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">int</span>), (<span class="type">int</span>)(<span class="keyword">sizeof</span>(<span class="type">int</span>) * <span class="number">8</span>));</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">int  -1 的位模式(按 unsigned 看): 4294967295 (0xFFFFFFFF)</span><br><span class="line">sizeof(int) = 4 字节 = 32 位</span><br></pre></td></tr></table></figure>
+
+<p><strong>坑</strong>：补码有&quot;不对称范围&quot;。32 位 <code>int</code> 能表示 <code>[-2147483648, 2147483647]</code>——负数比正数多一个（因为没有 &quot;+0 的负数&quot;）。所以 <code>2147483647 + 1</code> 不会得到 <code>2147483648</code>，而是<strong>溢出回 <code>-2147483648</code></strong>。这种&quot;有符号溢出&quot;是<strong>未定义行为（UB）</strong>，编译器可以不保证任何结果，千万别写依赖它的代码。</p>
+<h2 id="4-C-与-Java-的几个关键差异"><a href="#4-C-与-Java-的几个关键差异" class="headerlink" title="4. C 与 Java 的几个关键差异"></a>4. C 与 Java 的几个关键差异</h2><p>同样是写程序，Java 和 C 在&quot;内存归谁管&quot;这件事上走向两个极端：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Java</th>
+<th>C</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>内存管理</td>
+<td>垃圾回收自动释放</td>
+<td>手动 <code>malloc</code> &#x2F; <code>free</code></td>
+</tr>
+<tr>
+<td>&quot;取地址&quot;</td>
+<td>没有指针概念</td>
+<td><code>&amp;x</code> 取地址，<code>*p</code> 解引用</td>
+</tr>
+<tr>
+<td>指针算术</td>
+<td>引用不能 <code>+/-</code></td>
+<td><code>p+1</code> 合法，移动一个元素</td>
+</tr>
+<tr>
+<td>数组越界</td>
+<td>抛 <code>ArrayIndexOutOfBoundsException</code></td>
+<td><strong>静默</strong>读&#x2F;写非法内存，后果难料</td>
+</tr>
+<tr>
+<td>字符串</td>
+<td>真·对象 <code>String</code></td>
+<td><code>char</code> 数组 + 末尾 <code>\0</code></td>
+</tr>
+</tbody></table>
+<p><strong>本质一句话</strong>：Java 把内存的脏活挡在运行时后面，C 则把钥匙直接交到你手上——灵活十倍，也要求你对每一块自己申请的内存负责到底。</p>
+<h2 id="5-指针是什么：地址就是个整数"><a href="#5-指针是什么：地址就是个整数" class="headerlink" title="5. 指针是什么：地址就是个整数"></a>5. 指针是什么：地址就是个整数</h2><p>C 里<strong>指针</strong>就是&quot;内存地址&quot;，而地址本质上就是一个编号整数。变量 <code>a</code> 住在某个地址，<code>&amp;a</code> 拿到它的门牌号，<code>int *p = &amp;a</code> 让 <code>p</code> 记下这个门牌，<code>*p</code> 是按门牌去敲门取人。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> a = <span class="number">42</span>;</span><br><span class="line">    <span class="type">int</span> *p = &amp;a;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;a        = %d\n&quot;</span>, a);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;&amp;a       = %p\n&quot;</span>, (<span class="type">void</span>*)&amp;a);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;p (存的是&amp;a) = %p\n&quot;</span>, (<span class="type">void</span>*)p);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;*p (a的值)  = %d\n&quot;</span>, *p);</span><br><span class="line">    *p = <span class="number">100</span>;                 <span class="comment">// 通过指针改了 a 家里的值</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;改 *p 后 a = %d\n&quot;</span>, a);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">a        = 42</span><br><span class="line">&amp;a       = 0x7ffd4a2b3c5c</span><br><span class="line">p (存的是&amp;a) = 0x7ffd4a2b3c5c</span><br><span class="line">*p (a的值)  = 42</span><br><span class="line">改 *p 后 a = 100</span><br></pre></td></tr></table></figure>
+
+<p>（具体地址每次运行不同，但 <code>&amp;a</code> 与 <code>p</code> 一定相等，这就是&quot;指针存着地址&quot;的铁证。）</p>
+<p><strong>坑</strong>：<code>p</code> 未初始化就 <code>*p</code> 是<strong>未定义行为</strong>；<code>p</code> 指向的变量已经 <code>free</code>&#x2F;出了作用域，得到的是<strong>悬空指针（dangling）</strong>；<code>NULL</code> 指针解引用直接崩溃。Java 的引用永远不会&quot;悬空&quot;，因为 GC 保证有用对象不被回收——C 里这条安全网没了。</p>
+<h2 id="6-数组即指针算术：arr-i-的真身"><a href="#6-数组即指针算术：arr-i-的真身" class="headerlink" title="6. 数组即指针算术：arr[i] 的真身"></a>6. 数组即指针算术：arr[i] 的真身</h2><p>C 里 <code>数组名</code> 在大多数语境下会&quot;退化&quot;成指向首元素的指针，于是 <code>arr[i]</code> 在编译器眼里就是 <code>*(arr + i)</code>——从首地址往后挪 <code>i</code> 个元素宽度的距离。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> arr[<span class="number">4</span>] = &#123;<span class="number">10</span>, <span class="number">20</span>, <span class="number">30</span>, <span class="number">40</span>&#125;;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;arr[2]      = %d\n&quot;</span>, arr[<span class="number">2</span>]);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;*(arr + 2)  = %d\n&quot;</span>, *(arr + <span class="number">2</span>));</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;&amp;arr[2]     = %p\n&quot;</span>, (<span class="type">void</span>*)&amp;arr[<span class="number">2</span>]);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;arr + 2     = %p\n&quot;</span>, (<span class="type">void</span>*)(arr + <span class="number">2</span>));</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">arr[2]      = 30</span><br><span class="line">*(arr + 2)  = 30</span><br><span class="line">&amp;arr[2]     = 0x7ffd4a2b3c64</span><br><span class="line">arr + 2     = 0x7ffd4a2b3c64</span><br></pre></td></tr></table></figure>
+
+<p><code>arr + 2</code> 与 <code>&amp;arr[2]</code> 完全相等，因为 <code>int</code> 占 4 字节，<code>+2</code> 实际跳了 8 字节——指针算术按<strong>元素类型宽度</strong>走，不是按字节。这正是 C 比&quot;裸地址 + 手动偏移&quot;安全一点的地方。</p>
+<h2 id="7-进程内存长什么样：栈与堆"><a href="#7-进程内存长什么样：栈与堆" class="headerlink" title="7. 进程内存长什么样：栈与堆"></a>7. 进程内存长什么样：栈与堆</h2><p>写 C 必须脑子里有张&quot;内存地图&quot;。一个进程的典型虚拟地址布局（<strong>地址自下而上递增</strong>：底部低地址放代码，顶部高地址是栈）：</p>
+<div align="center">
+<svg viewBox="0 0 680 235" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="13">
+  <rect x="0" y="0" width="680" height="235" fill="#fbfbfd"/>
+  <text x="300" y="18" fill="#333" font-size="14">高地址 ↑</text>
+  <rect x="240" y="28" width="200" height="44" fill="#fce8e6" stroke="#ea4335"/>
+  <text x="298" y="48" fill="#c5221f">栈 stack ↓ 生长</text>
+  <text x="270" y="66" fill="#666">(函数局部变量, 向低地址)</text>
+  <rect x="240" y="80" width="200" height="44" fill="#fef7e0" stroke="#fbbc04"/>
+  <text x="300" y="100" fill="#b06000">堆 heap ↑ 生长</text>
+  <text x="276" y="118" fill="#666">(malloc 向高地址)</text>
+  <rect x="240" y="132" width="200" height="34" fill="#e6f4ea" stroke="#34a853"/>
+  <text x="278" y="153" fill="#188038">全局/静态区</text>
+  <rect x="240" y="172" width="200" height="34" fill="#e8f0fe" stroke="#4285f4"/>
+  <text x="285" y="193" fill="#1a73e8">代码段 text</text>
+  <text x="300" y="226" fill="#333" font-size="14">↓ 低地址</text>
+  <text x="245" y="215" fill="#666">栈和堆从两端往中间长，相遇即"内存耗尽"</text>
+</svg>
+</div>
+
+<ul>
+<li><strong>栈（stack）</strong>：函数局部变量、参数的家。函数调用结束自动回收（所以返回&quot;指向局部变量的指针&quot;必是悬空）。</li>
+<li><strong>堆（heap）</strong>：<code>malloc</code> 来的、活得比函数调用久的内存，必须自己 <code>free</code>，忘了就<strong>内存泄漏</strong>，重复 <code>free</code> 就崩溃。</li>
+</ul>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> *buf = (<span class="type">int</span>*)<span class="built_in">malloc</span>(<span class="number">4</span> * <span class="keyword">sizeof</span>(<span class="type">int</span>));   <span class="comment">// 在堆上要 4 个 int</span></span><br><span class="line">    <span class="keyword">if</span> (buf == <span class="literal">NULL</span>) <span class="keyword">return</span> <span class="number">1</span>;                   <span class="comment">// 永远检查 malloc 是否成功</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++) buf[i] = i * <span class="number">10</span>;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;buf[3] = %d\n&quot;</span>, buf[<span class="number">3</span>]);</span><br><span class="line">    <span class="built_in">free</span>(buf);                                   <span class="comment">// 用完归还，否则泄漏</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">buf[3] = 30</span><br></pre></td></tr></table></figure>
+
+<h2 id="8-位运算实战：直接拨动开关"><a href="#8-位运算实战：直接拨动开关" class="headerlink" title="8. 位运算实战：直接拨动开关"></a>8. 位运算实战：直接拨动开关</h2><p>既然底层全是 bit，C 提供了一组直接操作位的运算符，比&quot;乘除以 2&quot;更贴近硬件、也更高效：</p>
+<table>
+<thead>
+<tr>
+<th>运算</th>
+<th>符号</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>与</td>
+<td><code>&amp;</code></td>
+<td>清位 &#x2F; 取某几位</td>
+</tr>
+<tr>
+<td>或</td>
+<td><code>|</code></td>
+<td>置位</td>
+</tr>
+<tr>
+<td>异或</td>
+<td><code>^</code></td>
+<td>翻转位 &#x2F; 无临时变量交换</td>
+</tr>
+<tr>
+<td>取反</td>
+<td><code>~</code></td>
+<td>全部位反转</td>
+</tr>
+<tr>
+<td>左移</td>
+<td><code>&lt;&lt;</code></td>
+<td>乘 2 的幂</td>
+</tr>
+<tr>
+<td>右移</td>
+<td><code>&gt;&gt;</code></td>
+<td>除 2 的幂（有符号数看实现）</td>
+</tr>
+</tbody></table>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> x = <span class="number">5</span>, y = <span class="number">9</span>;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;交换前: x=%d y=%d\n&quot;</span>, x, y);</span><br><span class="line">    x = x ^ y;          <span class="comment">// 三步 XOR 交换，不借第三个变量</span></span><br><span class="line">    y = x ^ y;</span><br><span class="line">    x = x ^ y;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;交换后: x=%d y=%d\n&quot;</span>, x, y);</span><br><span class="line"></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">int</span> flags = <span class="number">0</span>;</span><br><span class="line">    flags |= (<span class="number">1u</span> &lt;&lt; <span class="number">3</span>);                         <span class="comment">// 置第 3 位</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;设第3位: 0x%X, 第3位=%d\n&quot;</span>, flags, (flags &gt;&gt; <span class="number">3</span>) &amp; <span class="number">1</span>);</span><br><span class="line">    flags &amp;= ~(<span class="number">1u</span> &lt;&lt; <span class="number">3</span>);                        <span class="comment">// 清第 3 位</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;清第3位: 0x%X\n&quot;</span>, flags);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">交换前: x=5 y=9</span><br><span class="line">交换后: x=9 y=5</span><br><span class="line">设第3位: 0x8, 第3位=1</span><br><span class="line">清第3位: 0x0</span><br></pre></td></tr></table></figure>
+
+<p><strong>坑</strong>：移位位数不能 ≥ 类型宽度（UB）；对有符号负数右移是&quot;算术移位&quot;还是&quot;逻辑移位&quot;由编译器定，写跨平台代码时位运算尽量用 <code>unsigned</code>。</p>
+<h2 id="🐾-小结"><a href="#🐾-小结" class="headerlink" title="🐾 小结"></a>🐾 小结</h2><ul>
+<li>计算机最底是<strong>门电路</strong>对 0&#x2F;1 做布尔运算，全加器串起来就是整数加法器。</li>
+<li><strong>补码</strong>让正负加减共用一套电路，但范围不对称、<code>INT_MAX + 1</code> 会溢出回负数（UB）。</li>
+<li>C 把内存的管理权交到你手里：靠<strong>指针与手动 <code>malloc/free</code></strong> 掌控堆；<code>&amp;</code> 取地址、<code>*</code> 解引用；代价是放弃了 Java 的 GC 与越界保护，越界与悬空都得自己负责。</li>
+<li><code>arr[i]</code> ≡ <code>*(arr + i)</code>：指针算术按元素宽度走。</li>
+<li>进程内存里<strong>栈</strong>管局部变量、<strong>堆</strong>管长寿内存，二者从两端生长。</li>
+<li>位运算（<code>&amp; | ^ ~ &lt;&lt; &gt;&gt;</code>）直接拨动 bit，置位&#x2F;清位&#x2F;交换都能优雅表达，但注意无符号与移位边界。</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61c0101/">https://hespethorn.github.io/posts/c61c0101/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%8C%87%E9%92%88/">指针</a><a class="post-meta__tags" href="/tags/C%E8%AF%AD%E8%A8%80/">C语言</a><a class="post-meta__tags" href="/tags/%E4%BD%8D%E8%BF%90%E7%AE%97/">位运算</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E5%AD%97%E9%80%BB%E8%BE%91/">数字逻辑</a><a class="post-meta__tags" href="/tags/%E8%A1%A5%E7%A0%81/">补码</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">709</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">886</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">34</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0102/" title="RISC-V 汇编基础">RISC-V 汇编基础</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0101/" title="数字逻辑与 C 语言回顾">数字逻辑与 C 语言回顾</a><time datetime="2024-11-03T16:00:00.000Z" title="Created 2024-11-04 00:00:00">2024-11-04</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2026-08-25T09:21:07.700Z" title="Created 2026-08-25 17:21:07">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260825/" title="AI 新闻速递｜2026-08-25：编程工具掀起千亿整合潮、模型默认权换防、终端 Agent 上云、具身智能卡在&quot;数据鸡生蛋&quot;、人形机器人迈进家门">AI 新闻速递｜2026-08-25：编程工具掀起千亿整合潮、模型默认权换防、终端 Agent 上云、具身智能卡在&quot;数据鸡生蛋&quot;、人形机器人迈进家门</a><time datetime="2026-08-24T16:00:00.000Z" title="Created 2026-08-25 00:00:00">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3f7c9d2/" title="青崖镇的驯鹰人">青崖镇的驯鹰人</a><time datetime="2026-08-24T16:00:00.000Z" title="Created 2026-08-25 00:00:00">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260824/" title="AI 新闻速递｜2026-08-24：人形机器人上球场当&quot;考官&quot;、Copilot 插件标准破壁、开发智能体接管 DevOps、Claude Code 锁资源、Oracle 给 AI 代码设红线">AI 新闻速递｜2026-08-24：人形机器人上球场当&quot;考官&quot;、Copilot 插件标准破壁、开发智能体接管 DevOps、Claude Code 锁资源、Oracle 给 AI 代码设红线</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e5b1c8f2/" title="银湾渡口的敲钟徒">银湾渡口的敲钟徒</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-News/">AI News</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Python/">Python</a><a href="/categories/AI-application/">AI Application</a></li><li><a href="/posts/FamilyProse/">Family Prose</a><a href="/posts/LoveDays/">Love Days</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>

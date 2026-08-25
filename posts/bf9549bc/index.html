@@ -1,0 +1,614 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>后端开发除了增删改查还有什么？从日常问题到工程思路 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="CRUD 是后端的入口，但真正决定一个系统能不能扛住的，是它周围那一圈机制。下面用&quot;注册&quot;这个最普通不过的接口当线索，把周边的问题和对应的工程方案过一遍——有些是行业标配，有些不常提、但遇到复杂场景时很顶用。这里不打算写成操作手册，只是把真实系统里常见的选择摆出来。  一、一个&quot;注册&quot;会牵出哪些问题最朴素的注册只有三行： 123public void reg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="后端开发除了增删改查还有什么？从日常问题到工程思路">
+<meta property="og:url" content="https://hespethorn.github.io/posts/bf9549bc/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="CRUD 是后端的入口，但真正决定一个系统能不能扛住的，是它周围那一圈机制。下面用&quot;注册&quot;这个最普通不过的接口当线索，把周边的问题和对应的工程方案过一遍——有些是行业标配，有些不常提、但遇到复杂场景时很顶用。这里不打算写成操作手册，只是把真实系统里常见的选择摆出来。  一、一个&quot;注册&quot;会牵出哪些问题最朴素的注册只有三行： 123public void reg">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-08-23T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-25T09:21:07.728Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="文章">
+<meta property="article:tag" content="后端开发">
+<meta property="article:tag" content="限流">
+<meta property="article:tag" content="异步">
+<meta property="article:tag" content="分布式">
+<meta property="article:tag" content="高并发">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "后端开发除了增删改查还有什么？从日常问题到工程思路",
+  "url": "https://hespethorn.github.io/posts/bf9549bc/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-08-23T16:00:00.000Z",
+  "dateModified": "2026-08-25T09:21:07.728Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/bf9549bc/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '后端开发除了增删改查还有什么？从日常问题到工程思路',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">709</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">886</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">34</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">后端开发除了增删改查还有什么？从日常问题到工程思路</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">后端开发除了增删改查还有什么？从日常问题到工程思路</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Technical-Articles/">Technical-Articles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>CRUD 是后端的入口，但真正决定一个系统能不能扛住的，是它周围那一圈机制。下面用&quot;注册&quot;这个最普通不过的接口当线索，把周边的问题和对应的工程方案过一遍——<strong>有些是行业标配，有些不常提、但遇到复杂场景时很顶用</strong>。这里不打算写成操作手册，只是把真实系统里常见的选择摆出来。</p>
+<hr>
+<h2 id="一、一个-注册-会牵出哪些问题"><a href="#一、一个-注册-会牵出哪些问题" class="headerlink" title="一、一个&quot;注册&quot;会牵出哪些问题"></a>一、一个&quot;注册&quot;会牵出哪些问题</h2><p>最朴素的注册只有三行：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">register</span><span class="params">(String phone, String password)</span> &#123;</span><br><span class="line">    userDao.insert(<span class="keyword">new</span> <span class="title class_">User</span>(phone, encrypt(password)));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>上线之后，真实环境会一个接一个地抛出问题：</p>
+<ul>
+<li><strong>重复提交</strong>：用户连点两下，或脚本一秒刷一千次，数据库扛得住吗？</li>
+<li><strong>慢依赖</strong>：注册完要发短信，短信接口两三秒才回，注册流程要干等吗？</li>
+<li><strong>跨服务</strong>：邀请注册送积分，积分服务是别的团队的，他们宕机你的注册也要挂吗？</li>
+<li><strong>数据量</strong>：单表涨到一千万行，注册都变慢了怎么办？</li>
+<li><strong>安全</strong>：密码要加密、密钥要轮换，加密服务自己挂了用户登不了录怎么办？</li>
+<li><strong>多机房</strong>：国内海外两个机房，数据双向同步有延迟，用户刚注册完切到海外登录查不到怎么办？</li>
+</ul>
+<p>这些问题不是故意刁难，而是每个有一定规模的系统都会撞上的。下面按主题看解法，每个主题我都分两档：<strong>常用做法</strong> 和 <strong>不常用但有效</strong>。</p>
+<hr>
+<h2 id="二、限流：挡住重复和刷接口"><a href="#二、限流：挡住重复和刷接口" class="headerlink" title="二、限流：挡住重复和刷接口"></a>二、限流：挡住重复和刷接口</h2><h3 id="常用做法"><a href="#常用做法" class="headerlink" title="常用做法"></a>常用做法</h3><p>在业务逻辑最前面加一道闸门，同一 IP（或同一用户）对注册接口在窗口内只允许 N 次。工程上一般用<strong>令牌桶 &#x2F; 漏桶 &#x2F; 滑动窗口</strong>，状态放 Redis，并用 <strong>Lua 脚本保证&quot;判断+扣减&quot;原子</strong>，否则并发下限流会失效。优先级上，限流检查必须排在业务校验之前——命中就直接返回&quot;请求频繁&quot;，根本不进后面逻辑。</p>
+<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:8px;margin:16px 0">
+<svg viewBox="0 0 520 150" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <rect x="0" y="0" width="520" height="150" fill="#fff"/>
+  <text x="260" y="16" text-anchor="middle" fill="#1a4731">请求处理顺序：限流闸门优先级最高</text>
+  <rect x="20" y="50" width="110" height="34" rx="6" fill="#fff4e6" stroke="#e8590c"/><text x="75" y="72" text-anchor="middle" fill="#9a4a00">请求进来</text>
+  <rect x="170" y="50" width="150" height="34" rx="6" fill="#e03131" stroke="#a61e1e"/><text x="245" y="72" text-anchor="middle" fill="#fff">①限流闸门(优先)</text>
+  <rect x="360" y="40" width="140" height="30" rx="6" fill="#ddf4e4" stroke="#2da44e"/><text x="430" y="60" text-anchor="middle" fill="#1a4731">命中→频繁提示</text>
+  <rect x="360" y="80" width="140" height="30" rx="6" fill="#ddf4e4" stroke="#2da44e"/><text x="430" y="100" text-anchor="middle" fill="#1a4731">未命中→业务逻辑</text>
+  <line x1="130" y1="67" x2="168" y2="67" stroke="#57606a" marker-end="url(#c)"/>
+  <line x1="320" y1="60" x2="358" y2="55" stroke="#57606a" marker-end="url(#c)"/>
+  <line x1="320" y1="67" x2="358" y2="95" stroke="#57606a" marker-end="url(#c)"/>
+  <defs><marker id="c" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#57606a"/></marker></defs>
+</svg>
+</div>
+
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- 滑动窗口限流（Redis + Lua，原子执行）</span></span><br><span class="line"><span class="keyword">local</span> key = KEYS[<span class="number">1</span>]</span><br><span class="line"><span class="keyword">local</span> now = <span class="built_in">tonumber</span>(ARGV[<span class="number">1</span>])</span><br><span class="line"><span class="keyword">local</span> window = <span class="built_in">tonumber</span>(ARGV[<span class="number">2</span>])   <span class="comment">-- 窗口大小，如 5000ms</span></span><br><span class="line"><span class="keyword">local</span> limit = <span class="built_in">tonumber</span>(ARGV[<span class="number">3</span>])    <span class="comment">-- 窗口内最大次数，如 1</span></span><br><span class="line">redis.call(<span class="string">&#x27;ZREMRANGEBYSCORE&#x27;</span>, key, <span class="number">0</span>, now - window)  <span class="comment">-- 清掉窗口外的</span></span><br><span class="line"><span class="keyword">local</span> count = redis.call(<span class="string">&#x27;ZCARD&#x27;</span>, key)</span><br><span class="line"><span class="keyword">if</span> count &gt;= limit <span class="keyword">then</span> <span class="keyword">return</span> <span class="number">0</span> <span class="keyword">end</span></span><br><span class="line">redis.call(<span class="string">&#x27;ZADD&#x27;</span>, key, now, now)</span><br><span class="line">redis.call(<span class="string">&#x27;PEXPIRE&#x27;</span>, key, window)</span><br><span class="line"><span class="keyword">return</span> <span class="number">1</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="不常用但有效"><a href="#不常用但有效" class="headerlink" title="不常用但有效"></a>不常用但有效</h3><ul>
+<li><strong>自适应限流</strong>：固定阈值（&quot;5 秒 1 次&quot;）是拍脑袋定的。Sentinel 的系统保护、Netflix 的 Concurrency Limits 会<strong>根据系统实时负载（CPU、线程、延迟）动态调阈值</strong>，比写死更稳。</li>
+<li><strong>按用户&#x2F;设备配额而非仅按 IP</strong>：NAT、移动网络下大量用户共用一个出口 IP，纯 IP 限流会误伤；结合设备指纹、登录态做配额更准。</li>
+<li><strong>行为指纹识别脚本</strong>：仅靠限流挡不住低速率的恶意流量。用设备 ID、UA、操作轨迹做指纹，比 IP 维度识别机器人更靠谱。</li>
+<li><strong>PoW 挑战</strong>：对可疑流量发一个轻量工作量证明（类似 Cloudflare 的 challenge），机器人要付出算力成本，真人无感——成本极低地挡掉批量刷接口。</li>
+</ul>
+<blockquote>
+<p>取舍：中小团队用 Redis + 固定窗口足够；自适应限流和 PoW 是&quot;被刷得痛过&quot;之后才值得上的重武器。</p>
+</blockquote>
+<hr>
+<h2 id="三、异步通知：别让慢调用堵住主流程"><a href="#三、异步通知：别让慢调用堵住主流程" class="headerlink" title="三、异步通知：别让慢调用堵住主流程"></a>三、异步通知：别让慢调用堵住主流程</h2><h3 id="常用做法-1"><a href="#常用做法-1" class="headerlink" title="常用做法"></a>常用做法</h3><p>短信这种慢接口，<strong>决不能同步等</strong>。注册时落一条短信记录、状态标&quot;发送中&quot;，真正发送交给 MQ 异步处理，拿到结果再回写状态。注册接口本身立刻返回。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">enum</span> <span class="title class_">SmsStatus</span> &#123; SENDING, SUCCESS, FAILED &#125;</span><br><span class="line">userDao.insert(user);</span><br><span class="line">smsDao.insert(<span class="keyword">new</span> <span class="title class_">SmsRecord</span>(phone, SmsStatus.SENDING));</span><br><span class="line">mq.publish(<span class="keyword">new</span> <span class="title class_">SendSmsEvent</span>(phone, <span class="string">&quot;注册成功&quot;</span>));</span><br><span class="line"><span class="comment">// 消费者回写状态</span></span><br><span class="line"><span class="keyword">void</span> <span class="title function_">onSendSms</span><span class="params">(SendSmsEvent e)</span> &#123;</span><br><span class="line">    <span class="type">boolean</span> <span class="variable">ok</span> <span class="operator">=</span> smsClient.send(e.phone, e.content);</span><br><span class="line">    smsDao.updateStatus(e.phone, ok ? SmsStatus.SUCCESS : SmsStatus.FAILED);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="不常用但有效-1"><a href="#不常用但有效-1" class="headerlink" title="不常用但有效"></a>不常用但有效</h3><ul>
+<li><strong>Transactional Outbox（事务性发件箱）</strong>：比&quot;本地消息表 + 定时任务&quot;更标准。把&quot;业务写入&quot;和&quot;消息&quot;放在<strong>同一个本地事务</strong>写进 <code>outbox</code> 表，再由一个 relay 捞出来发 MQ。好处是<strong>不依赖定时任务轮询，也不丢消息</strong>——本地事务成功就保证消息最终一定发出去。</li>
+</ul>
+<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:8px;margin:16px 0">
+<svg viewBox="0 0 540 130" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <rect x="0" y="0" width="540" height="130" fill="#fff"/>
+  <text x="270" y="16" text-anchor="middle" fill="#1a4731">Transactional Outbox：同事务写业务+消息，relay 捞出发 MQ</text>
+  <rect x="20" y="50" width="130" height="34" rx="6" fill="#ddf4e4" stroke="#2da44e"/><text x="85" y="72" text-anchor="middle" fill="#1a4731">本地事务</text>
+  <rect x="170" y="40" width="120" height="28" rx="6" fill="#e7f5ff" stroke="#1971c2"/><text x="230" y="58" text-anchor="middle" fill="#0b4a8a">写 用户表</text>
+  <rect x="170" y="74" width="120" height="28" rx="6" fill="#e7f5ff" stroke="#1971c2"/><text x="230" y="92" text-anchor="middle" fill="#0b4a8a">写 outbox 表</text>
+  <rect x="330" y="50" width="100" height="34" rx="6" fill="#f1f0ff" stroke="#7048e8"/><text x="380" y="72" text-anchor="middle" fill="#3b2a8c">relay 轮询</text>
+  <rect x="450" y="50" width="80" height="34" rx="6" fill="#fff4e6" stroke="#e8590c"/><text x="490" y="72" text-anchor="middle" fill="#9a4a00">MQ</text>
+  <line x1="150" y1="67" x2="168" y2="54" stroke="#57606a" marker-end="url(#o)"/>
+  <line x1="150" y1="67" x2="168" y2="88" stroke="#57606a" marker-end="url(#o)"/>
+  <line x1="290" y1="67" x2="328" y2="67" stroke="#57606a" marker-end="url(#o)"/>
+  <line x1="430" y1="67" x2="448" y2="67" stroke="#57606a" marker-end="url(#o)"/>
+  <defs><marker id="o" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#57606a"/></marker></defs>
+</svg>
+</div>
+- **幂等消费**：用 message id 或业务去重键，防止同一条短信因重试被发两遍。
+- **供应商 webhook 回调**：与其同步等短信网关返回，不如发完就返回，由运营商异步回调结果——把"等待"从你的关键路径上彻底拿掉。
+- **独立通知服务收口**：注册服务只发一个领域事件（"用户已注册"），所有渠道（短信/邮件/推送）由专门的 Notification Service 统一处理，注册服务不再关心"怎么发"。
+
+<blockquote>
+<p>取舍：MQ + 状态机是标配；Outbox 是当你被&quot;消息丢了但库写了&quot;这种坑过之后才体会到香的方案。</p>
+</blockquote>
+<hr>
+<h2 id="四、跨服务调用与补偿：加积分失败怎么办"><a href="#四、跨服务调用与补偿：加积分失败怎么办" class="headerlink" title="四、跨服务调用与补偿：加积分失败怎么办"></a>四、跨服务调用与补偿：加积分失败怎么办</h2><h3 id="常用做法-2"><a href="#常用做法-2" class="headerlink" title="常用做法"></a>常用做法</h3><p>跨服务调用失败是常态。把失败的调用<strong>先记下来，定时任务周期性重试</strong>，成功就删、失败等下一轮；配合<strong>指数退避 + 死信队列（DLQ）</strong>，避免无限重试拖垮下游。</p>
+<h3 id="不常用但有效-2"><a href="#不常用但有效-2" class="headerlink" title="不常用但有效"></a>不常用但有效</h3><ul>
+<li><strong>Saga 模式</strong>：把&quot;注册送积分&quot;这种跨服务流程拆成一串本地事务，每步配一个<strong>补偿操作</strong>（正向创建、逆向撤销）。某步失败就按相反顺序回滚，比&quot;要么全成要么全废&quot;的两阶段提交更适合长流程。</li>
+<li><strong>TCC（Try-Confirm-Cancel）</strong>：比 Saga 更强一致，但侵入业务（要写 try&#x2F;confirm&#x2F;cancel 三套），一般只在金融级场景用。</li>
+<li><strong>幂等键（Idempotency-Key）</strong>：客户端或网关生成，保证任何重试都不会重复执行——这是比&quot;定时重试&quot;更根本的防重复手段。</li>
+<li><strong>防羊毛：别只靠&quot;唯一手机号&quot;</strong>：一个号绑一个手机号只是最弱一环。真实风控是<strong>设备指纹 + 图关联（同设备多账号）+ 风险评分模型 + 规则引擎</strong>（同 IP 段、同设备聚集）。手机号绑定拦得住小白，拦不住有接码平台的职业羊毛党。</li>
+<li><strong>T+1 对账</strong>：两个系统跑批核对，差异自动修复，是最终一致性的最后一道保险。</li>
+</ul>
+<hr>
+<h2 id="五、数据规模：单表一千万之后"><a href="#五、数据规模：单表一千万之后" class="headerlink" title="五、数据规模：单表一千万之后"></a>五、数据规模：单表一千万之后</h2><h3 id="常用做法-3"><a href="#常用做法-3" class="headerlink" title="常用做法"></a>常用做法</h3><p>顺序一般是：先<strong>加索引</strong>（多数慢查询是缺索引或索引失效），再<strong>读写分离</strong>（读走从库卸压力），真到极限才<strong>分库分表</strong>（按 user_id &#x2F; 手机号 hash）。</p>
+<h3 id="不常用但有效-3"><a href="#不常用但有效-3" class="headerlink" title="不常用但有效"></a>不常用但有效</h3><ul>
+<li><strong>CQRS</strong>：把写模型和读模型分开，读用专门优化的存储（物化视图、ES），写仍走主库。列表页、统计页不再和写入抢同一张表。</li>
+<li><strong>冷热分层</strong>：老数据归档到廉价存储（对象存储 &#x2F; 列存），热数据留主库。很多&quot;大表慢&quot;其实只是冷数据占着地方。</li>
+<li><strong>专用存储替代 MySQL</strong>：全文检索走 ES，分析走 ClickHouse，时序走 TSDB——别什么都往关系库塞。</li>
+<li><strong>单表设计（如 DynamoDB）</strong>：反范式、把关联拍平，靠 GSI 查询，彻底避免 join 和分片痛点，适合特定高并发场景。</li>
+<li><strong>分片键选错比不分更糟</strong>：按注册时间分片会造成&quot;最新分片被狂写&quot;的热点；按手机号 hash 才能打散。分片键是分库分表里最该想清楚的一件事。</li>
+</ul>
+<hr>
+<h2 id="六、密钥与加密：轮换、降级与格式"><a href="#六、密钥与加密：轮换、降级与格式" class="headerlink" title="六、密钥与加密：轮换、降级与格式"></a>六、密钥与加密：轮换、降级与格式</h2><h3 id="常用做法-4"><a href="#常用做法-4" class="headerlink" title="常用做法"></a>常用做法</h3><p>字段加密 + <strong>密钥版本号拼密文</strong>（<code>v1:&lt;密文&gt;</code>），解密时按前缀取对应版本密钥；密钥托管给 <strong>KMS</strong>，主密钥不出 KMS（信封加密：KEK 加密 DEK，DEK 加密数据）。</p>
+<h3 id="不常用但有效-4"><a href="#不常用但有效-4" class="headerlink" title="不常用但有效"></a>不常用但有效</h3><ul>
+<li><strong>应用层信封加密 + 本地 KEK 缓存</strong>：加密服务挂了怎么办？常用说法是&quot;只能靠运维&quot;。更具体的兜底是把 KEK 在应用本地做短缓存 + 熔断器，服务抖动时本地仍能解密，撑过那几秒——这不是认输，是明确的降级路径。</li>
+<li><strong>HSM（硬件安全模块）</strong>：密钥永不离开硬件，合规要求高的金融场景标配。</li>
+<li><strong>格式保留加密（FPE）</strong>：加密后保持原格式（手机号还是 11 位），现有校验、模糊查询不用改就能跑，又不泄露明文。</li>
+<li><strong>字段级代理加密</strong>：在 DB 代理层（如 CipherTrust、ProxySQL 插件）透明加解密，业务代码零侵入——比&quot;每个字段手搓加解密&quot;干净得多。</li>
+<li><strong>Shamir 秘密分享</strong>：主密钥分片给多人&#x2F;多机，重建需达到阈值，避免单点泄露或被单人挟持。</li>
+</ul>
+<blockquote>
+<p>取舍：KMS + 版本号是及格线；FPE 和代理加密在你&quot;既要加密又要能按原字段查&quot;时才值得上。</p>
+</blockquote>
+<hr>
+<h2 id="七、多机房：同步、冲突与单元化"><a href="#七、多机房：同步、冲突与单元化" class="headerlink" title="七、多机房：同步、冲突与单元化"></a>七、多机房：同步、冲突与单元化</h2><h3 id="常用做法-5"><a href="#常用做法-5" class="headerlink" title="常用做法"></a>常用做法</h3><p>主从复制 + 最终一致，登录态和用户主数据交给**统一身份认证（SSO &#x2F; IdP）**托管，各机房向它要，而不是机房之间互相迁就对账。</p>
+<h3 id="不常用但有效-5"><a href="#不常用但有效-5" class="headerlink" title="不常用但有效"></a>不常用但有效</h3><ul>
+<li><strong>CDC（Change Data Capture，如 Debezium）</strong>：捕获数据库 binlog 跨机房同步，比应用层&quot;双写&quot;可靠得多——双写任一步失败就会不一致，CDC 只认 binlog 这一个事实源。</li>
+<li><strong>Active-Active + CRDT &#x2F; 冲突解决</strong>：两地同时可写，用无冲突复制数据类型（CRDT）或 LWW + 向量时钟解决冲突，而不是&quot;主写从读&quot;。代价是高复杂度和可能的冲突窗口。</li>
+<li><strong>单元化（Unit Architecture）</strong>：按用户维度切&quot;单元&quot;，每个单元自包含（自己的 DB、缓存、服务），故障爆炸半径被限制在一个单元内。蚂蚁、字节的大规模系统大多走这条路。</li>
+<li><strong>用户路由 + 数据局部性</strong>：用户在哪个单元注册，后续请求都路由到那，天然避免跨单元读写——很多&quot;跨机房同步难&quot;的问题，从架构上就绕开了。</li>
+</ul>
+<hr>
+<h2 id="八、一张表：常用-vs-不常用但有效"><a href="#八、一张表：常用-vs-不常用但有效" class="headerlink" title="八、一张表：常用 vs 不常用但有效"></a>八、一张表：常用 vs 不常用但有效</h2><table>
+<thead>
+<tr>
+<th>主题</th>
+<th>常用做法</th>
+<th>不常用但有效</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>限流</td>
+<td>令牌桶&#x2F;滑动窗口 + Redis + Lua，IP 维度</td>
+<td>自适应限流、设备指纹配额、PoW 挑战</td>
+</tr>
+<tr>
+<td>异步通知</td>
+<td>MQ + 状态机 + 重试</td>
+<td>Transactional Outbox、幂等消费、webhook 回调、独立通知服务</td>
+</tr>
+<tr>
+<td>跨服务</td>
+<td>失败记录 + 定时重试 + DLQ</td>
+<td>Saga 补偿、TCC、幂等键、风控图谱、T+1 对账</td>
+</tr>
+<tr>
+<td>数据规模</td>
+<td>索引 → 读写分离 → 分库分表</td>
+<td>CQRS、冷热分层、专用存储、单表设计、分片键优化</td>
+</tr>
+<tr>
+<td>密钥加密</td>
+<td>KMS + 信封加密 + 版本号</td>
+<td>本地 KEK 缓存降级、HSM、FPE、代理加密、Shamir 分片</td>
+</tr>
+<tr>
+<td>多机房</td>
+<td>主从 + 最终一致 + SSO</td>
+<td>CDC、Active-Active+CRDT、单元化、数据局部性路由</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="九、收尾"><a href="#九、收尾" class="headerlink" title="九、收尾"></a>九、收尾</h2><p>CRUD 不是后端的全部，它只是入口。真正拉开系统之间差距的，是上面这些围绕 CRUD 的机制——限流、异步、补偿、分片、加密、多活。一个主题里，&quot;常用做法&quot;让你及格，&quot;不常用但有效&quot;的那一档，往往是系统撞到真实规模或真实攻击之后，才会被逼出来、也才真正显出价值的东西。</p>
+<hr>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li>知乎原问答（本文问题线索的灵感来源）：<a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.zhihu.com/question/264370798/answer/1992174397075773008">后端开发除了增删改查还有什么？ - 回答作者「花宝宝」</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/bf9549bc/">https://hespethorn.github.io/posts/bf9549bc/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%96%87%E7%AB%A0/">文章</a><a class="post-meta__tags" href="/tags/%E5%90%8E%E7%AB%AF%E5%BC%80%E5%8F%91/">后端开发</a><a class="post-meta__tags" href="/tags/%E9%99%90%E6%B5%81/">限流</a><a class="post-meta__tags" href="/tags/%E5%BC%82%E6%AD%A5/">异步</a><a class="post-meta__tags" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/">分布式</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">709</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">886</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">34</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bf9549bc/" title="后端开发除了增删改查还有什么？从日常问题到工程思路">后端开发除了增删改查还有什么？从日常问题到工程思路</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/86d86550/" title="读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划">读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划</a><time datetime="2026-05-22T16:00:00.000Z" title="Created 2026-05-23 00:00:00">2026-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/57868517/" title="警惕 “虚假精通”，守住技术人的核心竞争力">警惕 “虚假精通”，守住技术人的核心竞争力</a><time datetime="2025-08-26T16:00:00.000Z" title="Created 2025-08-27 00:00:00">2025-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fce0fcae/" title="通用代码审查清单整理">通用代码审查清单整理</a><time datetime="2025-05-22T16:00:00.000Z" title="Created 2025-05-23 00:00:00">2025-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f9d777ad/" title="Hello World 系统化学习之旅">Hello World 系统化学习之旅</a><time datetime="2022-01-03T16:00:00.000Z" title="Created 2022-01-04 00:00:00">2022-01-04</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2026-08-25T09:21:07.700Z" title="Created 2026-08-25 17:21:07">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260825/" title="AI 新闻速递｜2026-08-25：编程工具掀起千亿整合潮、模型默认权换防、终端 Agent 上云、具身智能卡在&quot;数据鸡生蛋&quot;、人形机器人迈进家门">AI 新闻速递｜2026-08-25：编程工具掀起千亿整合潮、模型默认权换防、终端 Agent 上云、具身智能卡在&quot;数据鸡生蛋&quot;、人形机器人迈进家门</a><time datetime="2026-08-24T16:00:00.000Z" title="Created 2026-08-25 00:00:00">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3f7c9d2/" title="青崖镇的驯鹰人">青崖镇的驯鹰人</a><time datetime="2026-08-24T16:00:00.000Z" title="Created 2026-08-25 00:00:00">2026-08-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260824/" title="AI 新闻速递｜2026-08-24：人形机器人上球场当&quot;考官&quot;、Copilot 插件标准破壁、开发智能体接管 DevOps、Claude Code 锁资源、Oracle 给 AI 代码设红线">AI 新闻速递｜2026-08-24：人形机器人上球场当&quot;考官&quot;、Copilot 插件标准破壁、开发智能体接管 DevOps、Claude Code 锁资源、Oracle 给 AI 代码设红线</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e5b1c8f2/" title="银湾渡口的敲钟徒">银湾渡口的敲钟徒</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-News/">AI News</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Leetcode/">LeetCode</a></li><li><a href="/categories/Python/">Python</a><a href="/categories/AI-application/">AI Application</a></li><li><a href="/posts/FamilyProse/">Family Prose</a><a href="/posts/LoveDays/">Love Days</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/js/search/local-search.min.js"></script></div></div></body></html>
