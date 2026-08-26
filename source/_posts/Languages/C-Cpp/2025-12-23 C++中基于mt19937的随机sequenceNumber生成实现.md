@@ -8,7 +8,7 @@ tags:
 categories: [Languages, C-Cpp]
 abbrlink: 393e9a0a
 date: 2025-12-23
-
+series: [C-Cpp]
 ---
 
 在网络通信、分布式系统、数据标识等场景中，sequenceNumber（序列号）是一个高频出现的核心元素。一个高质量的序列号生成方案需要满足随机性、唯一性（在一定范围内）、高性能等特性。

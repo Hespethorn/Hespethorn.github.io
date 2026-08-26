@@ -10,7 +10,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: vibe-checks-are-all-you-need
 date: 2026-06-13
-
+series: [AI-App]
 ---
 
 ## 一、你每天都在做 Vibe Check，只是不承认

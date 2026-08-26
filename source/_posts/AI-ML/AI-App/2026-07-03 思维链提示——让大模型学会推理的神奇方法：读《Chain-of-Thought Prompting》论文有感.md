@@ -9,6 +9,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: cf051ed8
 date: 2026-07-03
+series: [AI-App]
 ---
 
 ## 一、为什么大模型需要"思考"

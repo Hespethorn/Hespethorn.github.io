@@ -14,8 +14,7 @@ abbrlink: 8ca7f13c
 date: 2022-05-15
 swiper_index: 4
 description: If you give someone a program,you will frustrate them for a day; if you teach them how to program,you will frustrate them for a lifetime.
-
-
+series: [DSA]
 ---
 -----
 {% tabs  %}

@@ -13,8 +13,7 @@ tags:
 categories: [Systems, Debugging]
 abbrlink: b7e3a912
 date: 2026-06-12
-
-
+series: [Debugging]
 ---
 
 > 借助 AI 在 30 分钟内定位并修复了三个偶发性崩溃问题。本文复盘整个排查过程，记录诊断思路和修复方案。

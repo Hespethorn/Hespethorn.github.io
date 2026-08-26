@@ -9,7 +9,7 @@ tags:
 categories: [Languages, C-Cpp]
 abbrlink: 4a7b8c9d
 date: 2026-01-10
-
+series: [C-Cpp]
 ---
 
 在C++内存管理中，智能指针是一种重要的RAII（资源获取即初始化）机制，它能够自动管理动态分配的内存，避免内存泄漏。其中，`std::shared_ptr`是最常用的智能指针之一，而`std::make_shared`则是创建`shared_ptr`的推荐方式。本文将深入分析`std::shared_ptr`、`make_shared`与`make_shared(new T)`之间的关联、管理特点以及性能比较。

@@ -10,7 +10,7 @@ tags:
 categories: [Languages, C-Cpp]
 abbrlink: 5c6d7e8f
 date: 2026-01-16
-
+series: [C-Cpp]
 ---
 
 在C++智能指针中，`std::unique_ptr`是一种独占所有权的智能指针，它确保同一时间只有一个`unique_ptr`实例拥有对对象的所有权。本文将深入分析`unique_ptr`的所有权转移机制以及各种相关场景下的行为。

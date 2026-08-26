@@ -9,6 +9,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: 83f26f3b
 date: 2026-06-29
+series: [AI-App]
 ---
 
 ## 一、遇到问题

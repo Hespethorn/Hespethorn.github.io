@@ -11,6 +11,7 @@ categories:
   - Design-Patterns
 abbrlink: c610829b
 date: 2026-07-09 00:00:00
+series: [Design-Patterns]
 ---
 
 ## 一、偶然读到一篇"离经叛道"的文章

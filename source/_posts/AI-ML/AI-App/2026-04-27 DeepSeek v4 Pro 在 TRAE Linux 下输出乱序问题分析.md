@@ -13,7 +13,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: deepseek-v4-trae-disorder
 date: 2026-04-27
-
+series: [AI-App]
 ---
 
 在 Windows 版 TRAE IDE 中通过 DeepSeek v4 Pro 模型辅助编程和写作时（通过 SSH 远程连接到 Linux 开发环境），我遇到了一个令人困扰的现象：模型的**思考过程和编写过程出现严重的输出乱序**——文字片段像被洗牌一样随机排列，完全无法阅读。

@@ -12,7 +12,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: companies-graph-of-algorithms
 date: 2026-05-25
-
+series: [AI-App]
 ---
 
 ## 一、核心命题：一切皆算法

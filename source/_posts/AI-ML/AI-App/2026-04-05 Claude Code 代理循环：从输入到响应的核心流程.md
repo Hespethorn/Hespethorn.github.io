@@ -10,7 +10,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: 8f9e7d0c
 date: 2026-04-05
-
+series: [AI-App]
 ---
 ## 一、 什么是代理循环（Agent Loop）？
 

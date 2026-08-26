@@ -9,6 +9,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: 98a84fa8
 date: 2026-08-09 
+series: [AI-App]
 ---
 
 ## 一、为什么大模型需要"位置"？

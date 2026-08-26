@@ -11,6 +11,7 @@ categories:
   - C-Cpp
 abbrlink: e59ac478
 date: 2026-06-23 00:00:00
+series: [C-Cpp]
 ---
 
 ## 一、一行「看似无用」的空代码

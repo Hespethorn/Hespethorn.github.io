@@ -10,7 +10,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: 4d5e6f7g
 date: 2026-02-29
-
+series: [AI-App]
 ---
 
 ## 一、从用户请求到 Skill 执行

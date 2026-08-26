@@ -8,7 +8,7 @@ tags:
 categories: [Languages, C-Cpp]
 abbrlink: a9e5787b
 date: 2024-10-20
-
+series: [C-Cpp]
 ---
 ## 一、std::function —— 可调用对象的 "万能容器"
 

@@ -12,7 +12,7 @@ abbrlink: ed889906
 date: 2022-05-21
 swiper_index: 3
 description: If you give someone a program,you will frustrate them for a day; if you teach them how to program,you will frustrate them for a lifetime.
-
+series: [C-Cpp]
 ---
 -----
 {% tabs  %}

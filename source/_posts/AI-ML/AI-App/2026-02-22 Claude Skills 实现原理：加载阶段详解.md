@@ -10,7 +10,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: 3c4d5e6f
 date: 2026-02-22
-
+series: [AI-App]
 ---
 
 ## 一、从命令行到 Skill 加载

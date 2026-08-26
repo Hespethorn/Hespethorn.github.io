@@ -13,7 +13,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: deepseek-v4-trae-fix
 date: 2026-06-07
-
+series: [AI-App]
 ---
 
 四月底，我写了一篇[《DeepSeek v4 Pro 在 TRAE 中输出乱序问题分析与解决》](https://blog.example.com/deepseek-v4-trae-disorder)，详细记录了 DeepSeek v4 Pro 在 TRAE IDE 中出现词级/片段级输出乱序的问题，并给出了一个核心推测：**DeepSeek v4 Pro 作为推理模型，在 SSE 流中同时发送 `reasoning_content` 和 `content` 两种字段，而 TRAE 的解析器未能正确分离它们。**

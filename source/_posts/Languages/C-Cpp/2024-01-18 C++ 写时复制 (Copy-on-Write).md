@@ -9,7 +9,7 @@ categories: [Languages, C-Cpp]
 abbrlink: 5c9d9f2f
 title: C++ 写时复制 (Copy-on-Write)
 date: 2024-01-18
-
+series: [C-Cpp]
 ---
 
 ## 一、写时复制核心概念

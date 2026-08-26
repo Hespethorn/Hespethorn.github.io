@@ -12,8 +12,7 @@ tags:
 categories: [Algorithms, DSA]
 abbrlink: protobuf-large-structure-design
 date: 2026-03-20
-
-
+series: [DSA]
 ---
 
 在现代分布式系统和微服务架构中，Protocol Buffers（protobuf）是一种广泛使用的高效序列化协议。然而，当处理大型结构体时，如何设计合理的分段更新机制和同步策略成为关键问题。本文将深入探讨protobuf中构建大型结构体的最佳实践。

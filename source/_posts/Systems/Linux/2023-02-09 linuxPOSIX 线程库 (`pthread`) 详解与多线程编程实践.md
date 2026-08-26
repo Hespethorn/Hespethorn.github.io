@@ -9,7 +9,7 @@ tags:
 categories: [Systems, Linux]
 abbrlink: ae1b13b2
 date: 2023-02-09
-
+series: [鸟哥私房菜]
 ---
 
 ### 一、`pthread` 库概述

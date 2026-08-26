@@ -7,7 +7,7 @@ tags:
 categories: [Systems, Linux]
 abbrlink: 15bdd4f8
 date: 2022-08-25
-
+series: [鸟哥私房菜]
 ---
 
 

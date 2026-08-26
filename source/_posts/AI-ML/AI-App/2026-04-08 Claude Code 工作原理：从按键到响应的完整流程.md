@@ -10,7 +10,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: 79788a1e
 date: 2026-04-08
-
+series: [AI-App]
 ---
 
 当你在 Claude Code 中键入消息时，背后究竟发生了什么？这个看似简单的操作，实际上涉及了一个复杂的系统，包括 agent loop、50+ 工具、多代理编排以及一些尚未发布的特性。本文将基于 `ccunpacked.dev` 的分析，为你揭示 Claude Code 的内部工作原理。

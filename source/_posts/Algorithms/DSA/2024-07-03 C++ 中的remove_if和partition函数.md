@@ -10,8 +10,7 @@ categories: [Algorithms, DSA]
 abbrlink: a0783a16
 title: 'C++ 算法：remove_if 与 partition '
 date: 2024-07-03
-
-
+series: [STL]
 ---
 
 ## 一、remove_if 算法原理与实现细节

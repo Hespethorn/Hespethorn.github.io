@@ -11,8 +11,7 @@ tags:
 categories: [Systems, Git]
 abbrlink: e3f5a7b1
 date: 2026-06-15
-
-
+series: [Git]
 ---
 
 日常使用 Git 时，`git pull` 是最频繁的命令之一。但很多人不知道，`git pull` 实际上有两种截然不同的工作方式，它们在提交历史上产生的影响天差地别。本文将深入对比 `git pull`（默认 merge 模式）与 `git pull --rebase` 的核心差异，帮你做出合适的选择。

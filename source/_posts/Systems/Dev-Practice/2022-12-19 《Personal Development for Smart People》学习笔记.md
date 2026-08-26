@@ -7,7 +7,7 @@ tags:
 categories: [Systems, Dev-Practice]
 abbrlink: fcebd492
 date: 2022-12-19
-
+series: [Dev-Practice]
 ---
 
 ## 一、个人成长的七个普遍原则

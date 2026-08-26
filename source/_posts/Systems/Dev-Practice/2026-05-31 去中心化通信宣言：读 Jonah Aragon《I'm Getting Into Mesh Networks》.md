@@ -13,7 +13,7 @@ tags:
 categories: [Systems, Dev-Practice]
 abbrlink: mesh-networks-meshtastic-reticulum
 date: 2026-05-31
-
+series: [Dev-Practice]
 ---
 
 ## 一、一个 ISP 老板的"觉醒"

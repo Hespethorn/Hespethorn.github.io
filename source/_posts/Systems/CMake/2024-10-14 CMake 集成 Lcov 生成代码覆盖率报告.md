@@ -8,8 +8,7 @@ tags:
 categories: [Systems, CMake]
 abbrlink: 6b408243
 date: 2024-10-14
-
-
+series: [CMake]
 ---
 ## 一、工具链安装（环境准备阶段）
 

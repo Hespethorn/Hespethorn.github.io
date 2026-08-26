@@ -10,7 +10,7 @@ tags:
 categories: [AI-ML, AI-App]
 abbrlink: d7010ecc
 date: 2026-02-15
-
+series: [AI-App]
 ---
 
 ## 一、什么是 Claude Skills？
