@@ -1,0 +1,694 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你下定决心读 Netty 源码，兴冲冲 clone 下来、打开 IDE——然后卡住三连：clone 哪个版本？为什么满屏模块不知道 import 哪个？官方那个 echo 例子到底怎么跑起来？本文把这套地基一次铺平，让你后面 30 篇能直接点进源码、能跑、能对照。  本文所有命令与现象均经过实跑验证：源码在沙箱（JDK 17）编译跑通 echo，并在读者本机（Windows + IntelliJ">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo">
+<meta property="og:url" content="https://hespethorn.github.io/posts/nety0101/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="你下定决心读 Netty 源码，兴冲冲 clone 下来、打开 IDE——然后卡住三连：clone 哪个版本？为什么满屏模块不知道 import 哪个？官方那个 echo 例子到底怎么跑起来？本文把这套地基一次铺平，让你后面 30 篇能直接点进源码、能跑、能对照。  本文所有命令与现象均经过实跑验证：源码在沙箱（JDK 17）编译跑通 echo，并在读者本机（Windows + IntelliJ">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-08-20T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-27T02:30:03.421Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="Netty">
+<meta property="article:tag" content="源码阅读">
+<meta property="article:tag" content="NIO">
+<meta property="article:tag" content="Maven">
+<meta property="article:tag" content="IDEA">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo",
+  "url": "https://hespethorn.github.io/posts/nety0101/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-08-20T16:00:00.000Z",
+  "dateModified": "2026-08-27T02:30:03.421Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/nety0101/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">722</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">926</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">39</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-08-20T16:00:00.000Z" title="Created 2025-08-21 00:00:00">2025-08-21</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Source-Reading/">Source-Reading</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Source-Reading/Netty/">Netty</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你下定决心读 Netty 源码，兴冲冲 clone 下来、打开 IDE——然后卡住三连：clone 哪个版本？为什么满屏模块不知道 import 哪个？官方那个 echo 例子到底怎么跑起来？本文把这套地基一次铺平，让你后面 30 篇能直接点进源码、能跑、能对照。</p>
+<blockquote>
+<p>本文所有命令与现象均经过实跑验证：源码在沙箱（JDK 17）编译跑通 echo，并在读者本机（Windows + IntelliJ + Microsoft Build of OpenJDK 11.0.32）完整复现——包括下文列出的每一处编译&#x2F;运行坑。</p>
+</blockquote>
+<h2 id="一、Phase0-是地基，不是源码分析"><a href="#一、Phase0-是地基，不是源码分析" class="headerlink" title="一、Phase0 是地基，不是源码分析"></a>一、Phase0 是地基，不是源码分析</h2><ul>
+<li><strong>是什么</strong>：Phase0 不分析任何 Netty 内部机制，只解决一件事——<strong>环境就位</strong>：版本锁定、IDE 能跳转、最小例子能跑。</li>
+<li><strong>坑</strong>：很多人一上来就读 <code>ChannelPipeline</code> 源码，结果连代码都没 clone 对版本，类名对不上、行号对不上，越读越像在背天书。</li>
+<li><strong>本质一句话</strong>：读源码的前提是&quot;源码在你机器上能点得进去、能跑起来&quot;，否则全是脑补。</li>
+</ul>
+<h2 id="二、锁定版本：为什么是-netty-4-1-110-Final"><a href="#二、锁定版本：为什么是-netty-4-1-110-Final" class="headerlink" title="二、锁定版本：为什么是 netty-4.1.110.Final"></a>二、锁定版本：为什么是 netty-4.1.110.Final</h2><ul>
+<li><strong>是什么</strong>：Netty 有两条大线——<code>4.1</code>（长期主线，生产首选）和 <code>5</code>（官方已废弃，不跟）。本系列锁 <code>4.1</code> 的稳定 tag <code>netty-4.1.110.Final</code>。</li>
+<li><strong>坑</strong>：Netty 的 <code>main</code> 分支每天都在变，类名和方法行号会漂移；今天文章写&quot;第 66 行 <code>b.bind()</code>&quot;，过两个月可能对到别的实现上。</li>
+<li><strong>本质一句话</strong>：<strong>读源码必须锁死一个 tag</strong>，文章贴的行号才可复现、可对照。</li>
+<li><strong>怎么拉</strong>（浅克隆，省空间，读源码不需要完整提交历史）：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">git <span class="built_in">clone</span> --depth 1 --branch netty-4.1.110.Final https://github.com/netty/netty.git</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>注：若本机 GitHub 直连受限（写作环境即如此），可用 Gitee 镜像 <code>https://gitee.com/mirrors/netty.git</code> 的<strong>同名 tag</strong> 拉取，内容与官方一致。克隆完成后 <code>git describe --tags</code> 应显示 <code>netty-4.1.110.Final</code>。</p>
+</blockquote>
+<h2 id="三、仓库结构：你要读的代码在哪"><a href="#三、仓库结构：你要读的代码在哪" class="headerlink" title="三、仓库结构：你要读的代码在哪"></a>三、仓库结构：你要读的代码在哪</h2><p>Netty 是典型的 <strong>Maven 多模块</strong>工程，根目录一个 <code>pom.xml</code> 统管 20+ 模块。看清模块分工，才知道后面每篇钻哪。</p>
+<div align="center">
+
+<svg viewBox="0 0 680 300" width="100%" role="img">
+  <title>Netty 4.1.110 模块结构</title>
+  <desc>根 pom 统管多模块：common/buffer/transport/codec*/handler 是核心源码，example 是运行例子。transport/buffer/example 为本系列重点阅读。</desc>
+  <rect x="30" y="20" width="620" height="250" rx="16" fill="#F3F4FB" stroke="#534AB7" stroke-width="1"/>
+  <text x="50" y="48" font-family="sans-serif" font-size="14" font-weight="500" fill="#26215C">Netty 4.1.110.Final（根 pom.xml · Maven 多模块）</text>
+  <g>
+    <rect x="60" y="80" width="170" height="60" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+    <text x="145" y="108" font-family="sans-serif" font-size="14" font-weight="500" fill="#04342C" text-anchor="middle">common</text>
+    <text x="145" y="126" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle">基础工具/抽象</text>
+  </g>
+  <g>
+    <rect x="255" y="80" width="170" height="60" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.8"/>
+    <text x="340" y="108" font-family="sans-serif" font-size="14" font-weight="500" fill="#412402" text-anchor="middle">buffer</text>
+    <text x="340" y="126" font-family="sans-serif" font-size="12" fill="#854F0B" text-anchor="middle">ByteBuf ★</text>
+  </g>
+  <g>
+    <rect x="450" y="80" width="170" height="60" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.2"/>
+    <text x="535" y="108" font-family="sans-serif" font-size="14" font-weight="500" fill="#042C53" text-anchor="middle">transport</text>
+    <text x="535" y="126" font-family="sans-serif" font-size="12" fill="#185FA5" text-anchor="middle">Channel/EventLoop ★</text>
+  </g>
+  <g>
+    <rect x="60" y="160" width="170" height="60" rx="10" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+    <text x="145" y="188" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle">codec*</text>
+    <text x="145" y="206" font-family="sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle">编解码器</text>
+  </g>
+  <g>
+    <rect x="255" y="160" width="170" height="60" rx="10" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+    <text x="340" y="188" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle">handler</text>
+    <text x="340" y="206" font-family="sans-serif" font-size="12" fill="#5F5E5A" text-anchor="middle">SSL/超时等</text>
+  </g>
+  <g>
+    <rect x="450" y="160" width="170" height="60" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.2"/>
+    <text x="535" y="188" font-family="sans-serif" font-size="14" font-weight="500" fill="#26215C" text-anchor="middle">example</text>
+    <text x="535" y="206" font-family="sans-serif" font-size="12" fill="#534AB7" text-anchor="middle">跑例子(echo) ★</text>
+  </g>
+  <text x="50" y="252" font-family="sans-serif" font-size="12" fill="#5F5E5A">★ = 本系列重点阅读模块。导入根 pom 即可一次拿到全部模块与依赖。</text>
+</svg>
+
+</div>
+
+<ul>
+<li><p><strong><code>common</code></strong>：基础工具与抽象（<code>io.netty.util</code>、引用计数、<code>InternalThreadLocal</code> 等）。注意它 <code>pom.xml</code> 里把 <code>maven.compiler.target</code> 写死为 <code>1.6</code>（最大兼容老 JVM）——这是后面 IDEA 编译坑的元凶，见第五节。</p>
+</li>
+<li><p><strong><code>buffer</code></strong>：<code>ByteBuf</code> 体系（Phase5 重点）。</p>
+</li>
+<li><p><strong><code>transport</code></strong>：核心传输层——<code>Channel</code> &#x2F; <code>EventLoop</code> &#x2F; <code>Unsafe</code>（Phase2–3 重点）。</p>
+</li>
+<li><p><strong><code>codec*</code></strong>：各类编解码器（<code>http</code>&#x2F;<code>http2</code>&#x2F;<code>mqtt</code>&#x2F;<code>redis</code>…，Phase6 重点）。</p>
+</li>
+<li><p><strong><code>handler</code></strong>：通用 <code>ChannelHandler</code>（SSL、空闲检测、日志等）。</p>
+</li>
+<li><p><strong><code>example</code></strong>：可运行例子集合，本文的 echo 就在这里。</p>
+</li>
+<li><p><strong>坑</strong>：新手只 <code>Open</code> 某个子模块目录，结果依赖不全、符号全红。<strong>必须导入根 pom 整个工程</strong>。</p>
+</li>
+<li><p><strong>本质一句话</strong>：根 pom 一次导入，全部模块与依赖就位，点哪个类都能跳转。</p>
+</li>
+</ul>
+<h2 id="四、IDE-导入：以-Maven-工程打开根-pom"><a href="#四、IDE-导入：以-Maven-工程打开根-pom" class="headerlink" title="四、IDE 导入：以 Maven 工程打开根 pom"></a>四、IDE 导入：以 Maven 工程打开根 pom</h2><ul>
+<li><strong>是什么</strong>：用 IntelliJ IDEA（Community 版即可）把仓库当作 Maven 项目导入。</li>
+<li><strong>步骤</strong>：<code>File → Open</code> → 选中仓库<strong>根目录</strong>（里面有 <code>pom.xml</code>）→ 选择&quot;作为 Project 打开&quot; → 等待 Maven 依赖解析完成（首次会下载一阵）。</li>
+<li><strong>关键预警</strong>：导入后 IDEA 会按各模块 <code>pom.xml</code> 的 <code>maven.compiler</code> 来定语言级别，而 <code>netty-common</code> 是 <code>target=1.6</code>，会把一部分模块压到 language level 6。所以<strong>导入后务必按第五节把 Project SDK 与所有模块的 Language level 都设成 8&#x2F;11</strong>，否则后面一片红。</li>
+<li><strong>本质一句话</strong>：导入根 pom &#x3D; 一次性拿到全部模块与依赖，源码随便跳。</li>
+</ul>
+<h2 id="五、本机环境约定（实跑验证，不是想当然）"><a href="#五、本机环境约定（实跑验证，不是想当然）" class="headerlink" title="五、本机环境约定（实跑验证，不是想当然）"></a>五、本机环境约定（实跑验证，不是想当然）</h2><p>翻根 <code>pom.xml</code>，主线 <code>maven.compiler.source/target = 1.8</code>；但 <code>netty-common</code> 模块为了最大兼容老 JVM，单独把 <code>maven.compiler.target</code> 设成了 <strong><code>1.6</code></strong>。别小看这一行——它是 IDEA 全模块导入时几乎所有编译报错的源头。</p>
+<h3 id="5-1-JDK-版本：必须-8-或-11，不能用-12"><a href="#5-1-JDK-版本：必须-8-或-11，不能用-12" class="headerlink" title="5.1 JDK 版本：必须 8 或 11，不能用 12+"></a>5.1 JDK 版本：必须 8 或 11，不能用 12+</h3><p><code>java.nio.file</code> 是 Java 7 的 API，而 <code>-target 6</code> 在 <strong>JDK 12 起被 javac 彻底移除支持</strong>（报&quot;无法编译为 JVM 目标 6&quot;）。因此：</p>
+<table>
+<thead>
+<tr>
+<th>你选的 JDK</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>JDK 8 &#x2F; 9 &#x2F; 10 &#x2F; <strong>11</strong></td>
+<td>✅ 支持 <code>-target 1.6</code>，可编译全部模块</td>
+</tr>
+<tr>
+<td>JDK 17 &#x2F; 21 &#x2F; <strong>26</strong> 等 12+</td>
+<td>❌ 报 <code>无法编译为 JVM 目标 6</code>（netty-common 模块）</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>实测：读者本机最初用 Oracle OpenJDK 26，IDEA 直接报 <code>java: 无法编译为 JVM 目标 6 配置的模块 &#39;netty-common&#39;</code>；换成 <strong>Microsoft Build of OpenJDK 11.0.32</strong>（IDEA 自带 Download JDK 即可获取）后编译通过。本系列推荐 <strong>JDK 11</strong>。</p>
+</blockquote>
+<h3 id="5-2-IDEA-导入后必做三件事（否则满屏红）"><a href="#5-2-IDEA-导入后必做三件事（否则满屏红）" class="headerlink" title="5.2 IDEA 导入后必做三件事（否则满屏红）"></a>5.2 IDEA 导入后必做三件事（否则满屏红）</h3><ol>
+<li><strong>Project SDK &#x3D; JDK 11</strong>：<code>File → Project Structure → Project → SDK</code> 选 11（没有就 <code>Add SDK → Download JDK</code> 选 11）。</li>
+<li><strong>所有模块 Language level 同步到 8&#x2F;11</strong>：<code>Project Structure → Modules</code> 左侧 <code>Ctrl+A</code> 全选 → <code>Sources</code> 标签 → Language level 设 8 或 11。<strong>光换 SDK 不够</strong>——<code>netty-common</code> 的 <code>target=1.6</code> 会把它的 language level 压到 6，于是 <code>transport</code> 等用到 <code>java.nio.file</code>（Java 7 API）的模块就报 <code>程序包 java.nio.file 不存在</code>；连 <code>netty-common</code> 自己若被压到 6，下游还会报 <code>io.netty.util.collection 不存在</code>。这两个错都是 language level 没拉齐的连锁反应。</li>
+<li><strong>模块依赖要接上</strong>：<code>Maven</code> 工具窗右键根 <code>pom.xml</code> → <strong>Reload Project</strong>，让 IDEA 重建 module-to-module 依赖图；再 <strong>Build → Rebuild Project</strong> 按依赖顺序全量编译（common 先出 <code>classes</code>，下游才找得到）。若仍报 <code>io.netty.*</code>（netty 自身类）不存在，就是 common 没产出 classes 或依赖没接——Reload + Rebuild 基本能解。</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>要求</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>JDK</td>
+<td><strong>8 或 11（必须 ≤11）</strong></td>
+<td>12+ 因 netty-common 的 target&#x3D;1.6 直接报错</td>
+</tr>
+<tr>
+<td>Language level</td>
+<td>所有模块统一 8&#x2F;11</td>
+<td>不能留 6，否则 java.nio.file &#x2F; io.netty.util.collection 报不存在</td>
+</tr>
+<tr>
+<td>构建</td>
+<td>仓库自带 <code>mvnw</code> &#x2F; <code>mvnw.cmd</code></td>
+<td>优先用包装器，免装 Maven；也可本机装 Maven 3.6+</td>
+</tr>
+<tr>
+<td>IDE</td>
+<td>IntelliJ IDEA（Community 足够）</td>
+<td>本文以 IDEA 为例</td>
+</tr>
+<tr>
+<td>源码版本</td>
+<td>netty-4.1.110.Final</td>
+<td>已浅克隆并锁定</td>
+</tr>
+</tbody></table>
+<h2 id="六、跑通-echo：最小可运行标本"><a href="#六、跑通-echo：最小可运行标本" class="headerlink" title="六、跑通 echo：最小可运行标本"></a>六、跑通 echo：最小可运行标本</h2><ul>
+<li><strong>是什么</strong>：<code>echo</code> 是 Netty 官方最简例子——服务端收到什么字节，原样回显给客户端。它是理解 <code>Channel</code> &#x2F; <code>Pipeline</code> &#x2F; <code>EventLoop</code> 的<strong>最小标本</strong>，一条链路把后面要讲的核心组件全亮了相。</li>
+<li><strong>真实路径</strong>（已核对）：<code>example/src/main/java/io/netty/example/echo/</code><ul>
+<li><code>EchoServer.java</code> &#x2F; <code>EchoServerHandler.java</code></li>
+<li><code>EchoClient.java</code> &#x2F; <code>EchoClientHandler.java</code></li>
+</ul>
+</li>
+<li><strong>怎么启动</strong>（推荐方式 A；想用命令行见方式 B）：<ul>
+<li><strong>方式 A（IDEA Run，已在本机实测跑通）</strong>：先按第五节设好 JDK 11 + Language level 8&#x2F;11 并 Rebuild；然后右键 <code>EchoServer</code> 的 <code>main()</code> → <code>Run</code>，再右键 <code>EchoClient</code> 的 <code>main()</code> → <code>Run</code>。服务端控制台会打印 <code>BIND: 0.0.0.0/0.0.0.0:8007</code> &#x2F; <code>ACTIVE</code>，即成功。</li>
+<li><strong>方式 B（命令行，需本机装 Maven）</strong>：在<strong>仓库根目录的 Git Bash</strong> 里执行 <code>./run-example.sh echo-server</code>（脚本会 <code>cd example</code> 后调用 <code>mvn exec:exec</code>，自动带上正确主类）；客户端同理 <code>./run-example.sh echo-client</code>。</li>
+</ul>
+</li>
+</ul>
+<blockquote>
+<p><strong>⚠️ Windows 命令行踩坑实录（实跑验证，共 5 条）</strong></p>
+<ol>
+<li><strong><code>.sh</code> 别在 PowerShell&#x2F;双击跑</strong>：Windows 可能把 <code>.sh</code> 关联到 Node，会掉进 Node REPL（看到 <code>Welcome to Node.js</code>）；必须 <code>bash run-example.sh echo-server</code> 显式用 Git Bash 执行。</li>
+<li><strong><code>mvnw.cmd</code> 会把 <code>-DexampleClass=全限定名</code> 的 <code>=</code> 拆掉</strong>：PowerShell&#x2F;CMD 里手敲 <code>mvnw.cmd ... -DexampleClass=io.netty...</code> 时，Windows 把 <code>=</code> 当分隔符，Maven 收不到类名（报&quot;找不到或无法加载主类&quot;且类名为空）。命令行务必走 <strong>Git Bash + 已安装的 <code>mvn</code></strong>（即方式 B），别在 PowerShell 手敲 <code>mvnw.cmd</code> 带 <code>-D类名</code>。</li>
+<li><strong>PowerShell 跑 <code>mvnw.cmd</code> 须加 <code>.\</code> 前缀</strong>：PowerShell 默认不从当前目录加载命令，直接 <code>mvnw.cmd</code> 会报&quot;无法将…识别为 cmdlet&quot;；要 <code>.\mvnw.cmd …</code>。</li>
+<li><strong>WSL 里 <code>./mvnw</code> 报 <code>^M: bad interpreter</code></strong>：克隆的 <code>mvnw</code> 是 CRLF，Linux 读 shebang 失败；<code>sed -i &#39;s/\r$//&#39; mvnw</code> 去回车即可（且 WSL 需另配 JDK）。</li>
+<li><strong>根目录直接 <code>mvnw exec:exec</code> 会失败</strong>：<code>exec:exec</code> 会套到所有模块，<code>netty-dev-tools</code> 等模块缺 <code>executable</code> 配置而报错；必须先 <code>cd example</code>（正是 <code>run-example.sh</code> 的做法）。</li>
+</ol>
+<p>结论：<strong>想省事用法 A（IDEA Run）；想走命令行就 Git Bash + 装好的 Maven + <code>./run-example.sh</code>，别在 PowerShell 里手敲 <code>mvnw.cmd</code> 带 <code>-D类名</code>。</strong></p>
+</blockquote>
+<h3 id="6-1-看不到回显-是正常的——别误判没跑通"><a href="#6-1-看不到回显-是正常的——别误判没跑通" class="headerlink" title="6.1 &quot;看不到回显&quot;是正常的——别误判没跑通"></a>6.1 &quot;看不到回显&quot;是正常的——别误判没跑通</h3><p>这是最容易让人以为&quot;没跑通&quot;的点，务必看清：</p>
+<ul>
+<li>官方 <code>EchoClientHandler.channelRead</code> <strong>只有 <code>ctx.write(msg)</code>（把收到的回显再写回服务器），没有任何打印语句</strong>；且 <code>EchoClient.java</code> 里客户端的 <code>LoggingHandler</code> <strong>默认被注释掉</strong>。所以客户端控制台本来就是空的——&quot;没回显&quot;是 example 的<strong>正常设计</strong>，不代表链路断了。</li>
+<li>服务端日志里 <code>BIND / ACTIVE</code> 加上 <code>READ: ... R:/127.0.0.1:&lt;客户端端口&gt;</code> 表示客户端已连上，这就是跑通的证据。</li>
+<li><strong>想真正&quot;看到&quot;回显</strong>，给客户端加上日志即可：把 <code>EchoClient.java</code> 第 60 行的注释 <code>//p.addLast(new LoggingHandler(LogLevel.INFO));</code> 去掉，并在文件头部补两行 import：<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> io.netty.handler.logging.LoggingHandler;</span><br><span class="line"><span class="keyword">import</span> io.netty.handler.logging.LogLevel;</span><br></pre></td></tr></table></figure>
+重新 Run <code>EchoClient</code>，窗口会刷出 <code>WRITE: 256B</code> &#x2F; <code>READ</code> &#x2F; <code>FLUSH</code> 事件（默认发的是 0x00–0xFF 共 256 字节二进制，不是明文字符串），证明数据在原样往返。</li>
+<li><strong>日志&quot;不停&quot;也是正常的</strong>：因为客户端 <code>channelRead</code> 收到回显后又 <code>ctx.write</code> 写回服务器，服务器再回显，客户端再写回……形成<strong>无限 ping-pong</strong>。点 Run 窗口的红色方块（Stop）即可停止。</li>
+</ul>
+<p><strong>真实片段</strong>（<code>EchoServer.java</code> 第 35–66 行，已贴行号）：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">class</span> <span class="title class_">EchoServer</span> &#123;</span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">final</span> <span class="type">int</span> <span class="variable">PORT</span> <span class="operator">=</span> Integer.parseInt(System.getProperty(<span class="string">&quot;port&quot;</span>, <span class="string">&quot;8007&quot;</span>)); <span class="comment">// 默认 8007</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">        <span class="keyword">final</span> <span class="type">SslContext</span> <span class="variable">sslCtx</span> <span class="operator">=</span> ServerUtil.buildSslContext();</span><br><span class="line">        <span class="type">EventLoopGroup</span> <span class="variable">bossGroup</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">NioEventLoopGroup</span>(<span class="number">1</span>);   <span class="comment">// 第 44 行：接收连接</span></span><br><span class="line">        <span class="type">EventLoopGroup</span> <span class="variable">workerGroup</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">NioEventLoopGroup</span>();  <span class="comment">// 第 45 行：处理已连接通道</span></span><br><span class="line">        <span class="keyword">final</span> <span class="type">EchoServerHandler</span> <span class="variable">serverHandler</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">EchoServerHandler</span>();</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            <span class="type">ServerBootstrap</span> <span class="variable">b</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">ServerBootstrap</span>();          <span class="comment">// 第 48 行</span></span><br><span class="line">            b.group(bossGroup, workerGroup)</span><br><span class="line">             .channel(NioServerSocketChannel.class)             <span class="comment">// 第 50 行</span></span><br><span class="line">             .option(ChannelOption.SO_BACKLOG, <span class="number">100</span>)</span><br><span class="line">             .handler(<span class="keyword">new</span> <span class="title class_">LoggingHandler</span>(LogLevel.INFO))</span><br><span class="line">             .childHandler(<span class="keyword">new</span> <span class="title class_">ChannelInitializer</span>&lt;SocketChannel&gt;() &#123; <span class="comment">/* 挂 Handler */</span> &#125;);</span><br><span class="line">            <span class="type">ChannelFuture</span> <span class="variable">f</span> <span class="operator">=</span> b.bind(PORT).sync();              <span class="comment">// 第 66 行：绑定并阻塞等待</span></span><br><span class="line">            f.channel().closeFuture().sync();</span><br><span class="line">        &#125; <span class="keyword">finally</span> &#123; ... &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<div align="center">
+
+<svg viewBox="0 0 680 170" width="100%" role="img">
+  <title>echo 启动与回显流程</title>
+  <desc>启动 EchoServer(bind 8007) → 启动 EchoClient(连 8007) → 服务端读字节原样写回 → 客户端收到后又写回服务端，形成无限 ping-pong。</desc>
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <g>
+    <rect x="30" y="55" width="145" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.8"/>
+    <text x="102" y="79" font-family="sans-serif" font-size="13" font-weight="500" fill="#042C53" text-anchor="middle">EchoServer</text>
+    <text x="102" y="97" font-family="sans-serif" font-size="12" fill="#185FA5" text-anchor="middle">bind(8007)</text>
+  </g>
+  <line x1="175" y1="83" x2="200" y2="83" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#ar2)"/>
+  <g>
+    <rect x="200" y="55" width="145" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+    <text x="272" y="79" font-family="sans-serif" font-size="13" font-weight="500" fill="#04342C" text-anchor="middle">EchoClient</text>
+    <text x="272" y="97" font-family="sans-serif" font-size="12" fill="#0F6E56" text-anchor="middle">connect 8007</text>
+  </g>
+  <line x1="345" y1="83" x2="370" y2="83" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#ar2)"/>
+  <g>
+    <rect x="370" y="55" width="160" height="56" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.8"/>
+    <text x="450" y="79" font-family="sans-serif" font-size="13" font-weight="500" fill="#412402" text-anchor="middle">服务端</text>
+    <text x="450" y="97" font-family="sans-serif" font-size="12" fill="#854F0B" text-anchor="middle">read → 原样 write</text>
+  </g>
+  <line x1="530" y1="83" x2="548" y2="83" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#ar2)"/>
+  <g>
+    <rect x="548" y="55" width="120" height="56" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/>
+    <text x="608" y="79" font-family="sans-serif" font-size="13" font-weight="500" fill="#26215C" text-anchor="middle">客户端</text>
+    <text x="608" y="97" font-family="sans-serif" font-size="12" fill="#534AB7" text-anchor="middle">收到回显</text>
+  </g>
+  <text x="30" y="148" font-family="sans-serif" font-size="12" fill="#5F5E5A">客户端收到后又写回服务端 → 无限 ping-pong（日志会不停刷 WRITE/READ）。一条链路把 ServerBootstrap / EventLoopGroup / Channel / Pipeline / Handler 全亮了相。</text>
+</svg>
+
+</div>
+
+<ul>
+<li><strong>坑</strong>：① echo 默认监听 <code>8007</code>，别和本机其他服务抢端口（可用 <code>-Dport=xxxx</code> 改）；② <code>ServerUtil.buildSslContext()</code> 那段 SSL 是自签可选配置，不影响回显主逻辑，初读可忽略；③ 客户端不打印回显、且日志不停，是例子设计，不是 bug（见 6.1）。</li>
+<li><strong>本质一句话</strong>：<code>bind → accept → read → write</code> 一条链路，把 <code>ServerBootstrap</code> &#x2F; <code>EventLoopGroup</code> &#x2F; <code>Channel</code> &#x2F; <code>Pipeline</code> &#x2F; <code>Handler</code> 一次性摆在你眼前。</li>
+</ul>
+<h2 id="七、本系列读法约定"><a href="#七、本系列读法约定" class="headerlink" title="七、本系列读法约定"></a>七、本系列读法约定</h2><p>为避免&quot;读完还是串不起来&quot;，全系列统一读法：</p>
+<ol>
+<li><strong>先骨架后血肉</strong>：Phase0&#x2F;1 看全景（架构 + 启动流程），再下钻 Phase3–5（事件循环 &#x2F; Pipeline &#x2F; 内存），最后 Phase7 把读&#x2F;写&#x2F;连接主链路串一遍、Phase8 收口。</li>
+<li><strong>每篇固定结构</strong>：开场钩子 →「是什么 &#x2F; 坑 &#x2F; 本质一句话」→ 真实源码片段 + 行号 → 可运行 demo → 裸内联 SVG 图 → 对比小结。</li>
+<li><strong>两条铁律</strong>：图一律用<strong>裸内联 SVG</strong>（不写 ASCII 图）；文章内<strong>不预测下一篇</strong>——每篇自成一体。</li>
+</ol>
+<h2 id="八、小结"><a href="#八、小结" class="headerlink" title="八、小结"></a>八、小结</h2><p>Phase0 结束时，你应该已经：</p>
+<ul>
+<li>✅ 源码锁在 <code>netty-4.1.110.Final</code>，<code>git describe --tags</code> 可验证；</li>
+<li>✅ IDEA 以 Maven 工程导入根 pom，<strong>Project SDK &#x3D; JDK 11、所有模块 Language level &#x3D; 8&#x2F;11、模块依赖已接</strong>（否则会卡在 target 1.6 &#x2F; java.nio.file &#x2F; io.netty.util.collection 三连报错）；</li>
+<li>✅ <code>EchoServer</code> 跑起来打印 <code>BIND 8007</code> &#x2F; <code>ACTIVE</code>，<code>EchoClient</code> 连上后数据在 ping-pong 往返（想看回显就给客户端加 <code>LoggingHandler</code> + 两行 import）。</li>
+</ul>
+<p>地基就位，后面就能安心逐行走读了。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/nety0101/">https://hespethorn.github.io/posts/nety0101/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/Netty/">Netty</a><a class="post-meta__tags" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/">源码阅读</a><a class="post-meta__tags" href="/tags/NIO/">NIO</a><a class="post-meta__tags" href="/tags/Maven/">Maven</a><a class="post-meta__tags" href="/tags/IDEA/">IDEA</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">722</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">926</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">39</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/nety0101/" title="Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo">Netty 源码研读 Phase0：准备环境、拉取源码与跑通 echo</a><time datetime="2025-08-20T16:00:00.000Z" title="Created 2025-08-21 00:00:00">2025-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/nety0000/" title="Netty 源码研读 · 总路线图（Master Plan）">Netty 源码研读 · 总路线图（Master Plan）</a><time datetime="2025-08-20T16:00:00.000Z" title="Created 2025-08-21 00:00:00">2025-08-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2026-08-27T02:30:03.416Z" title="Created 2026-08-27 10:30:03">2026-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-catastrophic-forgetting/" title="续艺坊的守籍人">续艺坊的守籍人</a><time datetime="2026-08-26T16:00:00.000Z" title="Created 2026-08-27 00:00:00">2026-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260827/" title="AI 新闻速递｜2026-08-27：中国开源模型下载首超美国、DeepSeek 开源 Harness、世界机器人大会与人形运动会收官、代码智能体走向形式化验证">AI 新闻速递｜2026-08-27：中国开源模型下载首超美国、DeepSeek 开源 Harness、世界机器人大会与人形运动会收官、代码智能体走向形式化验证</a><time datetime="2026-08-26T16:00:00.000Z" title="Created 2026-08-27 00:00:00">2026-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7d3e9a14/" title="百艺镇的过手人">百艺镇的过手人</a><time datetime="2026-08-25T16:00:00.000Z" title="Created 2026-08-26 00:00:00">2026-08-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a6851787/" title="拼音如何切词：从音节歧义到中文分词的完整链路">拼音如何切词：从音节歧义到中文分词的完整链路</a><time datetime="2026-08-25T16:00:00.000Z" title="Created 2026-08-26 00:00:00">2026-08-26</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/posts/Source-Reading/">Source Reading</a><a href="/posts/Networking/">Networking</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
