@@ -10,7 +10,7 @@ categories:
   - Systems
   - Design-Patterns
 abbrlink: c610829b
-date: 2026-07-09 00:00:00
+date: 2026-07-09
 series: [Design-Patterns]
 ---
 

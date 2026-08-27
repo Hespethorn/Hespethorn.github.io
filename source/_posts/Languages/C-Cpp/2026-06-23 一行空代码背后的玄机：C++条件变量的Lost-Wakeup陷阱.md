@@ -6,11 +6,9 @@ tags:
   - 条件变量
   - 竞态条件
   - Foundational-Syntax-and-Core-Concepts
-categories:
-  - Languages
-  - C-Cpp
+categories: [Languages, C-Cpp]
 abbrlink: e59ac478
-date: 2026-06-23 00:00:00
+date: 2026-06-23
 series: [C-Cpp]
 ---
 

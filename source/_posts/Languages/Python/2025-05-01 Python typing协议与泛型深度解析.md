@@ -1,11 +1,9 @@
 ---
 title: Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型
-categories:
-  - Languages
-  - Python
-series:
-  - Python
+categories: [Languages, Python]
+series: [Python]
 abbrlink: 7ed059a9
+date: 2025-05-01
 ---
 
 ## 一、引言：为了一个 read()，我被迫 import 了一个基类

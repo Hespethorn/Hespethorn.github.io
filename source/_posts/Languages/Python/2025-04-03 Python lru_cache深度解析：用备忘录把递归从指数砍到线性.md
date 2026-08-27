@@ -6,13 +6,10 @@ tags:
   - 缓存
   - 性能优化
   - 装饰器
-categories:
-  - Languages
-  - Python
-series:
-  - Python
+categories: [Languages, Python]
+series: [Python]
 abbrlink: eb898813
-date: 2025-04-03 00:00:00
+date: 2025-04-03
 ---
 
 ## 一、一个被忽略的时间黑洞:重复计算

@@ -8,7 +8,7 @@ categories:
 series:
   - Leetcode-C++
 abbrlink: 80116a60
-date: 2023-02-11 00:00:00
+date: 2023-02-11
 ---
 
 # [13. Roman to Integer](https://leetcode.com/problems/roman-to-integer/)

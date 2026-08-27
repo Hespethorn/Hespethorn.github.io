@@ -5,13 +5,10 @@ tags:
   - dataclass
   - 装饰器
   - 结构化数据
-categories:
-  - Languages
-  - Python
-series:
-  - Python
+categories: [Languages, Python]
+series: [Python]
 abbrlink: 8a58ce8c
-date: 2025-04-10 00:00:00
+date: 2025-04-10
 ---
 
 ## 一、写到手酸的样板代码:一个类要抄多少遍

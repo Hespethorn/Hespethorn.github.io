@@ -5,13 +5,10 @@ tags:
   - 序列化
   - pickle
   - 对象持久化
-categories:
-  - Languages
-  - Python
-series:
-  - Python
+categories: [Languages, Python]
+series: [Python]
 abbrlink: 7a670d8e
-date: 2025-05-15 00:00:00
+date: 2025-05-15
 ---
 
 ## 一、引言：为什么需要序列化

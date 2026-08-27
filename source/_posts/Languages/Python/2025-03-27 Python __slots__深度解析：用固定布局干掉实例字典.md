@@ -5,13 +5,10 @@ tags:
   - __slots__
   - 内存优化
   - 面向对象
-categories:
-  - Languages
-  - Python
-series:
-  - Python
+categories: [Languages, Python]
+series: [Python]
 abbrlink: f5b501ef
-date: 2025-03-27 00:00:00
+date: 2025-03-27
 ---
 
 ## 一、一个被忽略的内存黑洞:每个实例都有一本"字典"
