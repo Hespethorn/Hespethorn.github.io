@@ -1,0 +1,572 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你用 C++ 写过后端吗？大多数人一聊高并发就想到 Java 的那套中间件全家桶，但其实用 Drogon + Redis + RabbitMQ 也能撸出一个 30000+ QPS 的秒杀系统，而且能顺手把 epoll、协程、无锁队列、内存池 这些 Java 教程很少展开的系统底层一次讲透。本文是整个「秒杀系统（C++ &#x2F; Drogon）」系列的开篇——先把业务挑战和4 阶段架构演进讲明白">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：专栏介绍">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0101/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="你用 C++ 写过后端吗？大多数人一聊高并发就想到 Java 的那套中间件全家桶，但其实用 Drogon + Redis + RabbitMQ 也能撸出一个 30000+ QPS 的秒杀系统，而且能顺手把 epoll、协程、无锁队列、内存池 这些 Java 教程很少展开的系统底层一次讲透。本文是整个「秒杀系统（C++ &#x2F; Drogon）」系列的开篇——先把业务挑战和4 阶段架构演进讲明白">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-08-27T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-28T06:41:00.649Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Redis">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="高并发">
+<meta property="article:tag" content="系统设计">
+<meta property="article:tag" content="架构演进">
+<meta property="article:tag" content="消息队列">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍",
+  "url": "https://hespethorn.github.io/posts/seckcpp0101/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-08-27T16:00:00.000Z",
+  "dateModified": "2026-08-28T06:41:00.649Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0101/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">724</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">932</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">41</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>5mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你用 C++ 写过后端吗？大多数人一聊高并发就想到 Java 的那套中间件全家桶，但其实用 <strong>Drogon + Redis + RabbitMQ</strong> 也能撸出一个 30000+ QPS 的秒杀系统，而且能顺手把 <strong>epoll、协程、无锁队列、内存池</strong> 这些 Java 教程很少展开的系统底层一次讲透。本文是整个「秒杀系统（C++ &#x2F; Drogon）」系列的开篇——先把<strong>业务挑战</strong>和<strong>4 阶段架构演进</strong>讲明白，后面每篇你都知道自己在&quot;第几层&quot;。</p>
+<blockquote>
+<p>这是我个人用 C++ 从零搭建高并发秒杀系统的实战记录。重点不在堆功能，而是<strong>每一步的项目思考、实现路径，以及关键功能抉择上的权衡</strong>——为什么先用数据库直连而不是一上来就上缓存？为什么用 Redis Lua 而不是分布式锁？为什么异步下单而不是同步落库？完整 8 章路线图见同目录 <code>内容规划.md</code>。</p>
+</blockquote>
+<h2 id="一、秒杀系统是什么，为什么值得用-C-做"><a href="#一、秒杀系统是什么，为什么值得用-C-做" class="headerlink" title="一、秒杀系统是什么，为什么值得用 C++ 做"></a>一、秒杀系统是什么，为什么值得用 C++ 做</h2><ul>
+<li><strong>是什么</strong>：秒杀系统是在极短时间内承接海量并发请求、完成&quot;查库存 → 扣库存 → 下单&quot;的电商子系统。淘宝双十一、京东 618、小米抢购、茅台预约，背后都是它在撑。</li>
+<li><strong>坑</strong>：它不是&quot;普通下单接口加个库存字段&quot;那么简单——瞬时流量是平时的几十~上百倍，直接用数据库扛，连接池瞬间打满、MySQL 行锁互殴，整个站一起崩。</li>
+<li><strong>本质一句话</strong>：秒杀系统的核心矛盾是**&quot;瞬时海量写请求&quot;与&quot;数据库脆弱的串行处理能力&quot;之间的不匹配**，一切优化都是在给这个矛盾做缓冲与分流。</li>
+<li><strong>为什么用 C++（实现语言抉择）</strong>：同样的架构，C++ 能把这个项目的&quot;单连接内存占用、协程切换开销、锁竞争&quot;压到极低，而且每踩一个坑都能顺带讲透底层机制——这正是选 C++ 而非更常见 Java 实现时，我在&quot;开发效率 vs 极限性能&#x2F;可控性&quot;上做的核心权衡 🐾。</li>
+</ul>
+<h2 id="二、7-大业务挑战（逐个攻克，语言无关）"><a href="#二、7-大业务挑战（逐个攻克，语言无关）" class="headerlink" title="二、7 大业务挑战（逐个攻克，语言无关）"></a>二、7 大业务挑战（逐个攻克，语言无关）</h2><table>
+<thead>
+<tr>
+<th>挑战</th>
+<th>现象</th>
+<th>本系列解法落点（C++ 实现）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>瞬时高并发流量</td>
+<td>请求量暴涨几十~上百倍，连接&#x2F;DB 耗尽</td>
+<td>自实现限流 + 静态化 + CDN + 多级缓存</td>
+</tr>
+<tr>
+<td>库存超卖</td>
+<td>10000 人抢 100 件，多卖</td>
+<td>乐观锁 &#x2F; SQL 条件判断 &#x2F; Redis Lua 原子扣减</td>
+</tr>
+<tr>
+<td>重复下单</td>
+<td>同一用户多次秒杀成功</td>
+<td>一人一单限制（DB 唯一索引 + Lua）</td>
+</tr>
+<tr>
+<td>黄牛刷单</td>
+<td>脚本&#x2F;机器人&#x2F;多账号抢购</td>
+<td>验证码 + 令牌桶 + IP 限制 + 行为式验证</td>
+</tr>
+<tr>
+<td>服务雪崩</td>
+<td>下游订单&#x2F;支付慢，调用方资源占满</td>
+<td>超时&#x2F;熔断（自实现）+ 舱壁隔离</td>
+</tr>
+<tr>
+<td>数据不一致</td>
+<td>Redis 扣成功但 DB 写失败</td>
+<td>库存回补 + 最终一致 + 死信队列</td>
+</tr>
+<tr>
+<td>可扩展性</td>
+<td>用户&#x2F;活动规模增长</td>
+<td>微服务拆分（brpc）+ 水平扩容</td>
+</tr>
+</tbody></table>
+<h2 id="三、架构演进路线：从-50-QPS-到-30000-QPS（C-实现）"><a href="#三、架构演进路线：从-50-QPS-到-30000-QPS（C-实现）" class="headerlink" title="三、架构演进路线：从 50 QPS 到 30000+ QPS（C++ 实现）"></a>三、架构演进路线：从 50 QPS 到 30000+ QPS（C++ 实现）</h2><p>本项目采用<strong>渐进式架构演进</strong>，分 4 个阶段。下图为四阶段能力跃迁（C++ 技术栈）：</p>
+<div align="center">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" font-family="-apple-system, Segoe UI, Microsoft YaHei, sans-serif" width="100%">
+  <rect x="20" y="70" width="140" height="135" rx="12" fill="#eef4ff" stroke="#409eff" stroke-width="2" />
+  <text x="90" y="102" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">阶段一</text>
+  <text x="90" y="126" text-anchor="middle" font-size="12" fill="#333">Drogon + MySQL</text>
+  <text x="90" y="148" text-anchor="middle" font-size="12" fill="#666">单体直连</text>
+  <text x="90" y="180" text-anchor="middle" font-size="14" font-weight="bold" fill="#e6a23c">~50 QPS</text>
+  <line x1="162" y1="137" x2="186" y2="137" stroke="#909399" stroke-width="2" marker-end="url(#ah)" />
+  <text x="174" y="127" text-anchor="middle" font-size="10" fill="#909399">+缓存</text>
+  <rect x="190" y="70" width="140" height="135" rx="12" fill="#eafaf0" stroke="#67c23a" stroke-width="2" />
+  <text x="260" y="102" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">阶段二</text>
+  <text x="260" y="126" text-anchor="middle" font-size="12" fill="#333">redis-plus-plus</text>
+  <text x="260" y="148" text-anchor="middle" font-size="12" fill="#666">读优化+预热</text>
+  <text x="260" y="180" text-anchor="middle" font-size="14" font-weight="bold" fill="#67c23a">数千 QPS</text>
+  <line x1="332" y1="137" x2="356" y2="137" stroke="#909399" stroke-width="2" marker-end="url(#ah)" />
+  <text x="344" y="127" text-anchor="middle" font-size="10" fill="#909399">+异步</text>
+  <rect x="360" y="70" width="140" height="135" rx="12" fill="#fff7e6" stroke="#e6a23c" stroke-width="2" />
+  <text x="430" y="102" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">阶段三</text>
+  <text x="430" y="126" text-anchor="middle" font-size="12" fill="#333">AMQP-CPP</text>
+  <text x="430" y="148" text-anchor="middle" font-size="12" fill="#666">异步下单+填谷</text>
+  <text x="430" y="180" text-anchor="middle" font-size="14" font-weight="bold" fill="#e6a23c">万级 QPS</text>
+  <line x1="502" y1="137" x2="526" y2="137" stroke="#909399" stroke-width="2" marker-end="url(#ah)" />
+  <text x="514" y="127" text-anchor="middle" font-size="10" fill="#909399">+拆分</text>
+  <rect x="530" y="70" width="130" height="135" rx="12" fill="#fdeef5" stroke="#f56c8e" stroke-width="2" />
+  <text x="595" y="102" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">阶段四</text>
+  <text x="595" y="126" text-anchor="middle" font-size="12" fill="#333">brpc + 自治理</text>
+  <text x="595" y="148" text-anchor="middle" font-size="12" fill="#666">令牌桶/etcd</text>
+  <text x="595" y="180" text-anchor="middle" font-size="14" font-weight="bold" fill="#f56c8e">30000+ QPS</text>
+  <text x="340" y="40" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">秒杀系统架构演进（C++ / Drogon）：单体 → 微服务（QPS 50 → 30000+）</text>
+  <line x1="20" y1="240" x2="660" y2="240" stroke="#dcdfe6" stroke-width="1.5" />
+  <text x="20" y="262" font-size="11" fill="#909399">读多写少：靠缓存挡</text>
+  <text x="250" y="262" font-size="11" fill="#909399">写洪峰：靠 MQ 削峰</text>
+  <text x="470" y="262" font-size="11" fill="#909399">规模化：靠拆分+治理</text>
+  <defs>
+    <marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#909399" />
+    </marker>
+  </defs>
+</svg>
+</div>
+
+<ul>
+<li><strong>阶段一（Drogon + MySQL 直连）</strong>：用 Drogon（基于 epoll 的异步 I&#x2F;O + 协程）跑通最朴素功能——商品列表 &#x2F; 详情 &#x2F; 下单直接打 MySQL。JMeter 压测立刻暴露<strong>超卖</strong>和<strong>重复下单</strong>，再用乐观锁 &#x2F; SQL 条件判断兜住。没穿铠甲的基线，约 50 QPS。这里能讲透 Drogon 的协程模型与连接池自管理。</li>
+<li><strong>阶段二（redis-plus-plus 缓存）</strong>：把商品列表 &#x2F; 详情、库存预热进 Redis（C++ 用 <code>redis-plus-plus</code> 封装 <code>hiredis</code>），解决读多写少热点；空值策略、布隆过滤器防穿透，自实现 LRU 本地缓存做多级缓存。读性能上一个数量级。</li>
+<li><strong>阶段三（AMQP-CPP 消息队列削峰）</strong>：下单改成&quot;校验资格 → 投 RabbitMQ → 异步消费落库&quot;，把瞬时写洪峰平滑成下游能消化的匀速流；用 Confirm&#x2F;Return + 手动 ACK + 死信队列保可靠性，结果用 Drogon 原生 WebSocket&#x2F;SSE 推。</li>
+<li><strong>阶段四（微服务 + 自实现治理）</strong>：库存预热到 Redis 后用 <strong>Lua 脚本原子预扣</strong>（解决 MySQL 行锁瓶颈），再加<strong>自实现</strong>防刷限流、令牌大闸、一人一单；最后用 <code>brpc</code> 拆内部 RPC、etcd 做注册配置、自写网关与熔断。</li>
+</ul>
+<blockquote>
+<p>注意：Java 生态里 Redisson &#x2F; Sentinel &#x2F; Nacos 是开箱即用的，C++ 这边<strong>分布式锁、限流、注册配置都得自己写</strong>——工程量大，但每一行都是系统功力的体现。</p>
+</blockquote>
+<h2 id="四、你能学到什么（C-能力地图）"><a href="#四、你能学到什么（C-能力地图）" class="headerlink" title="四、你能学到什么（C++ 能力地图）"></a>四、你能学到什么（C++ 能力地图）</h2><p>从 0 到 1 用 C++ 把 QPS 从 50 拉到 30000+，沿途拿下：Drogon 全栈（异步 I&#x2F;O &#x2F; 协程 &#x2F; REST &#x2F; 内置 ORM·Redis 客户端）、MySQL 接入与连接池自管理、Redis（库存预热 + Lua 原子扣减 + 缓存三大坑）、AMQP-CPP（异步下单 + 削峰 + 可靠性）、<strong>分布式锁 &#x2F; 限流自实现</strong>、<strong>系统级拆解（epoll &#x2F; 协程 &#x2F; 无锁队列 &#x2F; 内存池 &#x2F; 原子与内存序）</strong>、JWT 鉴权、单体到微服务演进（brpc &#x2F; etcd）、Docker + JMeter 逐阶段验收。</p>
+<h2 id="五、适用人群与技术储备"><a href="#五、适用人群与技术储备" class="headerlink" title="五、适用人群与技术储备"></a>五、适用人群与技术储备</h2><ul>
+<li><strong>适用人群</strong>：有 C++ 基础、想做高并发 &#x2F; 系统编程实战的开发者；系统岗 &#x2F; 后端岗面试需要差异化项目加分。</li>
+<li><strong>技术储备</strong>：现代 C++（C++14&#x2F;17，懂智能指针 &#x2F; 协程 &#x2F; 原子更好）；用过 Drogon 或愿意学；了解 MySQL &#x2F; Redis 基础。</li>
+</ul>
+<blockquote>
+<p>下一步：从第二章「表设计与 Drogon 项目搭建」开始，先把库表建模和接口边界定清楚，再动手写代码。本系列所有章节与逐章实现计划见 <code>内容规划.md</code>。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0101/">https://hespethorn.github.io/posts/seckcpp0101/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Redis/">Redis</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a><a class="post-meta__tags" href="/tags/%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1/">系统设计</a><a class="post-meta__tags" href="/tags/%E6%9E%B6%E6%9E%84%E6%BC%94%E8%BF%9B/">架构演进</a><a class="post-meta__tags" href="/tags/%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97/">消息队列</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">724</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">932</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">41</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0000/" title="秒杀系统高并发优化实战（C++ / Drogon）· 总路线图（Master Plan）">秒杀系统高并发优化实战（C++ / Drogon）· 总路线图（Master Plan）</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0000/" title="秒杀系统高并发优化实战（C++ / Drogon）· 总路线图（Master Plan）">秒杀系统高并发优化实战（C++ / Drogon）· 总路线图（Master Plan）</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-catastrophic-forgetting/" title="续艺坊的守籍人">续艺坊的守籍人</a><time datetime="2026-08-26T16:00:00.000Z" title="Created 2026-08-27 00:00:00">2026-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260827/" title="AI 新闻速递｜2026-08-27：中国开源模型下载首超美国、DeepSeek 开源 Harness、世界机器人大会与人形运动会收官、代码智能体走向形式化验证">AI 新闻速递｜2026-08-27：中国开源模型下载首超美国、DeepSeek 开源 Harness、世界机器人大会与人形运动会收官、代码智能体走向形式化验证</a><time datetime="2026-08-26T16:00:00.000Z" title="Created 2026-08-27 00:00:00">2026-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7d3e9a14/" title="百艺镇的过手人">百艺镇的过手人</a><time datetime="2026-08-25T16:00:00.000Z" title="Created 2026-08-26 00:00:00">2026-08-26</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
