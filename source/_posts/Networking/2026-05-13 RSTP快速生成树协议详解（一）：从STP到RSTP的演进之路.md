@@ -8,10 +8,10 @@ tags:
   - 生成树
   - 网络冗余
   - Foundational-Syntax-and-Core-Concepts
-categories: [Languages, C-Cpp]
+categories: [Networking]
 abbrlink: rstp-evolution-from-stp
 date: 2026-05-13
-series: [C-Cpp]
+series: [Networking]
 ---
 
 ## 一、网络冗余的"双刃剑"

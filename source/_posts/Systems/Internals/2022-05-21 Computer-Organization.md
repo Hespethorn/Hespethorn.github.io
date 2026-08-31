@@ -7,12 +7,12 @@ tags:
   - 硬件描述语言
   - Cache映射策略(LRU/FIFO)
   - Practical-System-Development
-categories: [Languages, C-Cpp]
+categories: [Systems, Internals]
 abbrlink: ed889906
 date: 2022-05-21
 swiper_index: 3
 description: If you give someone a program,you will frustrate them for a day; if you teach them how to program,you will frustrate them for a lifetime.
-series: [C-Cpp]
+series: [Internals]
 ---
 -----
 {% tabs  %}

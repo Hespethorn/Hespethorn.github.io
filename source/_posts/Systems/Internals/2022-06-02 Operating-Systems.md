@@ -7,12 +7,12 @@ tags:
   - 内存管理
   - 内存映射
   - Practical-System-Development
-categories: [Languages, C-Cpp]
+categories: [Systems, Internals]
 abbrlink: e308a55d
 date: 2022-06-02
 swiper_index: 1
 description: If you give someone a program,you will frustrate them for a day; if you teach them how to program,you will frustrate them for a lifetime.
-series: [C-Cpp]
+series: [Internals]
 ---
 -----
 {% tabs  %}

@@ -4,10 +4,10 @@ title: getaddrinfo 查找网络IP
 tags:
   - getaddrinfo
   - Foundational-Syntax-and-Core-Concepts
-categories: [Languages, C-Cpp]
+categories: [Networking]
 abbrlink: 70d59293
 date: 2025-09-04
-series: [C-Cpp]
+series: [Networking]
 ---
 
 ## 一、网络地址解析的必要性

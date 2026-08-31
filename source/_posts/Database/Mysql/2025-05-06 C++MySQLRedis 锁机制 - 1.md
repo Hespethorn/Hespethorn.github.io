@@ -4,10 +4,10 @@ title: C++/MySQL/Redis 锁机制 - 1
 tags:
   - C++
   - Foundational-Syntax-and-Core-Concepts
-categories: [Languages, C-Cpp]
+categories: [Database, Mysql]
 abbrlink: 6e72f340
 date: 2025-05-06
-series: [C-Cpp]
+series: [Mysql]
 ---
 
 ## 导言
