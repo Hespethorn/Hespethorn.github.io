@@ -11,7 +11,7 @@ abbrlink: seckcpp0203
 
 这不是什么玄学段错误，而是 Drogon 接入 MySQL 时**几乎人人都会踩、却极少被写进教程**的一个启动期大坑。本文把完整排查链展开：为什么服务能起来、为什么偏偏在请求时才崩、以及官方文档里那句被大多数人忽略的话到底是什么意思。
 
-> 本文是「秒杀系统（C++ / Drogon）」系列的实战篇。配套仓库 `seckill-cpp`（GitHub: https://github.com/Hespethorn/seckill-cpp），修复涉及 `src/main.cc` 与 `src/service/SeckillService.cc`。真实编译在 WSL 完成，MySQL 走 `sql/schema.sql` 建库建表。
+> 本文是「秒杀系统（C++ / Drogon）」系列的实战篇。配套仓库 `seckill-cpp`（GitHub: https://github.com/Hespethorn/seckill-cpp)，修复涉及 `src/main.cc` 与 `src/service/SeckillService.cc`。真实编译在 WSL 完成，MySQL 走 `sql/schema.sql` 建库建表。
 
 ## 一、是什么：Drogon 里获取 DB 客户端只有一条正路
 
