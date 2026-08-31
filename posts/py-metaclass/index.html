@@ -1,0 +1,609 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Python元类编程：type与__new__如何拦截类的诞生 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一、先捅破一层窗户纸：类也是对象写过几年 Python 的人大多听过一句话——&quot;一切皆对象&quot;。但真把这句话吃透，往往要等到第一次被元类（metaclass）绊住脚。 看一段最朴素的代码： 12345678910class User:    role &#x3D; &quot;member&quot;    def greet(self):        return f&quot;hi,">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Python元类编程：type与__new__如何拦截类的诞生">
+<meta property="og:url" content="https://hespethorn.github.io/posts/py-metaclass/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、先捅破一层窗户纸：类也是对象写过几年 Python 的人大多听过一句话——&quot;一切皆对象&quot;。但真把这句话吃透，往往要等到第一次被元类（metaclass）绊住脚。 看一段最朴素的代码： 12345678910class User:    role &#x3D; &quot;member&quot;    def greet(self):        return f&quot;hi,">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-06-11T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-08-31T03:42:25.333Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="元类">
+<meta property="article:tag" content="metaclass">
+<meta property="article:tag" content="高级特性">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Python元类编程：type与__new__如何拦截类的诞生",
+  "url": "https://hespethorn.github.io/posts/py-metaclass/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-06-11T16:00:00.000Z",
+  "dateModified": "2026-08-31T03:42:25.333Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/py-metaclass/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Python元类编程：type与__new__如何拦截类的诞生',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">735</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">954</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">43</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Python元类编程：type与__new__如何拦截类的诞生</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Python元类编程：type与__new__如何拦截类的诞生</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-06-11T16:00:00.000Z" title="Created 2025-06-12 00:00:00">2025-06-12</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Languages/">Languages</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Languages/Python/">Python</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、先捅破一层窗户纸：类也是对象"><a href="#一、先捅破一层窗户纸：类也是对象" class="headerlink" title="一、先捅破一层窗户纸：类也是对象"></a>一、先捅破一层窗户纸：类也是对象</h2><p>写过几年 Python 的人大多听过一句话——&quot;一切皆对象&quot;。但真把这句话吃透，往往要等到第一次被元类（metaclass）绊住脚。</p>
+<p>看一段最朴素的代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">User</span>:</span><br><span class="line">    role = <span class="string">&quot;member&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">greet</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">f&quot;hi, I am a <span class="subst">&#123;self.role&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line">u = User()</span><br><span class="line"><span class="built_in">print</span>(u.greet())          <span class="comment"># hi, I am a member</span></span><br><span class="line"><span class="built_in">print</span>(<span class="built_in">type</span>(u))            <span class="comment"># &lt;class &#x27;__main__.User&#x27;&gt;</span></span><br><span class="line"><span class="built_in">print</span>(<span class="built_in">type</span>(User))         <span class="comment"># &lt;class &#x27;type&#x27;&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>输出里最后一行最反直觉：<code>u</code> 是 <code>User</code> 的实例，所以 <code>type(u)</code> 是 <code>User</code>；可 <code>User</code> 本身呢？<code>type(User)</code> 居然是 <code>type</code>。</p>
+<p><strong>本质一句话：普通对象是类的实例，而类本身，是&quot;元类&quot;的实例。</strong> 默认元类就是内置的 <code>type</code>。所以 <code>class User:</code> 这行声明，不是&quot;定义了一个类型&quot;，而是&quot;调用 <code>type</code> 构造出了一个对象，这个对象的名字叫 User&quot;。</p>
+<p>C++ 视角对照：在 C++ 里 <code>class User &#123;&#125;;</code> 是编译期的类型声明，类型本身不是运行期对象，你拿不到&quot;User 这个类&quot;的运行时实体，更不能在运行时凭空造一个类。Python 把&quot;类&quot;也当成一等公民的对象，这是后续一切动态魔法的总开关。</p>
+<p>下面这张图把&quot;实例 → 类 → 元类&quot;三层关系画清楚（注意箭头方向是&quot;由谁创建&quot;）：</p>
+<div align="center">
+<svg width="560" height="200" viewBox="0 0 560 200" xmlns="http://www.w3.org/2000/svg">
+  <rect x="60" y="30" width="140" height="60" rx="8" fill="#e8f0fe" stroke="#3367d6" stroke-width="2"/>
+  <text x="130" y="56" text-anchor="middle" font-size="15" fill="#1a1a1a">u (实例)</text>
+  <text x="130" y="78" text-anchor="middle" font-size="12" fill="#555">User() 创建</text>
+  <rect x="230" y="30" width="140" height="60" rx="8" fill="#e6f4ea" stroke="#137333" stroke-width="2"/>
+  <text x="300" y="56" text-anchor="middle" font-size="15" fill="#1a1a1a">User (类)</text>
+  <text x="300" y="78" text-anchor="middle" font-size="12" fill="#555">type() 创建</text>
+  <rect x="400" y="30" width="130" height="60" rx="8" fill="#fef7e0" stroke="#b06000" stroke-width="2"/>
+  <text x="465" y="56" text-anchor="middle" font-size="15" fill="#1a1a1a">type (元类)</text>
+  <text x="465" y="78" text-anchor="middle" font-size="12" fill="#555">内置默认</text>
+  <line x1="200" y1="60" x2="225" y2="60" stroke="#3367d6" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="370" y1="60" x2="395" y2="60" stroke="#137333" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="212" y="22" text-anchor="middle" font-size="11" fill="#666">创建</text>
+  <text x="382" y="22" text-anchor="middle" font-size="11" fill="#666">创建</text>
+  <rect x="60" y="130" width="470" height="50" rx="6" fill="#f1f3f4" stroke="#999" stroke-width="1"/>
+  <text x="295" y="150" text-anchor="middle" font-size="12.5" fill="#333">自定义元类继承 type，在"类被创建那一刻"插入钩子</text>
+  <text x="295" y="170" text-anchor="middle" font-size="12.5" fill="#333">→ 可自动改类名/校验字段/登记子类，而不让用户手写样板</text>
+  <defs>
+    <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#444"/>
+    </marker>
+  </defs>
+</svg>
+</div>
+
+<h2 id="二、type-的双重身份：既是类型，也是类工厂"><a href="#二、type-的双重身份：既是类型，也是类工厂" class="headerlink" title="二、type 的双重身份：既是类型，也是类工厂"></a>二、type 的双重身份：既是类型，也是类工厂</h2><p><code>type</code> 有两个完全不像的面貌：</p>
+<ul>
+<li>单参数 <code>type(obj)</code>：返回 obj 的类型（上节用过）。</li>
+<li>三参数 <code>type(name, bases, namespace)</code>：动态地<strong>创建一个类</strong>。</li>
+</ul>
+<p>两者是同一个对象，差别只在参数个数。三参数版本等价于一次 <code>class</code> 声明：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 下面三行，和上面那段 class User 完全等价</span></span><br><span class="line">User = <span class="built_in">type</span>(</span><br><span class="line">    <span class="string">&quot;User&quot;</span>,                 <span class="comment"># 类名 name</span></span><br><span class="line">    (<span class="built_in">object</span>,),              <span class="comment"># 基类元组 bases</span></span><br><span class="line">    &#123;                       <span class="comment"># 命名空间 dict：类属性与方法</span></span><br><span class="line">        <span class="string">&quot;role&quot;</span>: <span class="string">&quot;member&quot;</span>,</span><br><span class="line">        <span class="string">&quot;greet&quot;</span>: <span class="keyword">lambda</span> <span class="variable language_">self</span>: <span class="string">f&quot;hi, I am a <span class="subst">&#123;self.role&#125;</span>&quot;</span>,</span><br><span class="line">    &#125;,</span><br><span class="line">)</span><br><span class="line"><span class="built_in">print</span>(User().greet())       <span class="comment"># hi, I am a member</span></span><br></pre></td></tr></table></figure>
+
+<p>这正是元类的入口：<strong>当你写 <code>class User:</code> 时，Python 解释器真正做的是调用 <code>type(name, bases, ns)</code></strong>。而&quot;用哪个 type 来调&quot;，是可以被你换掉的——换成你自己的元类。</p>
+<p>C++ 对照：C++ 没有运行期&quot;类工厂&quot;。想动态生成类型，只能靠模板在编译期实例化（<code>template&lt;class T&gt; struct Wrapper &#123;&#125;;</code>），或者干脆代码生成（写脚本吐 .hpp）。运行期？做不到。Python 这份&quot;类即对象、可运行时构造&quot;的能力，是元类存在的根本前提。</p>
+<h2 id="三、元类就是-类的类-：在-new-里拦截诞生"><a href="#三、元类就是-类的类-：在-new-里拦截诞生" class="headerlink" title="三、元类就是&quot;类的类&quot;：在 new 里拦截诞生"></a>三、元类就是&quot;类的类&quot;：在 <strong>new</strong> 里拦截诞生</h2><p>想自定义类的创建行为，写一个继承 <code>type</code> 的类，并重写它的 <code>__new__</code>（或 <code>__init__</code>）：</p>
+<ul>
+<li><code>__new__(mcs, name, bases, ns)</code>：在类<strong>对象被构造出来之前</strong>调用，返回最终的类对象。适合&quot;改头换面&quot;（改名字、加属性、替换方法）。</li>
+<li><code>__init__(cls, name, bases, ns)</code>：类对象已构造好之后调用，只能做校验，改不了它本体。</li>
+</ul>
+<p>习惯上元类第一个参数叫 <code>mcs</code>（metaclass），以区别普通类的 <code>cls</code>&#x2F;<code>self</code>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">StrictMeta</span>(<span class="title class_ inherited__">type</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__new__</span>(<span class="params">mcs, name, bases, ns</span>):</span><br><span class="line">        <span class="comment"># ns 是即将成为类体的那个 dict，此刻还能动手脚</span></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[meta] 正在创建类 <span class="subst">&#123;name&#125;</span>，已有属性: <span class="subst">&#123;<span class="built_in">list</span>(ns)&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;version&quot;</span> <span class="keyword">not</span> <span class="keyword">in</span> ns:</span><br><span class="line">            ns[<span class="string">&quot;version&quot;</span>] = <span class="number">1</span>          <span class="comment"># 自动补一个默认字段</span></span><br><span class="line">        cls = <span class="built_in">super</span>().__new__(mcs, name, bases, ns)</span><br><span class="line">        <span class="comment"># 类对象已生成，可做一次性校验</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">any</span>(k.startswith(<span class="string">&quot;do_&quot;</span>) <span class="keyword">for</span> k <span class="keyword">in</span> ns <span class="keyword">if</span> <span class="built_in">callable</span>(ns[k])):</span><br><span class="line">            <span class="keyword">raise</span> TypeError(<span class="string">f&quot;<span class="subst">&#123;name&#125;</span> 必须至少定义一个 do_* 方法&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> cls</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Service</span>(metaclass=StrictMeta):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">do_run</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;running&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 打印: [meta] 正在创建类 Service，已有属性: [&#x27;__module__&#x27;, &#x27;__qualname__&#x27;, &#x27;do_run&#x27;]</span></span><br><span class="line"><span class="built_in">print</span>(Service.version)     <span class="comment"># 1  （元类自动补的）</span></span><br></pre></td></tr></table></figure>
+
+<p><code>class Service(metaclass=StrictMeta)</code> 这句，翻译过来就是：&quot;别用默认 <code>type</code> 来造我，请用 <code>StrictMeta</code> 来造。&quot; Python 于是执行 <code>StrictMeta(&#39;Service&#39;, (object,), ns)</code>，把类的诞生拱手交给你的钩子。</p>
+<blockquote>
+<p>小坑提醒：前文《Python描述符进阶》讲过描述符协议也是在&quot;类创建时&quot;就确定好查找裁决顺序的。元类的 <code>__new__</code> 比描述符更早、更底层——它能在描述符甚至方法被绑定之前，就改写整个类体。</p>
+</blockquote>
+<h2 id="四、实战一：用元类做自动子类注册表"><a href="#四、实战一：用元类做自动子类注册表" class="headerlink" title="四、实战一：用元类做自动子类注册表"></a>四、实战一：用元类做自动子类注册表</h2><p>元类最常见的落地，是<strong>插件&#x2F;子类自动登记</strong>——不用让用户手动 <code>REGISTRY.append(SubClass)</code>，类一定义就自动入册：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PluginMeta</span>(<span class="title class_ inherited__">type</span>):</span><br><span class="line">    registry = &#123;&#125;                      <span class="comment"># 所有插件类共享的注册表</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__new__</span>(<span class="params">mcs, name, bases, ns</span>):</span><br><span class="line">        cls = <span class="built_in">super</span>().__new__(mcs, name, bases, ns)</span><br><span class="line">        <span class="comment"># 跳过基类本身（它没标 name 字段）</span></span><br><span class="line">        <span class="keyword">if</span> bases:</span><br><span class="line">            key = ns.get(<span class="string">&quot;name&quot;</span>, name)</span><br><span class="line">            PluginMeta.registry[key] = cls</span><br><span class="line">        <span class="keyword">return</span> cls</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Plugin</span>(metaclass=PluginMeta):</span><br><span class="line">    name = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MySQLSink</span>(<span class="title class_ inherited__">Plugin</span>):</span><br><span class="line">    name = <span class="string">&quot;mysql&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RedisSink</span>(<span class="title class_ inherited__">Plugin</span>):</span><br><span class="line">    name = <span class="string">&quot;redis&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(PluginMeta.registry)</span><br><span class="line"><span class="comment"># &#123;&#x27;mysql&#x27;: &lt;class &#x27;...MySQLSink&#x27;&gt;, &#x27;redis&#x27;: &lt;class &#x27;...RedisSink&#x27;&gt;&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p><code>MySQLSink</code> 一被定义，元类的 <code>__new__</code> 就把它塞进了 <code>registry</code>。新增一种 sink 只需写类，无需任何注册样板——这正是 Django、SQLAlchemy 等框架里 model&#x2F;plugin 机制的雏形。</p>
+<h2 id="五、实战二：ORM-字段校验（轻量版）"><a href="#五、实战二：ORM-字段校验（轻量版）" class="headerlink" title="五、实战二：ORM 字段校验（轻量版）"></a>五、实战二：ORM 字段校验（轻量版）</h2><p>再做一个贴近真实工程的例子：用元类在类创建时，把所有标为 <code>Field</code> 的描述符收集成一张 schema，并强制要求主键存在：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Field</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, pk=<span class="literal">False</span></span>):</span><br><span class="line">        <span class="variable language_">self</span>.pk = pk</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__set_name__</span>(<span class="params">self, owner, name</span>):</span><br><span class="line">        <span class="variable language_">self</span>.name = name</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ModelMeta</span>(<span class="title class_ inherited__">type</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__new__</span>(<span class="params">mcs, name, bases, ns</span>):</span><br><span class="line">        cls = <span class="built_in">super</span>().__new__(mcs, name, bases, ns)</span><br><span class="line">        fields = &#123;k: v <span class="keyword">for</span> k, v <span class="keyword">in</span> ns.items() <span class="keyword">if</span> <span class="built_in">isinstance</span>(v, Field)&#125;</span><br><span class="line">        cls._fields = fields</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">any</span>(f.pk <span class="keyword">for</span> f <span class="keyword">in</span> fields.values()):</span><br><span class="line">            <span class="keyword">raise</span> TypeError(<span class="string">f&quot;<span class="subst">&#123;name&#125;</span> 必须声明一个主键 Field(pk=True)&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> cls</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Model</span>(metaclass=ModelMeta):</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">User</span>(<span class="title class_ inherited__">Model</span>):</span><br><span class="line">    <span class="built_in">id</span> = Field(pk=<span class="literal">True</span>)</span><br><span class="line">    name = Field()</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(User._fields)        <span class="comment"># &#123;&#x27;id&#x27;: &lt;Field&gt;, &#x27;name&#x27;: &lt;Field&gt;&#125;</span></span><br><span class="line"><span class="comment"># class Bad(Model):         # 触发 TypeError: Bad 必须声明一个主键</span></span><br><span class="line"><span class="comment">#     name = Field()</span></span><br></pre></td></tr></table></figure>
+
+<p>注意这里复用了前文《Python描述符进阶》讲的 <code>__set_name__</code>：描述符在类体里能反查自己挂在了哪个属性名上。元类则站在更高的位置，把整张字段表一次性收口。</p>
+<h3 id="C-视角对照表"><a href="#C-视角对照表" class="headerlink" title="C++ 视角对照表"></a>C++ 视角对照表</h3><table>
+<thead>
+<tr>
+<th>需求</th>
+<th>Python（元类）</th>
+<th>C++ 近似方案</th>
+<th>差异</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>运行时动态创建类型</td>
+<td><code>type(name, bases, ns)</code> 直接造类</td>
+<td>不支持，类型在编译期固定</td>
+<td>Python 独有运行时灵活性</td>
+</tr>
+<tr>
+<td>类创建时自动改&#x2F;加成员</td>
+<td>元类 <code>__new__</code> 改写 namespace</td>
+<td>无直接对应；可用宏在预处理期注入</td>
+<td>C++ 只能编译期，且易踩坑</td>
+</tr>
+<tr>
+<td>子类自动注册</td>
+<td>元类 <code>__new__</code> 入册 registry</td>
+<td>CRTP + 静态成员在构造函数注册</td>
+<td>C++ 靠模板递归+静态对象，样板更多</td>
+</tr>
+<tr>
+<td>编译期约束&#x2F;校验</td>
+<td>元类抛 <code>TypeError</code></td>
+<td><code>static_assert</code> &#x2F; <code>std::enable_if</code></td>
+<td>C++ 是编译期硬错误，Python 是运行时</td>
+</tr>
+<tr>
+<td>&quot;类即对象&quot;反射</td>
+<td>类本身可当参数传递、可 introspect</td>
+<td><code>typeid</code> &#x2F; <code>std::type_info</code> 仅查类型名</td>
+<td>C++ 反射极弱，无运行时改类能力</td>
+</tr>
+<tr>
+<td>字段 schema 自动收集</td>
+<td>遍历类体 namespace 即可</td>
+<td>需手写注册宏或外部代码生成</td>
+<td>Python 内省天然支持</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>一句话总结差异：<strong>C++ 的&quot;类元编程&quot;发生在编译期（模板&#x2F;宏），是给编译器看的；Python 的元类发生在运行时，是给解释器和程序员自己看的。</strong> 前者零运行时开销但僵硬，后者灵活但要为此付出一点运行时成本与可读性代价。</p>
+</blockquote>
+<h2 id="六、收尾：什么时候该用元类"><a href="#六、收尾：什么时候该用元类" class="headerlink" title="六、收尾：什么时候该用元类"></a>六、收尾：什么时候该用元类</h2><p>元类很 powerful，但也最容易&quot;杀鸡用牛刀&quot;。经验法则：</p>
+<ul>
+<li><strong>能用classmethod&#x2F;装饰器解决的，别上元类。</strong> 比如&quot;注册表&quot;用类装饰器 <code>@register</code> 往往更直观。</li>
+<li>元类适合<strong>横切所有子类、且必须在类创建时就介入</strong>的场景：全局注册、字段&#x2F;schema 收集、统一的 API 约束、DSL 式框架（ORM、测试框架）。</li>
+<li>真要写，优先重写 <code>__new__</code> 做&quot;构造期变换&quot;，把纯校验留给 <code>__init__</code>；多用 <code>super()</code>，别把 <code>type.__new__</code> 写死。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>手段</th>
+<th>介入时机</th>
+<th>典型用途</th>
+<th>推荐度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>类装饰器</td>
+<td>类已完整定义后</td>
+<td>注册、加方法、打补丁</td>
+<td>⭐⭐⭐ 首选</td>
+</tr>
+<tr>
+<td><code>__init_subclass__</code></td>
+<td>子类定义时（Python 3.6+）</td>
+<td>轻量子类钩子</td>
+<td>⭐⭐⭐ 首选</td>
+</tr>
+<tr>
+<td>元类 <code>__new__</code></td>
+<td>类体还没定型时</td>
+<td>改写类体&#x2F;强制 schema</td>
+<td>⭐⭐ 必要时</td>
+</tr>
+<tr>
+<td>元类 <code>__init__</code></td>
+<td>类对象已生成</td>
+<td>仅校验</td>
+<td>⭐ 很少单独用</td>
+</tr>
+</tbody></table>
+<p>记住那张三层图：实例由类造，类由元类造。元类不是炫技工具，而是 Python 把&quot;类本身&quot;也变成可编程对象后，留给你的最后一道、也是最底层的一道钩子。🐾</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/py-metaclass/">https://hespethorn.github.io/posts/py-metaclass/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/%E5%85%83%E7%B1%BB/">元类</a><a class="post-meta__tags" href="/tags/metaclass/">metaclass</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E7%BA%A7%E7%89%B9%E6%80%A7/">高级特性</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">735</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">954</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">43</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6f73d8d8/" title="Python基础：print输出、input输入与注释语法">Python基础：print输出、input输入与注释语法</a><time datetime="2024-01-01T16:00:00.000Z" title="Created 2024-01-02 00:00:00">2024-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1276b97d/" title="Python格式化字符串：f-string用法详解">Python格式化字符串：f-string用法详解</a><time datetime="2024-01-04T16:00:00.000Z" title="Created 2024-01-05 00:00:00">2024-01-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c9d4403c/" title="Python字符串处理：strip()方法与链式调用">Python字符串处理：strip()方法与链式调用</a><time datetime="2024-01-14T16:00:00.000Z" title="Created 2024-01-15 00:00:00">2024-01-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d6f9d5b3/" title="Python交互式编程环境使用指南">Python交互式编程环境使用指南</a><time datetime="2024-01-21T16:00:00.000Z" title="Created 2024-01-22 00:00:00">2024-01-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f45f582/" title="Python类型转换机制及与C++对比">Python类型转换机制及与C++对比</a><time datetime="2024-01-28T16:00:00.000Z" title="Created 2024-01-29 00:00:00">2024-01-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8e1546a3/" title="Python数值处理：round()函数四舍五入机制">Python数值处理：round()函数四舍五入机制</a><time datetime="2024-02-04T16:00:00.000Z" title="Created 2024-02-05 00:00:00">2024-02-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3464d813/" title="Python函数定义：def关键字与缩进规则">Python函数定义：def关键字与缩进规则</a><time datetime="2024-02-11T16:00:00.000Z" title="Created 2024-02-12 00:00:00">2024-02-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fa02e126/" title="Python函数副作用：返回值与状态变更">Python函数副作用：返回值与状态变更</a><time datetime="2024-02-18T16:00:00.000Z" title="Created 2024-02-19 00:00:00">2024-02-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d17a61c7/" title="Python全局变量：作用域与global关键字">Python全局变量：作用域与global关键字</a><time datetime="2024-02-25T16:00:00.000Z" title="Created 2024-02-26 00:00:00">2024-02-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/70c320a5/" title="Python条件语句：if-elif-else分支结构">Python条件语句：if-elif-else分支结构</a><time datetime="2024-03-03T16:00:00.000Z" title="Created 2024-03-04 00:00:00">2024-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/56b7777/" title="Python条件表达式：链式比较与短路求值">Python条件表达式：链式比较与短路求值</a><time datetime="2024-03-10T16:00:00.000Z" title="Created 2024-03-11 00:00:00">2024-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/16a1976e/" title="Python异常处理：try-except-finally-else机制">Python异常处理：try-except-finally-else机制</a><time datetime="2024-03-17T16:00:00.000Z" title="Created 2024-03-18 00:00:00">2024-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a51cdce/" title="Python匹配语句：match-case与switch对比">Python匹配语句：match-case与switch对比</a><time datetime="2024-03-24T16:00:00.000Z" title="Created 2024-03-25 00:00:00">2024-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-loops-while-for/" title="Python循环结构：while与for迭代器详解">Python循环结构：while与for迭代器详解</a><time datetime="2024-03-31T16:00:00.000Z" title="Created 2024-04-01 00:00:00">2024-04-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-array-dict/" title="Python数据结构：列表与字典操作">Python数据结构：列表与字典操作</a><time datetime="2024-04-07T16:00:00.000Z" title="Created 2024-04-08 00:00:00">2024-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-io-operations/" title="Python IO操作：文件读写与标准输入输出">Python IO操作：文件读写与标准输入输出</a><time datetime="2024-04-12T16:00:00.000Z" title="Created 2024-04-13 00:00:00">2024-04-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-no-pointers/" title="Python引用机制：无指针设计与内存管理">Python引用机制：无指针设计与内存管理</a><time datetime="2024-04-14T16:00:00.000Z" title="Created 2024-04-15 00:00:00">2024-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-testing-pytest/" title="Python测试框架：pytest与assert断言">Python测试框架：pytest与assert断言</a><time datetime="2024-04-21T16:00:00.000Z" title="Created 2024-04-22 00:00:00">2024-04-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cs50p-week4-libraries/" title="Python库与模块解析">Python库与模块解析</a><time datetime="2024-04-28T16:00:00.000Z" title="Created 2024-04-29 00:00:00">2024-04-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/483e338d/" title="Python函数：平方函数的完整实现">Python函数：平方函数的完整实现</a><time datetime="2024-04-30T16:00:00.000Z" title="Created 2024-05-01 00:00:00">2024-05-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-classmethod-vs-cpp-static/" title="Python @classmethod 本质上就是C++ 的静态成员？">Python @classmethod 本质上就是C++ 的静态成员？</a><time datetime="2024-05-07T16:00:00.000Z" title="Created 2024-05-08 00:00:00">2024-05-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-sorted-key-parameter/" title="Python sorted函数key参数深度解析">Python sorted函数key参数深度解析</a><time datetime="2024-05-12T16:00:00.000Z" title="Created 2024-05-13 00:00:00">2024-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-property-decorator-core/" title="Python @property装饰器核心机制解析">Python @property装饰器核心机制解析</a><time datetime="2024-05-19T16:00:00.000Z" title="Created 2024-05-20 00:00:00">2024-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-self-vs-cls/" title="Python self与cls的区别深度解析">Python self与cls的区别深度解析</a><time datetime="2024-05-27T16:00:00.000Z" title="Created 2024-05-28 00:00:00">2024-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-vs-cpp-function-parameters/" title="技术笔记：Python与C++函数参数传递机制差异">技术笔记：Python与C++函数参数传递机制差异</a><time datetime="2024-06-05T16:00:00.000Z" title="Created 2024-06-06 00:00:00">2024-06-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-property-advanced-usage/" title="Python @property高级应用技巧">Python @property高级应用技巧</a><time datetime="2024-06-12T16:00:00.000Z" title="Created 2024-06-13 00:00:00">2024-06-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-functional-programming-intro/" title="Python函数式编程入门：高阶函数与“回调”机制的深度解析">Python函数式编程入门：高阶函数与“回调”机制的深度解析</a><time datetime="2024-06-19T16:00:00.000Z" title="Created 2024-06-20 00:00:00">2024-06-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-multithreading-deep-dive/" title="Python多线程编程深度解析">Python多线程编程深度解析</a><time datetime="2024-06-27T16:00:00.000Z" title="Created 2024-06-28 00:00:00">2024-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-multiprocessing-deep-dive/" title="Python多进程编程深度解析">Python多进程编程深度解析</a><time datetime="2024-07-06T16:00:00.000Z" title="Created 2024-07-07 00:00:00">2024-07-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-attribute-access-mechanism/" title="Python的“欺骗性”语法：为什么说 obj.name 本质上就是 obj.getter()？">Python的“欺骗性”语法：为什么说 obj.name 本质上就是 obj.getter()？</a><time datetime="2024-07-13T16:00:00.000Z" title="Created 2024-07-14 00:00:00">2024-07-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-exception-handling-deep-dive/" title="Python异常处理深度解析">Python异常处理深度解析</a><time datetime="2024-07-20T16:00:00.000Z" title="Created 2024-07-21 00:00:00">2024-07-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-exception-hierarchy/" title="Python异常继承体系深度解析">Python异常继承体系深度解析</a><time datetime="2024-07-27T16:00:00.000Z" title="Created 2024-07-28 00:00:00">2024-07-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-walrus-operator-deep-dive/" title="Python海象运算符深度解析">Python海象运算符深度解析</a><time datetime="2024-08-04T16:00:00.000Z" title="Created 2024-08-05 00:00:00">2024-08-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-file-operations-deep-dive/" title="Python文件操作深度解析">Python文件操作深度解析</a><time datetime="2024-08-13T16:00:00.000Z" title="Created 2024-08-14 00:00:00">2024-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-modules-and-packages-deep-dive/" title="Python模块与包深度解析">Python模块与包深度解析</a><time datetime="2024-08-20T16:00:00.000Z" title="Created 2024-08-21 00:00:00">2024-08-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-re-ignorecase-guide/" title="Python正则表达式re.IGNORECASE使用指南">Python正则表达式re.IGNORECASE使用指南</a><time datetime="2024-08-27T16:00:00.000Z" title="Created 2024-08-28 00:00:00">2024-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-re-module-core-features/" title="Python正则表达式re模块核心功能详解">Python正则表达式re模块核心功能详解</a><time datetime="2024-09-02T16:00:00.000Z" title="Created 2024-09-03 00:00:00">2024-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-decorator-essence-deep-dive/" title="Python装饰器本质深度解析">Python装饰器本质深度解析</a><time datetime="2024-09-11T16:00:00.000Z" title="Created 2024-09-12 00:00:00">2024-09-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-magic-methods-deep-dive/" title="拒绝死记硬背！用 C++ 的底层逻辑，彻底搞懂 Python 的“魔术方法”">拒绝死记硬背！用 C++ 的底层逻辑，彻底搞懂 Python 的“魔术方法”</a><time datetime="2024-09-18T16:00:00.000Z" title="Created 2024-09-19 00:00:00">2024-09-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-csv-module-guide/" title="Python CSV模块使用指南">Python CSV模块使用指南</a><time datetime="2024-09-25T16:00:00.000Z" title="Created 2024-09-26 00:00:00">2024-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-pil-library-guide/" title="Python PIL库使用指南">Python PIL库使用指南</a><time datetime="2024-10-01T16:00:00.000Z" title="Created 2024-10-02 00:00:00">2024-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-unpacking/" title="Python 解包操作：* 和 ** 深度解析">Python 解包操作：* 和 ** 深度解析</a><time datetime="2024-10-08T16:00:00.000Z" title="Created 2024-10-09 00:00:00">2024-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-list-comprehension/" title="Python 列表推导式深度解析">Python 列表推导式深度解析</a><time datetime="2024-10-15T16:00:00.000Z" title="Created 2024-10-16 00:00:00">2024-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-generator-iterator/" title="Python 生成器和迭代器深度解析">Python 生成器和迭代器深度解析</a><time datetime="2024-10-22T16:00:00.000Z" title="Created 2024-10-23 00:00:00">2024-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-import-like-cpp-header/" title="Python如何像C++引用头文件">Python如何像C++引用头文件</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-frame-environment-model/" title="Python函数框架：外框架、内框架与环境模型">Python函数框架：外框架、内框架与环境模型</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-function-currying/" title="Python函数柯里化：将多参数函数转化为单参数函数链">Python函数柯里化：将多参数函数转化为单参数函数链</a><time datetime="2024-11-13T16:00:00.000Z" title="Created 2024-11-14 00:00:00">2024-11-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-parameter-passing-truth/" title="Python函数参数传递的真相——为什么你的变量没被修改？">Python函数参数传递的真相——为什么你的变量没被修改？</a><time datetime="2024-11-20T16:00:00.000Z" title="Created 2024-11-21 00:00:00">2024-11-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-mutable-immutable-c-perspective/" title="Python可变与不可变数据：C语言视角的深度解析">Python可变与不可变数据：C语言视角的深度解析</a><time datetime="2024-11-27T16:00:00.000Z" title="Created 2024-11-28 00:00:00">2024-11-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-zip-map-filter-reversed/" title="Python进阶必修课：掌握Zip, Map, Filter, Reversed的优雅之道">Python进阶必修课：掌握Zip, Map, Filter, Reversed的优雅之道</a><time datetime="2024-12-04T16:00:00.000Z" title="Created 2024-12-05 00:00:00">2024-12-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-inheritance-vs-cpp-access-control/" title="Python继承机制与C++的核心区别：权限控制视角">Python继承机制与C++的核心区别：权限控制视角</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-yield-return-yield-from/" title="Python深度解析：Yield, Return与Yield From的时空魔法">Python深度解析：Yield, Return与Yield From的时空魔法</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-repr-vs-fstring/" title="Python字符串双雄：repr()的精确与f-string的优雅">Python字符串双雄：repr()的精确与f-string的优雅</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-magic-methods-lookup/" title="Python魔法揭秘：特殊名称与内置功能的&quot;暗号&quot;对照表">Python魔法揭秘：特殊名称与内置功能的&quot;暗号&quot;对照表</a><time datetime="2025-01-01T16:00:00.000Z" title="Created 2025-01-02 00:00:00">2025-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-str-format-deep-dive/" title="Python字符串格式化利器：深入解析format()方法">Python字符串格式化利器：深入解析format()方法</a><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-slicing-deep-dive/" title="Python切片操作深度解析：从基础到底层内存模型">Python切片操作深度解析：从基础到底层内存模型</a><time datetime="2025-01-15T16:00:00.000Z" title="Created 2025-01-16 00:00:00">2025-01-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-match-vs-cpp-switch-vs-scheme-cond/" title="跨语言多分支控制流深度解析：C++ switch vs Python match vs Scheme cond">跨语言多分支控制流深度解析：C++ switch vs Python match vs Scheme cond</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-comma-vs-scheme-begin/" title="跨越范式的组合艺术：Scheme begin vs Python逗号">跨越范式的组合艺术：Scheme begin vs Python逗号</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-scheme-interpreter-tutorial/" title="用Python实现Scheme解释器：搭积木式的分步教程">用Python实现Scheme解释器：搭积木式的分步教程</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-tail-recursion-optimization/" title="尾递归与尾调用优化深度解析：从栈帧到Python的替代方案">尾递归与尾调用优化深度解析：从栈帧到Python的替代方案</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-scheme-quote-explained/" title="Scheme quote深度解析：求值与数据的边界">Scheme quote深度解析：求值与数据的边界</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-context-manager-deep-dive/" title="Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比">Python上下文管理器深度解析：with语句、contextlib与C++ RAII对比</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-decorator-two-identities/" title="Python装饰器的两种身份：内置语法糖与第三方注册表（及C++视角）">Python装饰器的两种身份：内置语法糖与第三方注册表（及C++视角）</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-asyncio-deep-dive/" title="Python异步编程深度解析：asyncio事件循环与async/await（及与多线程对比）">Python异步编程深度解析：asyncio事件循环与async/await（及与多线程对比）</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/python-metaclass-deep-dive/" title="Python元类深度解析：用「类的类」在创建期定制类（及C++模板元编程视角）">Python元类深度解析：用「类的类」在创建期定制类（及C++模板元编程视角）</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f5b501ef/" title="Python __slots__深度解析：用固定布局干掉实例字典">Python __slots__深度解析：用固定布局干掉实例字典</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/eb898813/" title="Python lru_cache深度解析：用备忘录把递归从指数砍到线性">Python lru_cache深度解析：用备忘录把递归从指数砍到线性</a><time datetime="2025-04-02T16:00:00.000Z" title="Created 2025-04-03 00:00:00">2025-04-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8a58ce8c/" title="Python dataclass深度解析：用装饰器干掉手写样板代码">Python dataclass深度解析：用装饰器干掉手写样板代码</a><time datetime="2025-04-09T16:00:00.000Z" title="Created 2025-04-10 00:00:00">2025-04-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a23fee41/" title="Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）">Python类装饰器实战：用装饰器在类定义时加工类（及C++注册表视角）</a><time datetime="2025-04-16T16:00:00.000Z" title="Created 2025-04-17 00:00:00">2025-04-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c5b1a9e2/" title="Python描述符与property机制深度解析：把&quot;属性访问&quot;做成一等公民">Python描述符与property机制深度解析：把&quot;属性访问&quot;做成一等公民</a><time datetime="2025-04-23T16:00:00.000Z" title="Created 2025-04-24 00:00:00">2025-04-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7ed059a9/" title="Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型">Python typing 协议与泛型深度解析：用「形状」而不是「血缘」约束类型</a><time datetime="2025-04-30T16:00:00.000Z" title="Created 2025-05-01 00:00:00">2025-05-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7caa9640/" title="Python 垃圾回收与循环引用深度解析：引用计数是主力，分代 GC 收拾残局">Python 垃圾回收与循环引用深度解析：引用计数是主力，分代 GC 收拾残局</a><time datetime="2025-05-07T16:00:00.000Z" title="Created 2025-05-08 00:00:00">2025-05-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7a670d8e/" title="Python pickle 与对象序列化深度解析：把对象连结构带指令一起冻住再复活">Python pickle 与对象序列化深度解析：把对象连结构带指令一起冻住再复活</a><time datetime="2025-05-14T16:00:00.000Z" title="Created 2025-05-15 00:00:00">2025-05-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3fa74aea/" title="Python生成器与协程底层深度解析">Python生成器与协程底层深度解析</a><time datetime="2025-05-21T16:00:00.000Z" title="Created 2025-05-22 00:00:00">2025-05-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/py-asyncio-eventloop/" title="Python asyncio事件循环与协程调度深度解析">Python asyncio事件循环与协程调度深度解析</a><time datetime="2025-05-28T16:00:00.000Z" title="Created 2025-05-29 00:00:00">2025-05-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/py-metaclass/" title="Python元类编程：type与__new__如何拦截类的诞生">Python元类编程：type与__new__如何拦截类的诞生</a><time datetime="2025-06-11T16:00:00.000Z" title="Created 2025-06-12 00:00:00">2025-06-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-multi-armed-bandit/" title="碧澜港的守宴人">碧澜港的守宴人</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260831/" title="AI 新闻速递｜2026-08-31：Copilot Autopilot 正式 GA、AI 编程工具并购潮、Claude Code 反超 Copilot、人形机器人规模化落地、自主 DevOps 智能体登场">AI 新闻速递｜2026-08-31：Copilot Autopilot 正式 GA、AI 编程工具并购潮、Claude Code 反超 Copilot、人形机器人规模化落地、自主 DevOps 智能体登场</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：数据库表设计</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
