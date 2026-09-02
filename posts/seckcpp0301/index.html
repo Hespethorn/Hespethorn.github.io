@@ -1,0 +1,629 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="10000 个人抢 100 件商品，最后卖出去 137 件——这句&quot;段子&quot;我们在表设计那篇就破了。但秒杀真正的第一道门，不是库存，是身份：你是谁？你有没有资格抢？如果你连&quot;注册&quot;这一步都把明文密码写进库，那后面无论 Redis 预扣、Lua 原子、MQ 削峰做得再漂亮，用户表一旦泄露就是全裸——所有&quot;高并发安全&quot;都建立在沙滩上。  本文是">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0301/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="10000 个人抢 100 件商品，最后卖出去 137 件——这句&quot;段子&quot;我们在表设计那篇就破了。但秒杀真正的第一道门，不是库存，是身份：你是谁？你有没有资格抢？如果你连&quot;注册&quot;这一步都把明文密码写进库，那后面无论 Redis 预扣、Lua 原子、MQ 削峰做得再漂亮，用户表一旦泄露就是全裸——所有&quot;高并发安全&quot;都建立在沙滩上。  本文是">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-20T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-02T07:08:06.844Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="鉴权">
+<meta property="article:tag" content="注册">
+<meta property="article:tag" content="JWT">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口",
+  "url": "https://hespethorn.github.io/posts/seckcpp0301/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-20T16:00:00.000Z",
+  "dateModified": "2026-09-02T07:08:06.844Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0301/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">740</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">978</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-20T16:00:00.000Z" title="Created 2026-09-21 00:00:00">2026-09-21</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.8k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>15mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>10000 个人抢 100 件商品，最后卖出去 137 件——这句&quot;段子&quot;我们在表设计那篇就破了。但秒杀真正的第一道门，不是库存，是<strong>身份</strong>：你是谁？你有没有资格抢？如果你连&quot;注册&quot;这一步都把明文密码写进库，那后面无论 Redis 预扣、Lua 原子、MQ 削峰做得再漂亮，用户表一旦泄露就是全裸——所有&quot;高并发安全&quot;都建立在沙滩上。</p>
+<blockquote>
+<p>本文是「秒杀系统（C++ &#x2F; Drogon）」系列第三章（登录模块）的开篇。配套仓库 <code>seckill-cpp</code>(GitHub: <a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn/seckill-cpp)%E3%80%82%E5%BD%93%E5%89%8D%E4%BB%93%E5%BA%93">https://github.com/Hespethorn/seckill-cpp)。当前仓库</a> main 分支仅有阶段一的 <code>SeckillService</code> 与 <code>HealthController</code>，登录模块尚未提交；本文代码将随登录模块首个提交进入仓库，目录规划为 <code>sql/user_schema.sql</code>、<code>src/model/User.h</code>、<code>src/service/UserService.&#123;h,cc&#125;</code>、<code>src/controllers/UserController.&#123;h,cc&#125;</code>，路由在 <code>src/main.cc</code> 注册。所有方案均为原创、不依赖任何外部教程。</p>
+</blockquote>
+<h2 id="一、注册接口：是什么、坑在哪、本质一句话"><a href="#一、注册接口：是什么、坑在哪、本质一句话" class="headerlink" title="一、注册接口：是什么、坑在哪、本质一句话"></a>一、注册接口：是什么、坑在哪、本质一句话</h2><p><strong>是什么</strong>：用户注册接口 &#x3D; 把&quot;账号（手机号 + 密码）&quot;安全地落库，并为后续登录签发 Token 准备好身份基础。它是整个鉴权链路的&quot;建身份&quot;环节，本身不发 Token（Token 留给登录）。</p>
+<p><strong>坑在哪</strong>：</p>
+<ul>
+<li><strong>明文密码</strong>：直接 <code>INSERT password=用户输入</code>，一旦拖库，所有账号裸奔。这是最不该犯的错。</li>
+<li><strong>弱哈希</strong>：用 <code>MD5(password)</code> 甚至不加盐，彩虹表一秒反查；用固定 salt 等于没加盐。</li>
+<li><strong>查重与并发</strong>：两个请求同时用同一手机号注册，没唯一索引就会插出两条——后面&quot;一人一单&quot;的资格校验全崩。</li>
+<li><strong>&quot;无状态 JWT&quot;假象</strong>：很多人以为 JWT 无状态就够，但 JWT 一旦签发无法主动吊销（改密码&#x2F;封号后旧 Token 仍有效），必须有一层<strong>可吊销的会话态</strong>。</li>
+</ul>
+<p><strong>本质一句话</strong>：注册接口的本质是&quot;安全地建立账号身份&quot;——<strong>密码永远不落明文</strong>，会话用 Redis 做可吊销的权威态、JWT 只做不可伪造的凭证。</p>
+<h2 id="二、用户表设计"><a href="#二、用户表设计" class="headerlink" title="二、用户表设计"></a>二、用户表设计</h2><p>密码哈希用 <code>PBKDF2-HMAC-SHA256</code>，派生长度 32 字节 → hex 编码 64 字符；salt 16 字节 → hex 32 字符。字段定长 <code>CHAR</code> 比 <code>VARCHAR</code> 更省心，也避免长度漂移。</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- sql/user_schema.sql</span></span><br><span class="line"><span class="keyword">CREATE TABLE</span> `<span class="keyword">user</span>` (</span><br><span class="line">  `id`            <span class="type">BIGINT</span> UNSIGNED <span class="keyword">NOT NULL</span> AUTO_INCREMENT,</span><br><span class="line">  `phone`         <span class="type">VARCHAR</span>(<span class="number">20</span>)  <span class="keyword">NOT NULL</span>                COMMENT <span class="string">&#x27;登录手机号，唯一&#x27;</span>,</span><br><span class="line">  `password_hash` <span class="type">CHAR</span>(<span class="number">64</span>)     <span class="keyword">NOT NULL</span>                COMMENT <span class="string">&#x27;PBKDF2-HMAC-SHA256 派生，hex 编码&#x27;</span>,</span><br><span class="line">  `salt`          <span class="type">CHAR</span>(<span class="number">32</span>)     <span class="keyword">NOT NULL</span>                COMMENT <span class="string">&#x27;16 字节随机 salt，hex 编码&#x27;</span>,</span><br><span class="line">  `nickname`      <span class="type">VARCHAR</span>(<span class="number">64</span>)  <span class="keyword">DEFAULT</span> <span class="string">&#x27;&#x27;</span>              COMMENT <span class="string">&#x27;昵称，可空&#x27;</span>,</span><br><span class="line">  `status`        TINYINT      <span class="keyword">NOT NULL</span> <span class="keyword">DEFAULT</span> <span class="number">1</span>      COMMENT <span class="string">&#x27;1=正常 0=禁用&#x27;</span>,</span><br><span class="line">  `create_time`   DATETIME     <span class="keyword">NOT NULL</span> <span class="keyword">DEFAULT</span> <span class="built_in">CURRENT_TIMESTAMP</span>,</span><br><span class="line">  <span class="keyword">PRIMARY KEY</span> (`id`),</span><br><span class="line">  <span class="keyword">UNIQUE</span> KEY `uk_phone` (`phone`)                      COMMENT <span class="string">&#x27;查重 + 防并发插重的核心约束&#x27;</span></span><br><span class="line">) ENGINE<span class="operator">=</span>InnoDB <span class="keyword">DEFAULT</span> CHARSET<span class="operator">=</span>utf8mb4;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p><code>uk_phone</code> 是唯一索引，不只是为了查重快，更是<strong>最后一道并发防线</strong>：即使应用层查重有竞态，数据库的唯一约束会让第二个 INSERT 直接报 <code>ER_DUP_ENTRY</code>，绝不会插出两条。</p>
+</blockquote>
+<h2 id="三、密码哈希：自实现-PBKDF2（OpenSSL），不引第三方-bcrypt-库"><a href="#三、密码哈希：自实现-PBKDF2（OpenSSL），不引第三方-bcrypt-库" class="headerlink" title="三、密码哈希：自实现 PBKDF2（OpenSSL），不引第三方 bcrypt 库"></a>三、密码哈希：自实现 PBKDF2（OpenSSL），不引第三方 bcrypt 库</h2><p>C++ 没有 Spring Security 的 <code>BCrypt</code>，但 OpenSSL 自带工业级 KDF。我选 <strong>PBKDF2-HMAC-SHA256</strong> 而非直接引 <code>bcrypt-cpp</code>，理由是：依赖更少（OpenSSL 本就是 Drogon&#x2F;Redis 的底层依赖，几乎必然在场）、可调迭代次数对抗硬件升级、算法透明可审计。代价是要自己管好 salt 与 hex 编码——而这恰恰是本系列想讲透的&quot;自实现功力&quot;。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/password.h（登录模块新增）</span></span><br><span class="line"><span class="meta">#<span class="keyword">pragma</span> once</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 生成 16 字节密码学安全随机 salt（hex 编码返回）</span></span><br><span class="line"><span class="function">std::string <span class="title">genSalt</span><span class="params">(<span class="type">size_t</span> bytes = <span class="number">16</span>)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// PBKDF2-HMAC-SHA256 派生密钥，返回 hex 字符串</span></span><br><span class="line"><span class="comment">// iterations 视机器性能取 10w~20w：太低易被暴力，太高拖慢登录</span></span><br><span class="line"><span class="function">std::string <span class="title">pbkdf2Hex</span><span class="params">(<span class="type">const</span> std::string&amp; password,</span></span></span><br><span class="line"><span class="params"><span class="function">                       <span class="type">const</span> std::string&amp; salt,</span></span></span><br><span class="line"><span class="params"><span class="function">                       <span class="type">int</span> iterations = <span class="number">120000</span>,</span></span></span><br><span class="line"><span class="params"><span class="function">                       <span class="type">size_t</span> dkLen = <span class="number">32</span>)</span></span>;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/password.cc</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;password.h&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;openssl/evp.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;openssl/rand.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;algorithm&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cctype&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function">std::string <span class="title">genSalt</span><span class="params">(<span class="type">size_t</span> bytes)</span> </span>&#123;</span><br><span class="line">    std::string out;</span><br><span class="line">    out.<span class="built_in">resize</span>(bytes);</span><br><span class="line">    <span class="built_in">RAND_bytes</span>(<span class="built_in">reinterpret_cast</span>&lt;<span class="type">unsigned</span> <span class="type">char</span>*&gt;(out.<span class="built_in">data</span>()), <span class="built_in">static_cast</span>&lt;<span class="type">int</span>&gt;(bytes));</span><br><span class="line">    <span class="comment">// 转 hex，便于存 CHAR 字段且无编码歧义</span></span><br><span class="line">    <span class="type">static</span> <span class="type">const</span> <span class="type">char</span>* hexd = <span class="string">&quot;0123456789abcdef&quot;</span>;</span><br><span class="line">    std::string hex;</span><br><span class="line">    hex.<span class="built_in">reserve</span>(bytes * <span class="number">2</span>);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">unsigned</span> <span class="type">char</span> c : out) &#123;</span><br><span class="line">        hex.<span class="built_in">push_back</span>(hexd[c &gt;&gt; <span class="number">4</span>]);</span><br><span class="line">        hex.<span class="built_in">push_back</span>(hexd[c &amp; <span class="number">0x0f</span>]);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> hex; <span class="comment">// 长度 = bytes * 2 = 32</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function">std::string <span class="title">pbkdf2Hex</span><span class="params">(<span class="type">const</span> std::string&amp; password,</span></span></span><br><span class="line"><span class="params"><span class="function">                      <span class="type">const</span> std::string&amp; salt,</span></span></span><br><span class="line"><span class="params"><span class="function">                      <span class="type">int</span> iterations, <span class="type">size_t</span> dkLen)</span> </span>&#123;</span><br><span class="line">    std::string out;</span><br><span class="line">    out.<span class="built_in">resize</span>(dkLen);</span><br><span class="line">    <span class="type">int</span> rc = <span class="built_in">PKCS5_PBKDF2_HMAC</span>(</span><br><span class="line">        password.<span class="built_in">data</span>(), <span class="built_in">static_cast</span>&lt;<span class="type">int</span>&gt;(password.<span class="built_in">size</span>()),</span><br><span class="line">        <span class="built_in">reinterpret_cast</span>&lt;<span class="type">const</span> <span class="type">unsigned</span> <span class="type">char</span>*&gt;(salt.<span class="built_in">data</span>()),</span><br><span class="line">        <span class="built_in">static_cast</span>&lt;<span class="type">int</span>&gt;(salt.<span class="built_in">size</span>()),</span><br><span class="line">        iterations, <span class="built_in">EVP_sha256</span>(),</span><br><span class="line">        <span class="built_in">static_cast</span>&lt;<span class="type">int</span>&gt;(dkLen),</span><br><span class="line">        <span class="built_in">reinterpret_cast</span>&lt;<span class="type">unsigned</span> <span class="type">char</span>*&gt;(out.<span class="built_in">data</span>()));</span><br><span class="line">    <span class="keyword">if</span> (rc != <span class="number">1</span>) <span class="keyword">return</span> <span class="string">&quot;&quot;</span>; <span class="comment">// 极罕见：OpenSSL 初始化失败</span></span><br><span class="line">    <span class="type">static</span> <span class="type">const</span> <span class="type">char</span>* hexd = <span class="string">&quot;0123456789abcdef&quot;</span>;</span><br><span class="line">    std::string hex;</span><br><span class="line">    hex.<span class="built_in">reserve</span>(dkLen * <span class="number">2</span>);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">unsigned</span> <span class="type">char</span> c : out) &#123;</span><br><span class="line">        hex.<span class="built_in">push_back</span>(hexd[c &gt;&gt; <span class="number">4</span>]);</span><br><span class="line">        hex.<span class="built_in">push_back</span>(hexd[c &amp; <span class="number">0x0f</span>]);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> hex; <span class="comment">// 长度 = dkLen * 2 = 64</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p><strong>C++ 细节</strong>：<code>RAND_bytes</code> 来自 OpenSSL 的 CSPRNG，比 <code>std::rand()</code> 安全得多——后者是线性同余、可预测，拿来做 salt 等于给攻击者减难度。salt 与哈希分离存储，验证时重新派生比对，绝不在库里存&quot;明文密码 + 一次性比较&quot;。</p>
+</blockquote>
+<h2 id="四、UserService-registerUser：查重-→-哈希-→-落库"><a href="#四、UserService-registerUser：查重-→-哈希-→-落库" class="headerlink" title="四、UserService::registerUser：查重 → 哈希 → 落库"></a>四、UserService::registerUser：查重 → 哈希 → 落库</h2><p>沿用本仓库既有风格：服务层只做业务，不碰 HTTP；回调语义统一 <code>(bool ok, string msg)</code>。Drogon 的 <code>DbClient</code> 用流式 <code>&gt;&gt;</code> 接&quot;成功回调 &#x2F; 异常回调&quot;——<code>SELECT</code> 查到行走第一个回调，查不到（抛 <code>DrogonDbException</code>）走第二个，正好用来判断&quot;手机号是否已注册&quot;。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/UserService.h（登录模块新增）</span></span><br><span class="line"><span class="meta">#<span class="keyword">pragma</span> once</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;drogon/orm/DbClient.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;functional&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">UserService</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="keyword">explicit</span> <span class="title">UserService</span><span class="params">(drogon::orm::DbClientPtr client)</span></span></span><br><span class="line"><span class="function">        : db_(std::move(client)) &#123;</span>&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 回调：(true,&quot;OK&quot;) 注册成功 / (false,&quot;PHONE_REGISTERED&quot;) 已注册</span></span><br><span class="line">    <span class="comment">//       / (false,&quot;INVALID_PHONE&quot;) 格式错 / (false,&quot;DB_ERROR:..&quot;) 系统异常</span></span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">registerUser</span><span class="params">(<span class="type">const</span> std::string&amp; phone,</span></span></span><br><span class="line"><span class="params"><span class="function">                      <span class="type">const</span> std::string&amp; password,</span></span></span><br><span class="line"><span class="params"><span class="function">                      std::function&lt;<span class="type">void</span>(<span class="type">bool</span>, <span class="type">const</span> std::string&amp;)&gt; &amp;&amp;cb)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    drogon::orm::DbClientPtr db_;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/UserService.cc</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;UserService.h&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;password.h&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;algorithm&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cctype&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">UserService::registerUser</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> std::string&amp; phone,</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> std::string&amp; password,</span></span></span><br><span class="line"><span class="params"><span class="function">    std::function&lt;<span class="type">void</span>(<span class="type">bool</span>, <span class="type">const</span> std::string&amp;)&gt; &amp;&amp;cb)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 1) 入参校验：手机号 1 开头 + 11 位数字（业务上够用，正则可后扩）</span></span><br><span class="line">    <span class="keyword">if</span> (phone.<span class="built_in">size</span>() != <span class="number">11</span> || phone[<span class="number">0</span>] != <span class="string">&#x27;1&#x27;</span> ||</span><br><span class="line">        !std::<span class="built_in">all_of</span>(phone.<span class="built_in">begin</span>(), phone.<span class="built_in">end</span>(), ::isdigit)) &#123;</span><br><span class="line">        <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;INVALID_PHONE&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (password.<span class="built_in">size</span>() &lt; <span class="number">6</span>) &#123; <span class="comment">// 弱口令从源头拦一道</span></span><br><span class="line">        <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;WEAK_PASSWORD&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2) 查重：手机号唯一。查到行 → 已注册；抛异常（无结果）→ 继续</span></span><br><span class="line">    *db_ &lt;&lt; <span class="string">&quot;SELECT id FROM user WHERE phone = ?&quot;</span> &lt;&lt; phone &gt;&gt;</span><br><span class="line">        [=](<span class="type">int64_t</span> <span class="comment">/*id*/</span>) &#123;</span><br><span class="line">            <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;PHONE_REGISTERED&quot;</span>);</span><br><span class="line">        &#125; &gt;&gt;</span><br><span class="line">        [=](<span class="type">const</span> drogon::orm::DrogonDbException&amp; <span class="comment">/*e*/</span>) &#123;</span><br><span class="line">            <span class="comment">// 视为未注册，继续注册主流程</span></span><br><span class="line">            std::string salt = <span class="built_in">genSalt</span>();</span><br><span class="line">            std::string hash = <span class="built_in">pbkdf2Hex</span>(password, salt);</span><br><span class="line">            <span class="keyword">if</span> (hash.<span class="built_in">empty</span>()) &#123; <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;DB_ERROR:hash&quot;</span>); <span class="keyword">return</span>; &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">// 3) 落库：salt 与 hash 同时写入，INSERT 成功回调无参</span></span><br><span class="line">            *db_ &lt;&lt; <span class="string">&quot;INSERT INTO user (phone, password_hash, salt, status, create_time) &quot;</span></span><br><span class="line">                    <span class="string">&quot;VALUES (?, ?, ?, 1, NOW())&quot;</span></span><br><span class="line">                 &lt;&lt; phone &lt;&lt; hash &lt;&lt; salt &gt;&gt;</span><br><span class="line">                [=]() &#123; <span class="built_in">cb</span>(<span class="literal">true</span>, <span class="string">&quot;OK&quot;</span>); &#125; &gt;&gt;</span><br><span class="line">                [=](<span class="type">const</span> drogon::orm::DrogonDbException&amp; e) &#123;</span><br><span class="line">                    <span class="built_in">cb</span>(<span class="literal">false</span>, std::<span class="built_in">string</span>(<span class="string">&quot;DB_ERROR:&quot;</span>) + e.<span class="built_in">what</span>());</span><br><span class="line">                &#125;;</span><br><span class="line">        &#125;;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p><strong>并发保险</strong>：即使两个相同手机号请求在 <code>SELECT</code> 处竞态都&quot;查不到&quot;，第二个 <code>INSERT</code> 也会撞 <code>uk_phone</code> 唯一索引报错，掉进 <code>DB_ERROR</code> 分支——应用层查重是快路径，数据库唯一约束是兜底，两层都不会放过重复注册。</p>
+</blockquote>
+<h2 id="五、UserController-路由注册"><a href="#五、UserController-路由注册" class="headerlink" title="五、UserController + 路由注册"></a>五、UserController + 路由注册</h2><p>本仓库控制器<strong>不继承 <code>HttpController</code></strong>（Drogon v1.9.10 起对带依赖注入、无默认构造的 <code>HttpController</code> 子类调 <code>registerController</code> 会静态断言失败），改为在 <code>main.cc</code> 用 <code>registerHandler</code> 手动挂路由，lambda 转交给实例。注册接口完整套用这套已验证的模式。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/controllers/UserController.h（登录模块新增）</span></span><br><span class="line"><span class="meta">#<span class="keyword">pragma</span> once</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;drogon/HttpController.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;functional&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;memory&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;service/UserService.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">UserController</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="keyword">explicit</span> <span class="title">UserController</span><span class="params">(std::shared_ptr&lt;UserService&gt; svc)</span></span></span><br><span class="line"><span class="function">        : svc_(std::move(svc)) &#123;</span>&#125;</span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">registerUser</span><span class="params">(<span class="type">const</span> drogon::HttpRequestPtr&amp; req,</span></span></span><br><span class="line"><span class="params"><span class="function">                      std::function&lt;<span class="type">void</span>(<span class="type">const</span> drogon::HttpResponsePtr&amp;)&gt;&amp;&amp; callback)</span></span>;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::shared_ptr&lt;UserService&gt; svc_;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/controllers/UserController.cc</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;UserController.h&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;json/json.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">UserController::registerUser</span><span class="params">(</span></span></span><br><span class="line"><span class="params"><span class="function">    <span class="type">const</span> drogon::HttpRequestPtr&amp; req,</span></span></span><br><span class="line"><span class="params"><span class="function">    std::function&lt;<span class="type">void</span>(<span class="type">const</span> drogon::HttpResponsePtr&amp;)&gt;&amp;&amp; callback)</span> </span>&#123;</span><br><span class="line">    <span class="type">const</span> <span class="keyword">auto</span>&amp; json = req-&gt;<span class="built_in">getJsonObject</span>(); <span class="comment">// v1.9.10 起返回 shared_ptr</span></span><br><span class="line">    <span class="keyword">if</span> (!json || !json-&gt;<span class="built_in">isMember</span>(<span class="string">&quot;phone&quot;</span>) || !json-&gt;<span class="built_in">isMember</span>(<span class="string">&quot;password&quot;</span>)) &#123;</span><br><span class="line">        Json::Value err;</span><br><span class="line">        err[<span class="string">&quot;code&quot;</span>] = <span class="number">400</span>;</span><br><span class="line">        err[<span class="string">&quot;msg&quot;</span>]  = <span class="string">&quot;missing phone/password&quot;</span>;</span><br><span class="line">        <span class="keyword">auto</span> resp = drogon::HttpResponse::<span class="built_in">newHttpJsonResponse</span>(err);</span><br><span class="line">        resp-&gt;<span class="built_in">setStatusCode</span>(drogon::k400BadRequest);</span><br><span class="line">        <span class="built_in">callback</span>(resp);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="type">const</span> std::string phone = (*json)[<span class="string">&quot;phone&quot;</span>].<span class="built_in">asString</span>();</span><br><span class="line">    <span class="type">const</span> std::string password = (*json)[<span class="string">&quot;password&quot;</span>].<span class="built_in">asString</span>();</span><br><span class="line"></span><br><span class="line">    svc_-&gt;<span class="built_in">registerUser</span>(phone, password,</span><br><span class="line">        [callback](<span class="type">bool</span> ok, <span class="type">const</span> std::string&amp; msg) <span class="keyword">mutable</span> &#123;</span><br><span class="line">            Json::Value root;</span><br><span class="line">            root[<span class="string">&quot;code&quot;</span>] = ok ? <span class="number">0</span> : <span class="number">1</span>;</span><br><span class="line">            root[<span class="string">&quot;msg&quot;</span>]  = ok ? <span class="string">&quot;success&quot;</span> : msg;</span><br><span class="line">            <span class="keyword">auto</span> resp = drogon::HttpResponse::<span class="built_in">newHttpJsonResponse</span>(root);</span><br><span class="line">            <span class="keyword">if</span> (!ok) resp-&gt;<span class="built_in">setStatusCode</span>(drogon::k409Conflict);</span><br><span class="line">            <span class="built_in">callback</span>(resp);</span><br><span class="line">        &#125;);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>main.cc</code> 里挂路由（与 <code>seckillCtrl</code> 同款写法）：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/main.cc（登录模块新增两行）</span></span><br><span class="line"><span class="keyword">auto</span> userService = std::<span class="built_in">make_shared</span>&lt;UserService&gt;(<span class="built_in">getDbClient</span>());</span><br><span class="line"><span class="keyword">auto</span> userCtrl    = std::<span class="built_in">make_shared</span>&lt;UserController&gt;(userService);</span><br><span class="line"><span class="built_in">app</span>().<span class="built_in">registerHandler</span>(<span class="string">&quot;/api/user/register&quot;</span>,</span><br><span class="line">    [userCtrl](<span class="type">const</span> drogon::HttpRequestPtr&amp; req,</span><br><span class="line">               std::function&lt;<span class="built_in">void</span>(<span class="type">const</span> drogon::HttpResponsePtr&amp;)&gt;&amp;&amp; cb) &#123;</span><br><span class="line">        userCtrl-&gt;<span class="built_in">registerUser</span>(req, std::<span class="built_in">move</span>(cb));</span><br><span class="line">    &#125;,</span><br><span class="line">    &#123;drogon::HttpMethod::Post&#125;);</span><br></pre></td></tr></table></figure>
+
+<p>下面把整条注册链路画成时序图——重点看密码哈希发生在哪一层，以及明文密码的&quot;存活半径&quot;被压缩到什么范围。</p>
+<div align="center">
+<svg viewBox="0 0 680 440" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="440" fill="#ffffff"/>
+  <text x="340" y="26" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 1：用户注册接口时序（密码哈希在 UserService 层完成，明文不落库）</text>
+  <line x1="80" y1="58" x2="80" y2="420" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="250" y1="58" x2="250" y2="420" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="440" y1="58" x2="440" y2="420" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="610" y1="58" x2="610" y2="420" stroke="#9ca3af" stroke-width="1.5"/>
+  <rect x="46" y="42" width="68" height="20" rx="4" fill="#eef2ff"/><text x="80" y="57" font-size="12" font-family="sans-serif" fill="#3730a3" text-anchor="middle">客户端</text>
+  <rect x="206" y="42" width="88" height="20" rx="4" fill="#eef2ff"/><text x="250" y="57" font-size="12" font-family="sans-serif" fill="#3730a3" text-anchor="middle">Controller</text>
+  <rect x="402" y="42" width="76" height="20" rx="4" fill="#eef2ff"/><text x="440" y="57" font-size="12" font-family="sans-serif" fill="#3730a3" text-anchor="middle">Service</text>
+  <rect x="578" y="42" width="64" height="20" rx="4" fill="#eef2ff"/><text x="610" y="57" font-size="12" font-family="sans-serif" fill="#3730a3" text-anchor="middle">MySQL</text>
+  <line x1="80" y1="88" x2="250" y2="88" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/><text x="165" y="82" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">POST /api/user/register</text>
+  <line x1="250" y1="118" x2="440" y2="118" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/><text x="345" y="112" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">registerUser(phone,pwd)</text>
+  <line x1="440" y1="148" x2="610" y2="148" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#pu)"/><text x="525" y="142" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">SELECT id WHERE phone=?</text>
+  <line x1="610" y1="173" x2="440" y2="173" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#pu)"/><text x="525" y="167" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">空（未注册）</text>
+  <rect x="402" y="190" width="76" height="26" rx="4" fill="#fef3c7"/><text x="440" y="207" font-size="11" font-family="sans-serif" fill="#92400e" text-anchor="middle">genSalt+PBKDF2</text>
+  <line x1="440" y1="242" x2="610" y2="242" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#pu)"/><text x="525" y="236" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">INSERT(phone,hash,salt)</text>
+  <line x1="610" y1="267" x2="440" y2="267" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#pu)"/><text x="525" y="261" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">OK</text>
+  <line x1="440" y1="297" x2="250" y2="297" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/><text x="345" y="291" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">cb(true,"OK")</text>
+  <line x1="250" y1="327" x2="80" y2="327" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/><text x="165" y="321" font-size="11" font-family="sans-serif" fill="#1f2937" text-anchor="middle">200 {code:0}</text>
+  <text x="440" y="392" font-size="10" font-family="sans-serif" fill="#6b7280" text-anchor="middle">注：明文密码只在 Service 内存里存在，hash 落库、salt 同存</text>
+  <defs><marker id="ab" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2563eb"/></marker><marker id="pu" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#7c3aed"/></marker></defs>
+</svg>
+</div>
+
+<h2 id="六、Redis-会话的-可吊销层-设计（为登录铺垫，注册不发-Token）"><a href="#六、Redis-会话的-可吊销层-设计（为登录铺垫，注册不发-Token）" class="headerlink" title="六、Redis 会话的&quot;可吊销层&quot;设计（为登录铺垫，注册不发 Token）"></a>六、Redis 会话的&quot;可吊销层&quot;设计（为登录铺垫，注册不发 Token）</h2><p>注册<strong>只建身份、不发 Token</strong>——Token 是登录成功后的凭证。但我们要<strong>现在就把会话层的契约定下来</strong>，否则登录代码会反过来改表结构。设计要点：</p>
+<ul>
+<li><strong>JWT 只做凭证，不做权威态</strong>：<code>jwt-cpp</code> 签发 <code>sub=userId, exp, jti</code>，客户端每次请求带在 <code>Authorization</code> 头。JWT 本身无状态、无法吊销。</li>
+<li><strong>Redis 做权威态</strong>：登录成功后写 <code>sess:&#123;jti&#125; → userId</code>，设 TTL &#x3D; Token 有效期。<code>jti</code> 是 JWT 唯一 ID。</li>
+<li><strong>吊销 &#x3D; 删 Redis key</strong>：改密码&#x2F;封号时 <code>DEL sess:&#123;jti&#125;</code>，旧 Token 即使未过期，网关校验 <code>EXISTS sess:&#123;jti&#125;</code> 失败即拒绝——可吊销性由此而来。</li>
+<li><strong>Key 规范</strong>：<code>sess:&#123;jti&#125;</code>，value &#x3D; <code>userId</code>（字符串），<code>EXPIRE</code> 与 JWT 的 <code>exp</code> 对齐。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 登录阶段实现（redis-plus-plus），此处先定契约，注册篇不实际签发</span></span><br><span class="line">sw::<span class="function">redis::Redis <span class="title">redis</span><span class="params">(<span class="string">&quot;tcp://127.0.0.1:6379&quot;</span>)</span></span>;</span><br><span class="line">redis.<span class="built_in">setex</span>(<span class="string">&quot;sess:&quot;</span> + jti, ttlSeconds, std::<span class="built_in">to_string</span>(userId)); <span class="comment">// 登录成功写会话</span></span><br><span class="line"><span class="comment">// 网关校验：if (!redis.exists(&quot;sess:&quot; + jti)) reject();  // 可吊销</span></span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>为什么注册不发 Token：注册成功立刻发 Token 等于&quot;建完身份马上给进门钥匙&quot;，既违反最小权限（注册接口不该隐含登录态），也让&quot;注册即登录&quot;成为刷号脚本的便利通道。身份与凭证在时序上分离，是安全设计的基本纪律。</p>
+</blockquote>
+<h2 id="七、可运行验证步骤"><a href="#七、可运行验证步骤" class="headerlink" title="七、可运行验证步骤"></a>七、可运行验证步骤</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1) 建表（先有 user_schema.sql）</span></span><br><span class="line">mysql -h127.0.0.1 -useckill -p &lt; sql/user_schema.sql</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2) 启动 Drogon（WSL 编译：scripts/build-wsl.sh &amp;&amp; ./build/seckill）</span></span><br><span class="line"><span class="comment"># 3) 注册一个账号</span></span><br><span class="line">curl -X POST http://127.0.0.1:8080/api/user/register \</span><br><span class="line">  -H <span class="string">&#x27;Content-Type: application/json&#x27;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;&quot;phone&quot;:&quot;13800001111&quot;,&quot;password&quot;:&quot;abc123&quot;&#125;&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 4) 查库确认密码是哈希值，绝不是明文</span></span><br><span class="line">mysql -h127.0.0.1 -useckill -p -e \</span><br><span class="line">  <span class="string">&quot;SELECT phone, password_hash, salt FROM user WHERE phone=&#x27;13800001111&#x27;\G&quot;</span></span><br><span class="line"><span class="comment"># password_hash 应为 64 位 hex，salt 为 32 位 hex；肉眼无法反推原密码</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 5) 重复注册同手机号 → 应返回 &#123;&quot;code&quot;:1,&quot;msg&quot;:&quot;PHONE_REGISTERED&quot;&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="八、两张对比表"><a href="#八、两张对比表" class="headerlink" title="八、两张对比表"></a>八、两张对比表</h2><p><strong>表 1：密码存储方案对比</strong></p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>抗彩虹表</th>
+<th>抗暴力破解</th>
+<th>加盐</th>
+<th>评价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>明文</td>
+<td>✗</td>
+<td>✗</td>
+<td>✗</td>
+<td>拖库即全裸，绝不可取</td>
+</tr>
+<tr>
+<td>MD5(密码)</td>
+<td>✗</td>
+<td>✗</td>
+<td>✗</td>
+<td>秒级反查，已淘汰</td>
+</tr>
+<tr>
+<td>MD5(密码+salt)，salt 固定</td>
+<td>△</td>
+<td>✗</td>
+<td>弱</td>
+<td>固定 salt &#x3D; 全库共用，仍可被批量跑</td>
+</tr>
+<tr>
+<td>bcrypt</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>自带 salt + 慢哈希，工业标准但需引库</td>
+</tr>
+<tr>
+<td><strong>PBKDF2-HMAC-SHA256（本文）</strong></td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>算法透明、依赖少（OpenSSL 自带）、迭代可调</td>
+</tr>
+</tbody></table>
+<p><strong>表 2：会话模型对比</strong></p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>可吊销</th>
+<th>实现复杂度</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>纯无状态 JWT</td>
+<td>✗（改密&#x2F;封号后仍有效）</td>
+<td>低</td>
+<td>短期、低风险 API</td>
+</tr>
+<tr>
+<td><strong>JWT + Redis 会话（本文）</strong></td>
+<td>✓（DEL key 即吊销）</td>
+<td>中</td>
+<td>秒杀等需强管控场景</td>
+</tr>
+<tr>
+<td>纯 Redis Session（不签发 JWT）</td>
+<td>✓</td>
+<td>低</td>
+<td>单体，无跨服务诉求</td>
+</tr>
+</tbody></table>
+<h2 id="功能抉择（本篇核心权衡）"><a href="#功能抉择（本篇核心权衡）" class="headerlink" title="功能抉择（本篇核心权衡）"></a>功能抉择（本篇核心权衡）</h2><p><strong>① 为什么自实现 jwt-cpp + Redis 会话，而不套 SaToken &#x2F; Spring Security？</strong><br>本系列是 C++ 实战记录，Java 生态的 SaToken&#x2F;Spring Security 在 C++ 里没有对等物。自实现 JWT 签发（jwt-cpp）+ Redis 可吊销会话，把&quot;凭证不可伪造&quot;和&quot;会话可吊销&quot;两件事拆开各司其职，既贴合 C++ 技术栈，也把鉴权链路每一行都摊开讲透——代价是多写几百行基础设施代码，换来对安全语义的完全掌控。</p>
+<p><strong>② 为什么密码哈希选 PBKDF2(OpenSSL) 而非直接引 bcrypt 库？</strong><br>OpenSSL 是 Drogon&#x2F;Redis&#x2F;hiredis 的底层依赖，几乎必然在场，引 <code>bcrypt-cpp</code> 是额外一项依赖与编译面；PBKDF2 算法公开可审计、迭代次数随硬件升级上调即可，没有&quot;库停更就裸奔&quot;的风险。代价是自己管理 salt 生成与 hex 编码，而这正是本系列想练的底层功力。</p>
+<p><strong>③ 为什么注册不发 Token，把&quot;身份&quot;和&quot;凭证&quot;在时序上分开？</strong><br>注册只回答&quot;你是谁&quot;，登录才回答&quot;你现在能进门&quot;。注册即发 Token 既违反最小权限，又给刷号脚本开了&quot;注册即得会话&quot;的便利。分两步后，登录模块才能独立引入风控（验证码、错误次数限制），注册接口保持纯粹的&quot;建身份&quot;。</p>
+<p><strong>④ 为什么 Redis 会话要做&quot;可吊销层&quot;，而不满足于无状态 JWT？</strong><br>JWT 无状态意味着签发后服务端无法主动失效，封号&#x2F;改密后的旧 Token 仍可能被滥用。用 Redis 的 <code>sess:&#123;jti&#125;</code> 作为权威态，吊销 &#x3D; 删 key，一行命令解决&quot;无法踢人&quot;的硬伤。代价是多一次 Redis 查询（网关每次请求 <code>EXISTS</code>），但相比安全收益微不足道，且 Redis 单实例轻松扛百万 QPS。</p>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ul>
+<li>注册接口的本质是<strong>安全地建立账号身份</strong>：明文密码绝不落库，PBKDF2 加盐哈希是底线。</li>
+<li>查重靠<strong>应用层快路径 + <code>uk_phone</code> 唯一索引兜底</strong>双层防护，并发下也不会插重。</li>
+<li>密码哈希选 <strong>PBKDF2-HMAC-SHA256（OpenSSL 自带）</strong>，依赖少、算法透明、迭代可调。</li>
+<li>会话采用 <strong>JWT（凭证，不可伪造）+ Redis（权威态，可吊销）</strong> 双层模型，注册不发 Token，身份与凭证时序分离。</li>
+<li>控制器沿用本仓库<strong>非 <code>HttpController</code> + <code>registerHandler</code></strong> 的已验证模式，与 <code>SeckillController</code> 完全对齐。</li>
+</ul>
+<p>下一篇（3.2）进入登录接口：密码哈希如何比对、<code>jwt-cpp</code> 怎样签发、<code>sess:&#123;jti&#125;</code> 怎么写进 Redis——把&quot;凭证 + 可吊销会话&quot;真正跑起来。🐾</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0301/">https://hespethorn.github.io/posts/seckcpp0301/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E9%89%B4%E6%9D%83/">鉴权</a><a class="post-meta__tags" href="/tags/%E6%B3%A8%E5%86%8C/">注册</a><a class="post-meta__tags" href="/tags/JWT/">JWT</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">740</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">978</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计</a><time datetime="2026-08-28T16:00:00.000Z" title="Created 2026-08-29 00:00:00">2026-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0204/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）">秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0205/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）">秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口">秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口</a><time datetime="2026-09-20T16:00:00.000Z" title="Created 2026-09-21 00:00:00">2026-09-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口">秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口</a><time datetime="2026-09-20T16:00:00.000Z" title="Created 2026-09-21 00:00:00">2026-09-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-ensemble-learning/" title="临渊镇的合议官">临渊镇的合议官</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260902/" title="AI 新闻速递（2026-09-02）">AI 新闻速递（2026-09-02）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

@@ -1,0 +1,750 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>中断与 I/O | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="1. 为什么 CPU 不能&quot;干等&quot;外设设想一个场景：CPU 想从磁盘读一个扇区。磁盘是机械部件——磁头要移动、盘片要旋转，一次读取就是几毫秒。而 CPU 的时钟周期以纳秒计，几毫秒相当于上百万个周期。 如果 CPU 发出读命令后就在原地等，那等于一台 3 GHz 的机器，为了等一个慢六个数量级的外设，把上百万个周期白白烧掉。这就是&quot;CPU 与外设的速度鸿沟&quot;">
+<meta property="og:type" content="article">
+<meta property="og:title" content="中断与 I&#x2F;O">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61c0108/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="1. 为什么 CPU 不能&quot;干等&quot;外设设想一个场景：CPU 想从磁盘读一个扇区。磁盘是机械部件——磁头要移动、盘片要旋转，一次读取就是几毫秒。而 CPU 的时钟周期以纳秒计，几毫秒相当于上百万个周期。 如果 CPU 发出读命令后就在原地等，那等于一台 3 GHz 的机器，为了等一个慢六个数量级的外设，把上百万个周期白白烧掉。这就是&quot;CPU 与外设的速度鸿沟&quot;">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-11-27T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-02T07:08:06.813Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="RISC-V">
+<meta property="article:tag" content="计算机组成">
+<meta property="article:tag" content="中断">
+<meta property="article:tag" content="I&#x2F;O">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "中断与 I/O",
+  "url": "https://hespethorn.github.io/posts/c61c0108/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-11-27T16:00:00.000Z",
+  "dateModified": "2026-09-02T07:08:06.813Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61c0108/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '中断与 I/O',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">740</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">978</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">中断与 I/O</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">中断与 I/O</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-11-27T16:00:00.000Z" title="Created 2024-11-28 00:00:00">2024-11-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61C/">CS61C</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="1-为什么-CPU-不能-干等-外设"><a href="#1-为什么-CPU-不能-干等-外设" class="headerlink" title="1. 为什么 CPU 不能&quot;干等&quot;外设"></a>1. 为什么 CPU 不能&quot;干等&quot;外设</h2><p>设想一个场景：CPU 想从磁盘读一个扇区。磁盘是机械部件——磁头要移动、盘片要旋转，一次读取就是几毫秒。而 CPU 的时钟周期以纳秒计，几毫秒相当于<strong>上百万个周期</strong>。</p>
+<p>如果 CPU 发出读命令后就在原地等，那等于一台 3 GHz 的机器，为了等一个慢六个数量级的外设，把上百万个周期白白烧掉。这就是&quot;CPU 与外设的速度鸿沟&quot;——也是本章所有 I&#x2F;O 机制的出发点。</p>
+<p>本质一句话：<strong>I&#x2F;O 的全部学问，就是想办法让慢速外设别把快速 CPU 拖死。</strong></p>
+<h2 id="2-I-O-的三种基本方式"><a href="#2-I-O-的三种基本方式" class="headerlink" title="2. I&#x2F;O 的三种基本方式"></a>2. I&#x2F;O 的三种基本方式</h2><p>处理器与设备交换数据，历史上演化出三种方式：</p>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>等待期间 CPU 在干嘛</th>
+<th>每块数据代价</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>轮询（polling）</td>
+<td>空转查状态位</td>
+<td>等满整个设备延迟</td>
+<td>极简单、极低速设备</td>
+</tr>
+<tr>
+<td>中断（interrupt）</td>
+<td>干自己的正事，就绪才被&quot;打断&quot;</td>
+<td>一次上下文切换</td>
+<td>中低速、事件驱动设备</td>
+</tr>
+<tr>
+<td>DMA</td>
+<td>完全不管，数据由控制器搬</td>
+<td>只有开始&#x2F;结束各一次中断</td>
+<td>大块连续数据（磁盘、网卡、GPU）</td>
+</tr>
+</tbody></table>
+<p>三种方式的差别，说白了就是一句话：<strong>等待数据的那段时间，CPU 到底在干什么。</strong> 下面依次把机制讲透。</p>
+<h2 id="3-异常与中断：一张分类树"><a href="#3-异常与中断：一张分类树" class="headerlink" title="3. 异常与中断：一张分类树"></a>3. 异常与中断：一张分类树</h2><p>&quot;中断&quot;这个词在计算机系统里，其实泛指一切<strong>控制流的强制转移</strong>（trap）。按产生时机是否与当前指令同步，可以分成两大类：</p>
+<ul>
+<li><strong>同步异常（synchronous）</strong>：由正在执行的指令直接引起，如系统调用（trap）、缺页（fault）、非法指令（fault）、硬件错误（abort）。</li>
+<li><strong>异步异常（asynchronous）</strong>：与指令流无关，由外部事件触发，这才是通常所说的&quot;中断&quot;（interrupt），如键盘按键、网卡收包、定时器到期。</li>
+</ul>
+<div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+  <text x="340" y="24" font-size="15" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#1f2937">异常（trap）= 控制流被强制转移</text>
+  <rect x="255" y="38" width="170" height="40" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="340" y="62" font-size="14" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">异常 / 中断总入口</text>
+  <line x1="340" y1="78" x2="190" y2="126" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="340" y1="78" x2="490" y2="126" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="150" y="108" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#374151">同步：由当前指令引起</text>
+  <text x="530" y="108" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#374151">异步：与指令流无关</text>
+  <rect x="70" y="126" width="200" height="36" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="170" y="148" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#92400e">trap：系统调用 ecall</text>
+  <rect x="70" y="176" width="200" height="36" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="170" y="198" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#92400e">fault：缺页 / 非法指令</text>
+  <rect x="70" y="226" width="200" height="36" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="170" y="248" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#92400e">abort：硬件致命错误</text>
+  <rect x="410" y="126" width="200" height="36" rx="6" fill="#fee2e2" stroke="#ef4444"/>
+  <text x="510" y="148" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#991b1b">外部 I/O 设备中断</text>
+  <rect x="410" y="176" width="200" height="36" rx="6" fill="#fee2e2" stroke="#ef4444"/>
+  <text x="510" y="198" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#991b1b">定时器中断</text>
+  <rect x="410" y="226" width="200" height="36" rx="6" fill="#fee2e2" stroke="#ef4444"/>
+  <text x="510" y="248" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#991b1b">软件中断（IPI 处理器间中断）</text>
+  <line x1="170" y1="162" x2="170" y2="176" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="170" y1="212" x2="170" y2="226" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="510" y1="162" x2="510" y2="176" stroke="#9ca3af" stroke-width="1.5"/>
+  <line x1="510" y1="212" x2="510" y2="226" stroke="#9ca3af" stroke-width="1.5"/>
+</svg>
+</div>
+
+<p>两类异常的恢复语义完全不同：</p>
+<ul>
+<li><strong>fault（缺页、非法指令）</strong>：处理完<strong>重新执行</strong>引起异常的指令；</li>
+<li><strong>trap（系统调用、断点）</strong>：处理完执行<strong>下一条</strong>指令；</li>
+<li><strong>abort（硬件错误）</strong>：通常无法恢复，直接终止进程；</li>
+<li><strong>中断（外部事件）</strong>：与指令无关，处理完<strong>回到断点继续</strong>。</li>
+</ul>
+<h2 id="4-RISC-V-的中断机制"><a href="#4-RISC-V-的中断机制" class="headerlink" title="4. RISC-V 的中断机制"></a>4. RISC-V 的中断机制</h2><p>RISC-V 在 Machine 模式下用 4 个 CSR 寄存器 + 1 条指令实现完整的陷阱（trap）机制：</p>
+<table>
+<thead>
+<tr>
+<th>寄存器 &#x2F; 指令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>mtvec</code></td>
+<td>陷阱入口地址（向量表基址），发生异常时硬件跳到这里</td>
+</tr>
+<tr>
+<td><code>mepc</code></td>
+<td>被打断指令的 PC，<code>mret</code> 时从这里恢复执行</td>
+</tr>
+<tr>
+<td><code>mcause</code></td>
+<td>异常原因：最高位 &#x3D; 1 表示中断，低 12 位是编码</td>
+</tr>
+<tr>
+<td><code>mstatus</code></td>
+<td>中断开关：<code>MIE</code>（当前使能）、<code>MPIE</code>（打断前的值）、<code>MPP</code>（特权级）</td>
+</tr>
+<tr>
+<td><code>mret</code></td>
+<td>陷阱返回指令：恢复 <code>mepc</code>&#x2F;<code>mstatus</code>，并重新使能中断</td>
+</tr>
+</tbody></table>
+<p>一次典型的中断处理流程：</p>
+<div align="center">
+<svg viewBox="0 0 680 330" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/>
+    </marker>
+  </defs>
+  <rect x="30" y="20" width="360" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="210" y="38" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">① 设备把数据放进寄存器，拉高 IRQ 线</text>
+  <text x="210" y="56" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#374151">外设"就绪"事件到达 CPU 引脚</text>
+  <line x1="210" y1="64" x2="210" y2="86" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="30" y="86" width="360" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="210" y="104" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">② CPU 完成当前指令，检查 MIE 使能位</text>
+  <text x="210" y="122" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#374151">一条指令的中间态不会被"撕开"</text>
+  <line x1="210" y1="130" x2="210" y2="152" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="30" y="152" width="360" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="210" y="170" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">③ 硬件自动保存现场：PC 存入 mepc</text>
+  <text x="210" y="188" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#374151">mstatus 保存到 MPIE 并关闭中断</text>
+  <line x1="210" y1="196" x2="210" y2="218" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="30" y="218" width="360" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="210" y="236" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">④ 按 mtvec 跳入口，执行 ISR（读设备、清中断）</text>
+  <text x="210" y="254" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#374151">ISR 必须尽快返回，避免丢失其他中断</text>
+  <line x1="210" y1="262" x2="210" y2="284" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="30" y="284" width="360" height="40" rx="8" fill="#d1fae5" stroke="#10b981"/>
+  <text x="210" y="308" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#065f46">⑤ mret：恢复 mepc / mstatus，回到断点继续</text>
+  <rect x="430" y="40" width="220" height="260" rx="10" fill="#f9fafb" stroke="#d1d5db"/>
+  <text x="540" y="66" font-size="13" font-family="sans-serif" text-anchor="middle" font-weight="bold" fill="#1f2937">关键寄存器速查</text>
+  <text x="446" y="96" font-size="12" font-family="monospace" fill="#111827">mtvec  = 入口地址</text>
+  <text x="446" y="126" font-size="12" font-family="monospace" fill="#111827">mepc   = 断点 PC</text>
+  <text x="446" y="156" font-size="12" font-family="monospace" fill="#111827">mcause = 异常编码</text>
+  <text x="446" y="186" font-size="12" font-family="monospace" fill="#111827">mstatus= 使能位/特权级</text>
+  <text x="446" y="222" font-size="12" font-family="sans-serif" fill="#374151">最高位=1 表示中断：</text>
+  <text x="446" y="244" font-size="12" font-family="monospace" fill="#374151">3 软件 / 7 定时器</text>
+  <text x="446" y="266" font-size="12" font-family="monospace" fill="#374151">11 外部 I/O 中断</text>
+  <text x="446" y="288" font-size="12" font-family="sans-serif" fill="#6b7280">（M 模式编码）</text>
+</svg>
+</div>
+
+<p>下面是一段 RISC-V（RV32，M 模式）陷阱入口的汇编，把&quot;保存现场 → 查原因 → 处理 → 恢复现场 → 返回&quot;完整走一遍：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">trap_vector:</span><br><span class="line">    addi  sp, sp, -32        # ① 现场保存：为 8 个寄存器腾出栈空间</span><br><span class="line">    sw    ra, 28(sp)         #    保存返回地址</span><br><span class="line">    sw    t0, 24(sp)</span><br><span class="line">    sw    t1, 20(sp)</span><br><span class="line">    sw    a0, 16(sp)</span><br><span class="line">    csrr  t0, mcause         # ② 读异常原因</span><br><span class="line">    li    t1, 11             #    中断编码 11 = 机器外部中断</span><br><span class="line">    bne   t0, t1, .Lpanic    #    不是外部中断 -&gt; 走错误处理</span><br><span class="line">    lw    t0, 0(x30)         # ③ MMIO：读设备数据寄存器（地址 x30）</span><br><span class="line">    sw    t0, 0(x31)         #    写入内存缓冲区（地址 x31）</span><br><span class="line">    lw    a0, 16(sp)         # ④ 现场恢复（与保存顺序相反）</span><br><span class="line">    lw    t1, 20(sp)</span><br><span class="line">    lw    t0, 24(sp)</span><br><span class="line">    lw    ra, 28(sp)</span><br><span class="line">    addi  sp, sp, 32</span><br><span class="line">    mret                     # ⑤ 返回：PC 回到断点，继续执行</span><br></pre></td></tr></table></figure>
+
+<p>注意一个 RISC-V 的关键设计：<strong>MMIO（内存映射 I&#x2F;O）</strong>。RISC-V 没有独立的 I&#x2F;O 指令，设备寄存器就映射在普通地址空间里，<code>lw</code>&#x2F;<code>sw</code> 一条指令就完成访问——所以上面读设备数据就是一次普通访存。</p>
+<p><code>mcause</code> 常见编码（M 模式）：</p>
+<table>
+<thead>
+<tr>
+<th>mcause</th>
+<th>含义</th>
+<th>mcause</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>指令地址未对齐</td>
+<td>8 &#x2F; 9 &#x2F; 11</td>
+<td>环境调用 ecall（U&#x2F;S&#x2F;M 模式）</td>
+</tr>
+<tr>
+<td>1 &#x2F; 5 &#x2F; 7</td>
+<td>指令 &#x2F; 取数 &#x2F; 存数访问错误</td>
+<td>12 &#x2F; 13 &#x2F; 15</td>
+<td>指令 &#x2F; 取数 &#x2F; 存数页错误</td>
+</tr>
+<tr>
+<td>2</td>
+<td>非法指令</td>
+<td>中断 3</td>
+<td>机器软件中断</td>
+</tr>
+<tr>
+<td>3</td>
+<td>断点</td>
+<td>中断 7</td>
+<td>机器定时器中断</td>
+</tr>
+<tr>
+<td>4 &#x2F; 6</td>
+<td>取数 &#x2F; 存数地址未对齐</td>
+<td>中断 11</td>
+<td>机器外部中断（I&#x2F;O 设备）</td>
+</tr>
+</tbody></table>
+<h2 id="5-C-演示：轮询-vs-中断"><a href="#5-C-演示：轮询-vs-中断" class="headerlink" title="5. C 演示：轮询 vs 中断"></a>5. C 演示：轮询 vs 中断</h2><p>下面这个 C 程序用最朴素的计数器模拟两种 I&#x2F;O：设备读一次需要 300 个&quot;周期&quot;。轮询版 CPU 被锁死在等待循环里；中断版主程序边干正事边等，设备就绪才被&quot;打断&quot;：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> LATENCY 300                     <span class="comment">/* 设备读一次要等 300 个周期 */</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">unsigned</span> <span class="type">char</span> dev_data = <span class="number">0x5A</span>;   <span class="comment">/* 设备数据寄存器（MMIO） */</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* 方式一：轮询读。CPU 从发起请求到拿到数据，被锁死在等待循环里 */</span></span><br><span class="line"><span class="type">static</span> <span class="type">unsigned</span> <span class="type">char</span> <span class="title function_">poll_read</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> cycles = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">while</span> (cycles &lt; LATENCY)            <span class="comment">/* 等价于 while (!dev_ready) */</span></span><br><span class="line">        cycles++;                       <span class="comment">/* 空转：每周期只做&quot;检查&quot;一件事 */</span></span><br><span class="line">    <span class="keyword">return</span> dev_data;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/* 方式二：中断读。主程序不等设备，先干自己的事 */</span></span><br><span class="line"><span class="type">static</span> <span class="type">unsigned</span> <span class="type">char</span> isr_result;</span><br><span class="line"><span class="type">static</span> <span class="type">int</span> main_work = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">isr_read</span><span class="params">(<span class="type">void</span>)</span> &#123;            <span class="comment">/* 中断服务程序：从设备搬走数据 */</span></span><br><span class="line">    isr_result = dev_data;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> a = poll_read();</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[轮询] 读到 0x%02X，CPU 全程锁死 %d 个周期\n&quot;</span>, a, LATENCY);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> (; main_work &lt; LATENCY; main_work++)</span><br><span class="line">        ;                               <span class="comment">/* 主程序边干正事边等设备（重叠） */</span></span><br><span class="line">    isr_read();                         <span class="comment">/* 设备就绪 -&gt; 中断 -&gt; 跳 ISR */</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[中断] 主程序推进 %d 步后才被打断，ISR 取到 0x%02X\n&quot;</span>,</span><br><span class="line">           main_work, isr_result);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>输出（本机 gcc 编译运行结果，与 Python 镜像核验一致）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[轮询] 读到 0x5A，CPU 全程锁死 300 个周期</span><br><span class="line">[中断] 主程序推进 300 步后才被打断，ISR 取到 0x5A</span><br></pre></td></tr></table></figure>
+
+<p>两种方式拿到同样的数据，代价却完全不同：轮询把 300 个周期全部浪费在&quot;查标志位&quot;上；中断让主程序完整推进了 300 步，只在最后被&quot;打断&quot;一下。设备越慢，差距越大——真实磁盘要等几毫秒，轮询浪费的是几百万个周期。</p>
+<h2 id="6-DMA：大块搬运的正确姿势"><a href="#6-DMA：大块搬运的正确姿势" class="headerlink" title="6. DMA：大块搬运的正确姿势"></a>6. DMA：大块搬运的正确姿势</h2><p>中断也不是银弹：每处理一块数据就要一次上下文切换（保存&#x2F;恢复现场），如果数据块小、频率高，中断本身的开销反而吃掉了 CPU。想象网卡每秒收到几十万个包，每个包都打断一次 CPU，那 CPU 就只剩下&quot;保存现场&quot;和&quot;恢复现场&quot;了。</p>
+<p>于是有了 <strong>DMA</strong>（Direct Memory Access，直接存储器访问）：一个专门的数据搬运引擎，把&quot;外设 → 内存&quot;的拷贝从 CPU 手上整个接过去。CPU 只需要配置好源地址、目的地址、长度，然后<strong>转身去干别的</strong>；整块数据搬完，DMA 控制器才发一次中断通知 CPU&quot;完工&quot;。</p>
+<div align="center">
+<svg viewBox="0 0 680 360" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/>
+    </marker>
+    <marker id="arr2b" markerWidth="8" markerHeight="8" refX="2" refY="3" orient="auto">
+      <path d="M6,0 L0,3 L6,6 Z" fill="#6b7280"/>
+    </marker>
+  </defs>
+  <text x="340" y="24" font-size="15" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#1f2937">三种 I/O 方式：数据到 CPU 的代价逐级下降</text>
+  <text x="60" y="62" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1e3a8a">① 轮询 polling</text>
+  <rect x="50" y="74" width="150" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="125" y="99" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">CPU</text>
+  <line x1="200" y1="96" x2="250" y2="96" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="225" y="88" font-size="11" font-family="sans-serif" text-anchor="middle" fill="#6b7280">每周期查状态位</text>
+  <rect x="250" y="74" width="150" height="44" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="325" y="99" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#92400e">设备</text>
+  <line x1="400" y1="96" x2="450" y2="96" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="425" y="88" font-size="11" font-family="sans-serif" text-anchor="middle" fill="#6b7280">就绪后给数据</text>
+  <rect x="450" y="74" width="150" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="525" y="99" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">CPU（空转）</text>
+  <text x="340" y="140" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#374151">等待期间 CPU 被锁死，只能干瞪眼</text>
+  <text x="60" y="172" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1e3a8a">② 中断 interrupt</text>
+  <rect x="50" y="184" width="150" height="44" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="125" y="209" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#92400e">设备</text>
+  <line x1="200" y1="206" x2="250" y2="206" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="225" y="198" font-size="11" font-family="sans-serif" text-anchor="middle" fill="#6b7280">就绪才发 IRQ</text>
+  <rect x="250" y="184" width="150" height="44" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="325" y="209" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">CPU（干正事）</text>
+  <line x1="400" y1="206" x2="450" y2="206" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="425" y="198" font-size="11" font-family="sans-serif" text-anchor="middle" fill="#6b7280">保存现场</text>
+  <rect x="450" y="184" width="150" height="44" rx="8" fill="#d1fae5" stroke="#10b981"/>
+  <text x="525" y="209" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#065f46">ISR 处理</text>
+  <text x="340" y="250" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#374151">等待期间主程序照常推进，每块数据付一次上下文切换</text>
+  <text x="60" y="282" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1e3a8a">③ DMA</text>
+  <rect x="50" y="294" width="120" height="40" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="110" y="317" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#92400e">设备</text>
+  <line x1="170" y1="314" x2="220" y2="314" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="220" y1="314" x2="170" y2="314" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr2b)"/>
+  <rect x="220" y="294" width="140" height="40" rx="8" fill="#c7d2fe" stroke="#6366f1"/>
+  <text x="290" y="317" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#312e81">DMA 控制器</text>
+  <line x1="360" y1="314" x2="410" y2="314" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="410" y1="314" x2="360" y2="314" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arr2b)"/>
+  <rect x="410" y="294" width="120" height="40" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="470" y="317" font-size="13" font-family="sans-serif" text-anchor="middle" fill="#1e3a8a">内存</text>
+  <text x="580" y="309" font-size="12" font-family="sans-serif" fill="#374151">CPU 不碰数据</text>
+  <text x="580" y="329" font-size="12" font-family="sans-serif" fill="#374151">搬完发一次中断</text>
+</svg>
+</div>
+
+
+<p>C++ &#x2F; Java 对照：软件世界里到处是这三种方式的投影。Java 的阻塞式 <code>InputStream.read()</code> 代码最简单，但线程在等待时只能挂着（≈ 轮询）；Linux <code>epoll</code> 的事件回调&quot;就绪才通知&quot;（≈ 中断）；Java NIO 的 Channel + Buffer + <code>mmap</code> 让数据不经过用户态拷贝（≈ DMA）。C++ 里 <code>std::condition_variable</code> 的 wait&#x2F;notify，也正是&quot;保存 → 等待 → 被唤醒恢复&quot;的同步版。</p>
+<h2 id="7-对比表与小结"><a href="#7-对比表与小结" class="headerlink" title="7. 对比表与小结"></a>7. 对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>轮询</th>
+<th>中断</th>
+<th>DMA</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>等待期 CPU</td>
+<td>空转</td>
+<td>干正事</td>
+<td>干正事（更彻底）</td>
+</tr>
+<tr>
+<td>每块数据开销</td>
+<td>0（但全部浪费）</td>
+<td>1 次上下文切换</td>
+<td>接近 0</td>
+</tr>
+<tr>
+<td>适用数据量</td>
+<td>极小</td>
+<td>中 &#x2F; 小块、事件驱动</td>
+<td>大块连续数据</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>最低</td>
+<td>中</td>
+<td>高（需要控制器）</td>
+</tr>
+<tr>
+<td>典型设备</td>
+<td>状态寄存器、低速传感器</td>
+<td>键盘、定时器、串口</td>
+<td>磁盘、网卡、GPU</td>
+</tr>
+</tbody></table>
+<p>🐾 小结：</p>
+<ul>
+<li><strong>轮询 &#x3D; 拿 CPU 的时间换简单；中断 &#x3D; 拿一次上下文切换换并行；DMA &#x3D; 连切换都省掉。</strong></li>
+<li>同步异常（fault &#x2F; trap &#x2F; abort）由当前指令引起，异步异常（中断）由外部事件引起，恢复语义不同：fault 重执行、trap 跳下一条、中断回断点。</li>
+<li>RISC-V 用 <code>mtvec</code> &#x2F; <code>mepc</code> &#x2F; <code>mcause</code> &#x2F; <code>mstatus</code> + <code>mret</code> 五件套完成&quot;保存 → 处理 → 恢复&quot;；MMIO 让设备寄存器直接参与普通访存。</li>
+<li>选哪种 I&#x2F;O，先问一句话：<strong>等待期间 CPU 能去做什么？</strong> 答不上来才用轮询。</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61c0108/">https://hespethorn.github.io/posts/c61c0108/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/RISC-V/">RISC-V</a><a class="post-meta__tags" href="/tags/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BB%84%E6%88%90/">计算机组成</a><a class="post-meta__tags" href="/tags/%E4%B8%AD%E6%96%AD/">中断</a><a class="post-meta__tags" href="/tags/I-O/">I/O</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">740</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">978</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0101/" title="数字逻辑与 C 语言回顾">数字逻辑与 C 语言回顾</a><time datetime="2024-11-03T16:00:00.000Z" title="Created 2024-11-04 00:00:00">2024-11-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0102/" title="RISC-V 汇编基础">RISC-V 汇编基础</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0103/" title="过程调用与栈帧 / 调用约定">过程调用与栈帧 / 调用约定</a><time datetime="2024-11-10T16:00:00.000Z" title="Created 2024-11-11 00:00:00">2024-11-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0104/" title="组合/时序逻辑与流水线">组合/时序逻辑与流水线</a><time datetime="2024-11-13T16:00:00.000Z" title="Created 2024-11-14 00:00:00">2024-11-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0105/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-11-17T16:00:00.000Z" title="Created 2024-11-18 00:00:00">2024-11-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0107/" title="并行与向量化（SIMD）">并行与向量化（SIMD）</a><time datetime="2024-11-24T16:00:00.000Z" title="Created 2024-11-25 00:00:00">2024-11-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0108/" title="中断与 I/O">中断与 I/O</a><time datetime="2024-11-27T16:00:00.000Z" title="Created 2024-11-28 00:00:00">2024-11-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0109/" title="硬件、软件接口">硬件、软件接口</a><time datetime="2024-12-01T16:00:00.000Z" title="Created 2024-12-02 00:00:00">2024-12-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61c0110/" title="性能与 Amdahl 定律">性能与 Amdahl 定律</a><time datetime="2024-12-04T16:00:00.000Z" title="Created 2024-12-05 00:00:00">2024-12-05</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口">秒杀系统高并发优化实战（C++ / Drogon）：3.1 整合 jwt-cpp + Redis 会话：用户注册接口</a><time datetime="2026-09-20T16:00:00.000Z" title="Created 2026-09-21 00:00:00">2026-09-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-ensemble-learning/" title="临渊镇的合议官">临渊镇的合议官</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260902/" title="AI 新闻速递（2026-09-02）">AI 新闻速递（2026-09-02）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
