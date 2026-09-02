@@ -1,0 +1,712 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor） | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="秒杀开始的第 3 秒，接口 RT 突然从 8ms 涨到 200ms，CPU 没满、MySQL 没满——最后定位到是日志在拖后腿：log_level 一开高，每个请求都在 IO 线程上同步写文件，日志磁盘成了隐藏的串行点。Java 生态有 Log4j2 + Disruptor（无锁环形队列）这套成熟异步日志方案，C++ 这边我把等价物自己写了一遍：一个互斥锁版的环形缓冲负责排队，spdlog 负责格">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0206/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="秒杀开始的第 3 秒，接口 RT 突然从 8ms 涨到 200ms，CPU 没满、MySQL 没满——最后定位到是日志在拖后腿：log_level 一开高，每个请求都在 IO 线程上同步写文件，日志磁盘成了隐藏的串行点。Java 生态有 Log4j2 + Disruptor（无锁环形队列）这套成熟异步日志方案，C++ 这边我把等价物自己写了一遍：一个互斥锁版的环形缓冲负责排队，spdlog 负责格">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-08-30T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-02T02:18:27.747Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="spdlog">
+<meta property="article:tag" content="日志">
+<meta property="article:tag" content="环形缓冲">
+<meta property="article:tag" content="异步">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）",
+  "url": "https://hespethorn.github.io/posts/seckcpp0206/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-08-30T16:00:00.000Z",
+  "dateModified": "2026-09-02T02:18:27.747Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0206/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">728</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">956</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>15mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>秒杀开始的第 3 秒，接口 RT 突然从 8ms 涨到 200ms，CPU 没满、MySQL 没满——最后定位到是<strong>日志在拖后腿</strong>：<code>log_level</code> 一开高，每个请求都在 IO 线程上同步写文件，日志磁盘成了隐藏的串行点。Java 生态有 Log4j2 + Disruptor（无锁环形队列）这套成熟异步日志方案，C++ 这边我把等价物<strong>自己写了一遍</strong>：一个互斥锁版的环形缓冲负责排队，spdlog 负责格式化与落盘。本文讲清楚环形缓冲为什么是异步日志的地基、三个关键取舍，以及 <code>seckill-cpp</code> 里刚落地的真实实现。</p>
+<blockquote>
+<p>配套仓库 <code>seckill-cpp</code>(GitHub: <a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn/seckill-cpp)%EF%BC%8C%E6%9C%AC%E6%96%87%E5%AF%B9%E5%BA%94">https://github.com/Hespethorn/seckill-cpp)，本文对应</a> main 分支 <code>v0.1.1</code> 之后的新实现，代码见 <code>src/logging/ring_buffer.h</code>、<code>src/logging/AsyncLogger.h</code>、<code>src/logging/AsyncLogger.cc</code>、<code>src/logging/LogStream.h</code>（流式宏），集成见 <code>src/main.cc</code>、<code>src/service/SeckillService.cc</code>、<code>src/controllers/SeckillController.cc</code>、<code>config.json</code>、<code>CMakeLists.txt</code>、<code>scripts/setup-wsl.sh</code>。</p>
+</blockquote>
+<h2 id="一、异步日志是什么、坑在哪、本质一句话"><a href="#一、异步日志是什么、坑在哪、本质一句话" class="headerlink" title="一、异步日志是什么、坑在哪、本质一句话"></a>一、异步日志是什么、坑在哪、本质一句话</h2><ul>
+<li><strong>是什么</strong>：把&quot;打日志&quot;从<strong>调用线程同步完成</strong>改成<strong>调用线程只入队、后台线程批量落盘</strong>。业务线程的日志成本从&quot;一次文件 IO&quot;降为&quot;一次内存拷贝 + 一个锁&quot;。</li>
+<li><strong>坑在哪</strong>：同步日志的问题平时看不见——IO 线程写文件时磁盘抖动、日志量大、或落盘慢（<code>fsync</code>），任何一个都会把业务延迟直接放大一个量级。而且<strong>日志是慢变量的放大器</strong>：平时日志量小无所谓，秒杀洪峰日志量暴涨，它就在你最忙的时候卡你。</li>
+<li><strong>本质一句话</strong>：<strong>日志必须从&quot;业务路径上的串行 IO&quot;变成&quot;业务路径之外的一条异步旁路&quot;</strong>——队列是这条旁路的地基，队列设计决定峰值时是&quot;丢日志保业务&quot;还是&quot;保日志卡业务&quot;。</li>
+</ul>
+<h2 id="二、环形缓冲：异步日志的地基"><a href="#二、环形缓冲：异步日志的地基" class="headerlink" title="二、环形缓冲：异步日志的地基"></a>二、环形缓冲：异步日志的地基</h2><p>环形缓冲（ring buffer）是一个<strong>固定大小的循环数组</strong>：生产者往&quot;写指针&quot;处放数据，消费者从&quot;读指针&quot;处取数据，指针到末尾绕回开头。相比无界队列，它有两个决定性优点：</p>
+<ol>
+<li><strong>内存上界固定</strong>——<code>capacity</code> 个槽位，启动时就分配好，绝不会因为日志洪峰把内存吃爆；</li>
+<li><strong>天然支持&quot;满则丢&quot;</strong>——数组满了就是满了，取舍明确，不需要在&quot;分配内存&quot;和&quot;阻塞等待&quot;之间纠结。</li>
+</ol>
+<p>结构如下：</p>
+<div align="center">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" font-family="-apple-system, Segoe UI, Microsoft YaHei, sans-serif" width="100%">
+  <text x="340" y="22" text-anchor="middle" font-size="14" font-weight="bold" fill="#1f2d3d">环形缓冲：生产者在写指针处入队，消费者在读指针处批量出队</text>
+  <rect x="30" y="50" width="150" height="70" rx="8" fill="#eef4ff" stroke="#409eff" stroke-width="2"/>
+  <text x="105" y="72" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">生产者</text>
+  <text x="105" y="90" text-anchor="middle" font-size="10.5" fill="#666">Drogon IO 线程 / 协程</text>
+  <text x="105" y="106" text-anchor="middle" font-size="10.5" fill="#666">业务路径上只 push</text>
+  <line x1="180" y1="85" x2="230" y2="85" stroke="#909399" stroke-width="2" marker-end="url(#ah6)"/>
+  <text x="205" y="76" text-anchor="middle" font-size="10" fill="#909399">push</text>
+  <rect x="232" y="40" width="200" height="90" rx="8" fill="#fff7e6" stroke="#e6a23c" stroke-width="2"/>
+  <text x="332" y="58" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">环形缓冲（capacity 槽位）</text>
+  <text x="252" y="78" font-size="10.5" fill="#333">槽0</text>
+  <text x="292" y="78" font-size="10.5" fill="#333">槽1</text>
+  <text x="332" y="78" font-size="10.5" fill="#333">槽2</text>
+  <text x="372" y="78" font-size="10.5" fill="#333">…</text>
+  <text x="412" y="78" font-size="10.5" fill="#333">槽N</text>
+  <text x="262" y="100" font-size="10.5" fill="#c0392b">读指针 → 写指针</text>
+  <text x="262" y="118" font-size="10" fill="#909399">满则丢新（drop-newest）</text>
+  <line x1="432" y1="85" x2="482" y2="85" stroke="#909399" stroke-width="2" marker-end="url(#ah6)"/>
+  <text x="457" y="76" text-anchor="middle" font-size="10" fill="#909399">批量取</text>
+  <rect x="484" y="50" width="166" height="70" rx="8" fill="#eafaf0" stroke="#67c23a" stroke-width="2"/>
+  <text x="567" y="72" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">消费者（后台线程）</text>
+  <text x="567" y="90" text-anchor="middle" font-size="10.5" fill="#666">一次取一批 → spdlog</text>
+  <text x="567" y="106" text-anchor="middle" font-size="10.5" fill="#666">落盘（file sink）</text>
+  <line x1="105" y1="120" x2="105" y2="180" stroke="#909399" stroke-width="2" marker-end="url(#ah6)"/>
+  <rect x="20" y="182" width="170" height="52" rx="8" fill="#fdeef5" stroke="#f56c8e" stroke-width="2"/>
+  <text x="105" y="202" text-anchor="middle" font-size="11" font-weight="bold" fill="#c0392b">队列满的三种策略</text>
+  <text x="105" y="222" text-anchor="middle" font-size="10" fill="#666">丢新 / 丢旧 / 阻塞生产者</text>
+  <line x1="567" y1="120" x2="567" y2="180" stroke="#909399" stroke-width="2" marker-end="url(#ah6)"/>
+  <rect x="470" y="182" width="190" height="52" rx="8" fill="#eafaf0" stroke="#67c23a" stroke-width="2"/>
+  <text x="565" y="202" text-anchor="middle" font-size="11" font-weight="bold" fill="#1f6f2f">spdlog 负责的部分</text>
+  <text x="565" y="222" text-anchor="middle" font-size="10" fill="#666">格式化 + 轮转落盘（5MB × 3）</text>
+  <line x1="340" y1="150" x2="340" y2="180" stroke="#909399" stroke-width="2" marker-end="url(#ah6)"/>
+  <text x="340" y="200" text-anchor="middle" font-size="11" font-weight="bold" fill="#1f2d3d">丢掉的日志去哪了？</text>
+  <text x="340" y="220" text-anchor="middle" font-size="10.5" fill="#666">dropped() 计数 → 监控告警，不静默</text>
+  <text x="20" y="262" font-size="10.5" fill="#909399">分界：环形缓冲（排队 + 丢弃策略）自己实现；格式化与文件 IO（sink）复用 spdlog。</text>
+  <text x="20" y="284" font-size="10.5" fill="#909399">关键收益：业务线程永远不做文件 IO；日志洪峰被队列吸收，峰形被拉平。</text>
+  <defs>
+    <marker id="ah6" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#909399"/>
+    </marker>
+  </defs>
+</svg>
+</div>
+
+<h2 id="三、功能抉择一：自实现环形缓冲-vs-直接用-spdlog-内置异步池"><a href="#三、功能抉择一：自实现环形缓冲-vs-直接用-spdlog-内置异步池" class="headerlink" title="三、功能抉择一：自实现环形缓冲 vs 直接用 spdlog 内置异步池"></a>三、功能抉择一：自实现环形缓冲 vs 直接用 spdlog 内置异步池</h2><p>spdlog 本身就内置了异步模式（<code>spdlog::create_async</code> + 全局 <code>thread_pool</code>，内部也是一个 MPMC 环形缓冲 + 后台线程）。那为什么还要自己写一个？</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>优点</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A. 自实现环形缓冲 + spdlog 只做 sink（选定）</strong></td>
+<td>丢弃策略可控（spdlog 内置只到队列深度，丢弃行为不透明）；能讲透队列语义；与系列&quot;自实现组件&quot;主线一致</td>
+<td>多维护一段并发代码（约 80 行 + 测试）</td>
+</tr>
+<tr>
+<td>B. 直接用 <code>spdlog::create_async</code></td>
+<td>零代码，一行搞定</td>
+<td>队列策略是黑盒；超过 <code>max_queue_size</code> 时 spdlog 的默认行为是<strong>阻塞生产者</strong>——这在秒杀洪峰下不可接受</td>
+</tr>
+</tbody></table>
+<p><strong>选 A，放弃的代价是&quot;维护成本&quot;</strong>：多一段要写测试的并发代码。但换来的是两个决定性收益——<strong>丢弃策略掌握在自己手里</strong>（下面一节），以及<strong>队列行为完全可解释</strong>（面试&#x2F;排障时能讲清楚每一拍发生了什么）。spdlog 我们只用来干它最擅长的事：格式化 + 按大小轮转的文件 sink。</p>
+<h2 id="四、功能抉择二：队列满时，丢新-丢旧-阻塞？"><a href="#四、功能抉择二：队列满时，丢新-丢旧-阻塞？" class="headerlink" title="四、功能抉择二：队列满时，丢新 &#x2F; 丢旧 &#x2F; 阻塞？"></a>四、功能抉择二：队列满时，丢新 &#x2F; 丢旧 &#x2F; 阻塞？</h2><p>这是异步日志最关键的一个决定，三条路：</p>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>行为</th>
+<th>适用</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A. 丢新（drop-newest，选定）</strong></td>
+<td>满则拒绝新日志，计数</td>
+<td>业务吞吐优先的场景</td>
+<td>峰值日志有洞，需靠计数监控</td>
+</tr>
+<tr>
+<td>B. 丢旧（drop-oldest）</td>
+<td>满则覆盖最老的日志</td>
+<td>要&quot;最新的现场&quot;</td>
+<td>历史被覆盖，对账不可靠</td>
+</tr>
+<tr>
+<td>C. 阻塞生产者</td>
+<td>满则等消费者</td>
+<td>日志<strong>一条都不能少</strong></td>
+<td>业务线程被日志拖死，等于把雪崩引回业务</td>
+</tr>
+</tbody></table>
+<p><strong>选 A，放弃的代价是&quot;日志完整性&quot;</strong>：秒杀场景的日志不是审计账本，是<strong>监控信号</strong>——信号丢了可以靠计数感知&quot;丢了多少&quot;，业务卡死就什么都感知不到了。所以：业务吞吐 &gt; 日志完整性。配套动作是 <code>dropped()</code> 计数必须暴露给监控（<code>/api/health</code> 里可以带），让&quot;丢日志&quot;本身成为可告警的事件，而不是静默发生。</p>
+<h2 id="五、功能抉择三：互斥锁版-vs-无锁队列"><a href="#五、功能抉择三：互斥锁版-vs-无锁队列" class="headerlink" title="五、功能抉择三：互斥锁版 vs 无锁队列"></a>五、功能抉择三：互斥锁版 vs 无锁队列</h2><p>Disruptor 的精髓是无锁（CAS + 屏障），spdlog 的 thread_pool 也是无锁环形队列。我这个版本<strong>用的是互斥锁</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>互斥锁版（选定）</th>
+<th>无锁版（Disruptor &#x2F; spdlog pool）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>正确性</td>
+<td>天然安全，逻辑直白</td>
+<td>需要极小心地设计内存序（acquire&#x2F;release）、ABA、伪共享</td>
+</tr>
+<tr>
+<td>吞吐</td>
+<td>受锁竞争限制</td>
+<td>高一个量级（CAS 级）</td>
+</tr>
+<tr>
+<td>调试成本</td>
+<td>低</td>
+<td>高，出 bug 极难复现</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>日志写入频率低（warn 级别）</td>
+<td>日志写入频率极高的场景</td>
+</tr>
+</tbody></table>
+<p><strong>选互斥锁，放弃的代价是&quot;理论吞吐上限&quot;</strong>。判断依据很简单：<strong>日志级别默认 <code>warn</code></strong>，秒杀热路径只在异常时打日志，写入频率低到锁竞争可以忽略；无锁队列在低竞争下的优势根本发挥不出来，却要把最难的并发正确性问题背在身上。<strong>等压测数据显示&quot;日志成了瓶颈&quot;，再换无锁</strong>——这是系列一贯的路线：不预支复杂度，用数据决定要不要买。</p>
+<h2 id="六、真实实现（仓库-main-分支，日志调用宏化后）"><a href="#六、真实实现（仓库-main-分支，日志调用宏化后）" class="headerlink" title="六、真实实现（仓库 main 分支，日志调用宏化后）"></a>六、真实实现（仓库 <code>main</code> 分支，日志调用宏化后）</h2><p>三个文件，先看环形缓冲本体（<code>src/logging/ring_buffer.h</code>，模板类，核心语义）：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, std::<span class="type">size_t</span> Capacity&gt;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RingBuffer</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="comment">// 满则丢（drop-newest）：返回 false 表示本次被丢弃。</span></span><br><span class="line">    <span class="function"><span class="type">bool</span> <span class="title">push</span><span class="params">(T item)</span> </span>&#123;</span><br><span class="line">        <span class="function">std::lock_guard&lt;std::mutex&gt; <span class="title">lk</span><span class="params">(mu_)</span></span>;</span><br><span class="line">        <span class="keyword">if</span> (count_ == Capacity) &#123;</span><br><span class="line">            ++dropped_;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        buf_[(head_ + count_) % Capacity] = std::<span class="built_in">move</span>(item);</span><br><span class="line">        ++count_;</span><br><span class="line">        cv_.<span class="built_in">notify_one</span>();</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 阻塞直到有数据；返回本次取出的条数（0 = 已 stop 且队列已空）。</span></span><br><span class="line">    <span class="function">std::<span class="type">size_t</span> <span class="title">waitAndPopBatch</span><span class="params">(std::array&lt;T, Capacity&gt; &amp;out)</span> </span>&#123;</span><br><span class="line">        <span class="function">std::unique_lock&lt;std::mutex&gt; <span class="title">lk</span><span class="params">(mu_)</span></span>;</span><br><span class="line">        cv_.<span class="built_in">wait</span>(lk, [<span class="keyword">this</span>] &#123; <span class="keyword">return</span> count_ &gt; <span class="number">0</span> || stop_; &#125;);</span><br><span class="line">        std::<span class="type">size_t</span> n = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">while</span> (count_ &gt; <span class="number">0</span>) &#123;</span><br><span class="line">            out[n] = std::<span class="built_in">move</span>(buf_[head_]);</span><br><span class="line">            head_ = (head_ + <span class="number">1</span>) % Capacity;</span><br><span class="line">            --count_;</span><br><span class="line">            ++n;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> n;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ... requestStop() / dropped() 略</span></span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    std::array&lt;T, Capacity&gt; buf_&#123;&#125;;</span><br><span class="line">    std::<span class="type">size_t</span> head_ = <span class="number">0</span>, count_ = <span class="number">0</span>, dropped_ = <span class="number">0</span>;</span><br><span class="line">    <span class="type">bool</span> stop_ = <span class="literal">false</span>;</span><br><span class="line">    <span class="keyword">mutable</span> std::mutex mu_;</span><br><span class="line">    std::condition_variable cv_;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>两个细节值得说：</p>
+<ul>
+<li><strong><code>waitAndPopBatch</code> 一次取空</strong>：消费者（后台线程）被唤醒一次就拿走全部，而不是逐条取。这是&quot;批量&quot;二字的来源——落盘以批为单位，写放大被均摊，线程切换次数被压到最低。</li>
+<li><strong>元素用 <code>std::move</code> 搬移</strong>：环形缓冲里存的是 <code>LogMessage&#123;level, std::string&#125;</code>，入队&#x2F;出队全程零拷贝（只搬 <code>std::string</code> 指针）。</li>
+</ul>
+<p>日志器本体（<code>src/logging/AsyncLogger.h</code> &#x2F; <code>.cc</code>）的关键路径：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="type">void</span> <span class="title">AsyncLogger::start</span><span class="params">(<span class="type">const</span> std::string &amp;file, spdlog::level::level_enum level)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (running_.<span class="built_in">exchange</span>(<span class="literal">true</span>)) <span class="keyword">return</span>;  <span class="comment">// 幂等</span></span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        std::filesystem::<span class="built_in">create_directories</span>(<span class="string">&quot;logs&quot;</span>);   <span class="comment">// file sink 不建目录，先补上</span></span><br><span class="line">        <span class="keyword">auto</span> fileSink =</span><br><span class="line">            std::<span class="built_in">make_shared</span>&lt;spdlog::sinks::rotating_file_sink_mt&gt;(</span><br><span class="line">                file, <span class="number">5</span> * <span class="number">1024</span> * <span class="number">1024</span>, <span class="number">3</span>);             <span class="comment">// 5MB × 3 轮转</span></span><br><span class="line">        fileLogger_ = std::<span class="built_in">make_shared</span>&lt;spdlog::logger&gt;(<span class="string">&quot;seckill&quot;</span>, std::<span class="built_in">move</span>(fileSink));</span><br><span class="line">        fileLogger_-&gt;<span class="built_in">set_level</span>(level);</span><br><span class="line">        fileLogger_-&gt;<span class="built_in">flush_on</span>(spdlog::level::warn);     <span class="comment">// warn 及以上立即 flush</span></span><br><span class="line">    &#125; <span class="built_in">catch</span> (<span class="type">const</span> spdlog::spdlog_ex &amp;e) &#123;</span><br><span class="line">        fileLogger_ = spdlog::<span class="built_in">stderr_color_mt</span>(<span class="string">&quot;seckill_fallback&quot;</span>);  <span class="comment">// 降级不丢日志</span></span><br><span class="line">        fileLogger_-&gt;<span class="built_in">error</span>(<span class="string">&quot;AsyncLogger: fallback to stderr, &#123;&#125;&quot;</span>, e.<span class="built_in">what</span>());</span><br><span class="line">    &#125;</span><br><span class="line">    worker_ = std::<span class="built_in">thread</span>([<span class="keyword">this</span>] &#123; <span class="built_in">workerLoop</span>(); &#125;);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">AsyncLogger::workerLoop</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::array&lt;LogMessage, kCapacity&gt; batch;</span><br><span class="line">    <span class="keyword">for</span> (;;) &#123;</span><br><span class="line">        std::<span class="type">size_t</span> n = buf_.<span class="built_in">waitAndPopBatch</span>(batch);</span><br><span class="line">        <span class="keyword">if</span> (n == <span class="number">0</span>) <span class="keyword">break</span>;                              <span class="comment">// stop 且排空</span></span><br><span class="line">        <span class="keyword">for</span> (std::<span class="type">size_t</span> i = <span class="number">0</span>; i &lt; n; ++i) &#123;</span><br><span class="line">            fileLogger_-&gt;<span class="built_in">log</span>(batch[i].level, <span class="string">&quot;&#123;&#125;&quot;</span>, batch[i].msg);  <span class="comment">// &quot;&#123;&#125;&quot; 防花括号被当格式串</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">AsyncLogger::log</span><span class="params">(spdlog::level::level_enum lvl, std::string msg)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (!running_.<span class="built_in">load</span>(std::memory_order_relaxed)) <span class="keyword">return</span>;</span><br><span class="line">    buf_.<span class="built_in">push</span>(LogMessage&#123;lvl, std::<span class="built_in">move</span>(msg)&#125;);         <span class="comment">// 满则丢，业务线程不阻塞</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>三个值得注意的工程细节：</p>
+<ol>
+<li><strong><code>&quot;&#123;&#125;&quot;</code> 显式占位</strong>：<code>logger-&gt;log(level, msg)</code> 的第二个参数会被 spdlog 当<strong>格式串</strong>解析，消息里若含 <code>&#123;&#125;</code> 会触发 format error。写成 <code>log(level, &quot;&#123;&#125;&quot;, msg)</code> 把消息当参数，彻底规避。</li>
+<li><strong><code>flush_on(warn)</code></strong>：warn 及以上立即 flush——关键时刻（售罄、重复下单、DB 异常）的日志不能留在缓冲区里等凑批，进程崩溃时就是&quot;最后一条日志&quot;。</li>
+<li><strong>降级不丢日志</strong>：打不开日志文件（目录无权限等）时退化为 stderr，绝不静默吞掉。</li>
+</ol>
+<p>集成到启动流程（<code>src/main.cc</code>，配置走 Drogon 的 <code>custom_config</code>）：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">drogon::<span class="built_in">app</span>().<span class="built_in">loadConfigFile</span>(<span class="string">&quot;./config.json&quot;</span>);</span><br><span class="line"></span><br><span class="line"><span class="comment">// 异步日志配置来自 config.json 的 custom_config.async_log 段</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="type">const</span> <span class="keyword">auto</span> &amp;cc = drogon::<span class="built_in">app</span>().<span class="built_in">getCustomConfig</span>();</span><br><span class="line">    std::string logFile = <span class="string">&quot;./logs/seckill.log&quot;</span>;</span><br><span class="line">    std::string logLevel = <span class="string">&quot;warn&quot;</span>;</span><br><span class="line">    <span class="keyword">if</span> (cc.<span class="built_in">isMember</span>(<span class="string">&quot;async_log&quot;</span>)) &#123;</span><br><span class="line">        <span class="type">const</span> <span class="keyword">auto</span> &amp;al = cc[<span class="string">&quot;async_log&quot;</span>];</span><br><span class="line">        <span class="keyword">if</span> (al.<span class="built_in">isMember</span>(<span class="string">&quot;file&quot;</span>))  logFile = al[<span class="string">&quot;file&quot;</span>].<span class="built_in">asString</span>();</span><br><span class="line">        <span class="keyword">if</span> (al.<span class="built_in">isMember</span>(<span class="string">&quot;level&quot;</span>)) logLevel = al[<span class="string">&quot;level&quot;</span>].<span class="built_in">asString</span>();</span><br><span class="line">    &#125;</span><br><span class="line">    seckill::log::AsyncLogger::<span class="built_in">instance</span>().<span class="built_in">start</span>(</span><br><span class="line">        logFile, spdlog::level::<span class="built_in">from_str</span>(logLevel));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>配套配置（<code>config.json</code> 新增段）：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">&quot;custom_config&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;async_log&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;file&quot;</span><span class="punctuation">:</span> <span class="string">&quot;./logs/seckill.log&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;level&quot;</span><span class="punctuation">:</span> <span class="string">&quot;warn&quot;</span> <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>构建接线：<code>CMakeLists.txt</code> 加 <code>find_package(spdlog REQUIRED)</code>、<code>src/CMakeLists.txt</code> 加 <code>logging/AsyncLogger.cc</code> 与 <code>spdlog::spdlog</code>，<code>scripts/setup-wsl.sh</code> 的 apt 安装列表加 <code>libspdlog-dev</code>。</p>
+<p>业务调用层先补一层<strong>流式宏</strong>（<code>src/logging/LogStream.h</code>），业务代码才从&quot;拼字符串 + 调实例&quot;两步，收敛成&quot;一行流式宏&quot;：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/logging/LogStream.h —— 一个轻量流式包装：析构即提交</span></span><br><span class="line"><span class="keyword">namespace</span> seckill::log &#123;</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LogStream</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="keyword">explicit</span> <span class="title">LogStream</span><span class="params">(spdlog::level::level_enum lvl)</span> : lvl_(lvl) &#123;</span>&#125;</span><br><span class="line">    ~<span class="built_in">LogStream</span>() &#123;</span><br><span class="line">        <span class="comment">// 析构即提交：临时对象在语句结束时析构，把拼好的字符串 push 进环形缓冲</span></span><br><span class="line">        AsyncLogger::<span class="built_in">instance</span>().<span class="built_in">log</span>(lvl_, oss_.<span class="built_in">str</span>());</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">LogStream</span>(<span class="type">const</span> LogStream &amp;) = <span class="keyword">delete</span>;            <span class="comment">// 禁止拷贝/移动：必须是语句内临时量</span></span><br><span class="line">    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</span><br><span class="line">    LogStream &amp;<span class="keyword">operator</span>&lt;&lt;(T &amp;&amp;v) &#123; oss_ &lt;&lt; std::forward&lt;T&gt;(v); <span class="keyword">return</span> *<span class="keyword">this</span>; &#125;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    spdlog::level::level_enum lvl_;</span><br><span class="line">    std::ostringstream oss_;</span><br><span class="line">&#125;;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 宏：SK_ 前缀避 Drogon 自带 LOG_* 重定义；enabled() 先做级别短路</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG(level)                                                     \</span></span><br><span class="line"><span class="meta">    <span class="keyword">if</span> (!::seckill::log::AsyncLogger::instance().enabled(level)) &#123;        \</span></span><br><span class="line"><span class="meta">    &#125; <span class="keyword">else</span>                                                                \</span></span><br><span class="line"><span class="meta">        ::seckill::log::LogStream(level)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG_TRACE    SK_LOG(spdlog::level::trace)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG_DEBUG    SK_LOG(spdlog::level::debug)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG_INFO     SK_LOG(spdlog::level::info)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG_WARN     SK_LOG(spdlog::level::warn)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG_ERROR    SK_LOG(spdlog::level::err)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SK_LOG_CRITICAL SK_LOG(spdlog::level::critical)</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 业务侧（src/service/SeckillService.cc）—— 流式、类型安全、不用 std::to_string</span></span><br><span class="line"><span class="keyword">if</span> (result.<span class="built_in">affectedRows</span>() == <span class="number">0</span>) &#123;</span><br><span class="line">    tx-&gt;<span class="built_in">rollback</span>();</span><br><span class="line">    SK_LOG_WARN &lt;&lt; <span class="string">&quot;SOLD_OUT skuId=&quot;</span> &lt;&lt; skuId;   <span class="comment">// 等价于旧的 instance().log(warn, ...)，但更顺手</span></span><br><span class="line">    <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;SOLD_OUT&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>两个关键设计，对应两个此前踩过的坑：</p>
+<ol>
+<li><strong><code>SK_</code> 前缀避重定义</strong>：Drogon&#x2F;trantor 已经提供全局的 <code>LOG_INFO</code>&#x2F;<code>LOG_WARN</code>&#x2F;<code>LOG_ERROR</code> 等<strong>同步</strong>宏，业务侧再定义同名宏会直接编译冲突。<code>SK_</code> 前缀既避开冲突，又一眼能区分&quot;走异步环形缓冲的业务日志&quot;与&quot;Drogon 框架自己的同步日志&quot;。</li>
+<li><strong><code>enabled()</code> 级别短路</strong>：<code>AsyncLogger::enabled(lvl)</code> 在拼字符串之前先问一句&quot;这条要不要打&quot;——不打就整条语句跳过，<strong>连字符串都不拼</strong>。秒杀洪峰期，如果每条 info&#x2F;debug 都先拼完、再在后台被级别过滤掉，白白付出的 CPU 会直接吃业务线程的时间片；短路把这笔浪费在源头掐掉。（<code>enabled()</code> 用的是 atomic 读 <code>level_</code>，业务线程无锁。）</li>
+</ol>
+<blockquote>
+<p>唯一例外是 <code>main.cc</code> 里 <code>getDbClient</code> 返回空的分支：那里刻意用 Drogon 的同步 <code>LOG_FATAL</code> 而非异步 <code>SK_LOG_*</code>，因为进程马上 <code>exit</code>，异步日志还躺在环形缓冲里来不及被后台线程取走，致命错误必须同步落盘，否则现场直接丢失。</p>
+</blockquote>
+<p>真实调用点（<code>src/service/SeckillService.cc</code> + <code>src/controllers/SeckillController.cc</code>，秒杀热路径的业务告警统一走异步通道）：</p>
+<h2 id="七、与-Log4j2-Disruptor-对照（中性）"><a href="#七、与-Log4j2-Disruptor-对照（中性）" class="headerlink" title="七、与 Log4j2 + Disruptor 对照（中性）"></a>七、与 Log4j2 + Disruptor 对照（中性）</h2><table>
+<thead>
+<tr>
+<th>组件</th>
+<th>Java 生态（Log4j2 + Disruptor）</th>
+<th>本实现（C++）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>队列</td>
+<td>Disruptor 无锁环形缓冲（Sequence + 屏障，CAS）</td>
+<td>自实现互斥锁版环形缓冲（<code>ring_buffer.h</code>）</td>
+</tr>
+<tr>
+<td>落盘</td>
+<td>Log4j2 appender（异步批量）</td>
+<td>spdlog rotating_file_sink（5MB × 3 轮转）</td>
+</tr>
+<tr>
+<td>满队列策略</td>
+<td>可配（丢&#x2F;阻塞&#x2F;超时）</td>
+<td>丢新（drop-newest）+ <code>dropped()</code> 计数</td>
+</tr>
+<tr>
+<td>核心取舍</td>
+<td>无锁是亮点也是复杂度来源</td>
+<td>低竞争场景锁足够，正确性优先</td>
+</tr>
+</tbody></table>
+<p>本质上是<strong>同一套异步日志范式</strong>（生产者入队 + 消费者批量落盘），差异在&quot;无锁化&quot;这一步做不做。秒杀阶段一不追极致日志吞吐，锁版完全够用；哪天日志真的成了瓶颈，把 <code>RingBuffer</code> 换成无锁实现、<code>AsyncLogger</code> 一行不用改——<strong>队列语义与落盘职责的分离，就是为了让这一步替换只发生在内部</strong>。</p>
+<h2 id="八、可运行验证步骤"><a href="#八、可运行验证步骤" class="headerlink" title="八、可运行验证步骤"></a>八、可运行验证步骤</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1) 一次性装依赖（含 libspdlog-dev），然后编译</span></span><br><span class="line">bash scripts/setup-wsl.sh</span><br><span class="line">bash scripts/build-wsl.sh</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2) 启动并确认异步日志器起来了</span></span><br><span class="line">./build/src/seckill-cpp</span><br><span class="line"><span class="comment"># 启动日志应含: async logger started: file=./logs/seckill.log level=warn capacity=4096</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 3) 触发一次售罄，确认日志真的落盘</span></span><br><span class="line"><span class="comment">#    先把库存置 0：mysql -h127.0.0.1 -P3306 -useckill -pseckill seckill \</span></span><br><span class="line"><span class="comment">#      -e &quot;UPDATE seckill_sku SET stock=0 WHERE id=1;&quot;</span></span><br><span class="line">curl -s -X POST localhost:8080/api/seckill \</span><br><span class="line">  -H <span class="string">&#x27;Content-Type: application/json&#x27;</span> -d <span class="string">&#x27;&#123;&quot;userId&quot;:1001,&quot;skuId&quot;:1&#125;&#x27;</span></span><br><span class="line"><span class="built_in">tail</span> -f logs/seckill.log</span><br><span class="line"><span class="comment"># 期望看到: [2026-.. ..:..:..] [warning] SOLD_OUT skuId=1</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 4) 压测下验证&quot;日志不拖业务&quot;：对比开/关异步日志的 RT 分布</span></span><br><span class="line">bash scripts/smoke-seckill.sh 100 10 1   <span class="comment"># 业务路径照常不超卖</span></span><br></pre></td></tr></table></figure>
+
+<p>验证重点不是&quot;日志能打出来&quot;，而是 <strong><code>smoke-seckill.sh</code> 100 并发抢 10 件依然不超卖、RT 没有因日志而抖动</strong>——异步日志的收益就在这条命令的结果里。</p>
+<h2 id="九、日志方案取舍总结"><a href="#九、日志方案取舍总结" class="headerlink" title="九、日志方案取舍总结"></a>九、日志方案取舍总结</h2><table>
+<thead>
+<tr>
+<th>决策点</th>
+<th>选定</th>
+<th>放弃的代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>队列实现</td>
+<td>自实现环形缓冲（mutex 版）</td>
+<td>多维护 ~80 行并发代码 + 测试</td>
+</tr>
+<tr>
+<td>满队列策略</td>
+<td>丢新（drop-newest）</td>
+<td>峰值日志有洞，靠计数监控补</td>
+</tr>
+<tr>
+<td>落盘</td>
+<td>spdlog rotating_file_sink（5MB × 3）</td>
+<td>多一个 apt 依赖（libspdlog-dev）</td>
+</tr>
+<tr>
+<td>级别过滤</td>
+<td>默认 warn + <code>flush_on(warn)</code></td>
+<td>warn 以下消息只进 Drogon 内置日志通道</td>
+</tr>
+<tr>
+<td>无锁化</td>
+<td>暂不做，数据说话</td>
+<td>理论上限低于 Disruptor 类方案</td>
+</tr>
+<tr>
+<td>队列与落盘</td>
+<td>职责分离（换实现不动上层）</td>
+<td>多一层抽象</td>
+</tr>
+</tbody></table>
+<p>一句话收尾：<strong>异步日志的本质是把&quot;日志 IO&quot;从业务路径上摘出去，环形缓冲负责排队与丢弃策略，spdlog 负责格式化与落盘</strong>——两者边界清晰，替换任一实现都不影响另一端。这套结构与 Log4j2+Disruptor 同源，但每一行取舍都是按秒杀场景自己的量级做的。</p>
+<blockquote>
+<p>配套仓库：<code>https://github.com/Hespethorn/seckill-cpp</code>（本文对应 <code>main</code> 分支最新实现，日志模块 <code>src/logging/</code>（含 <code>ring_buffer.h</code> + <code>AsyncLogger.*</code> + <code>LogStream.h</code>）、集成 <code>src/main.cc</code> + <code>src/service/SeckillService.cc</code> + <code>src/controllers/SeckillController.cc</code>、配置 <code>config.json</code>）。本系列是作者个人的 C++ 秒杀系统实战记录，所有方案、代码与踩坑均为原创。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0206/">https://hespethorn.github.io/posts/seckcpp0206/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/spdlog/">spdlog</a><a class="post-meta__tags" href="/tags/%E6%97%A5%E5%BF%97/">日志</a><a class="post-meta__tags" href="/tags/%E7%8E%AF%E5%BD%A2%E7%BC%93%E5%86%B2/">环形缓冲</a><a class="post-meta__tags" href="/tags/%E5%BC%82%E6%AD%A5/">异步</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">728</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">956</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：数据库表设计</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-multi-armed-bandit/" title="碧澜港的守宴人">碧澜港的守宴人</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260831/" title="AI 新闻速递｜2026-08-31：Copilot Autopilot 正式 GA、AI 编程工具并购潮、Claude Code 反超 Copilot、人形机器人规模化落地、自主 DevOps 智能体登场">AI 新闻速递｜2026-08-31：Copilot Autopilot 正式 GA、AI 编程工具并购潮、Claude Code 反超 Copilot、人形机器人规模化落地、自主 DevOps 智能体登场</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/multi-lang-namespace/" title="命名空间三语言对比：C++ namespace、Python 模块与 Java 包">命名空间三语言对比：C++ namespace、Python 模块与 Java 包</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
