@@ -14,7 +14,13 @@ hexo.extend.helper.register('groupPosts', function () {
 
   const sortPosts = posts => {
     const { orderBy = 'date', order = 1 } = this.theme.aside.card_post_series
-    if (orderBy === 'title') return posts.sort('title', order)
+    if (orderBy === 'title') {
+      const collator = new Intl.Collator('zh-Hans-CN', { numeric: true })
+      return posts.toArray().sort((a, b) => {
+        const cmp = collator.compare(a.title || '', b.title || '')
+        return cmp * order
+      })
+    }
     return posts.sort('date', order)
   }
 
