@@ -1,0 +1,722 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="阶段一我们打出基线 QPS≈371 &#x2F; 0 超卖，根因钉死在 seckill_sku 单行锁串行化——那是写接口（下单）的问题。但同一时刻还有两个读接口在被反复调用：一万个用户同时刷新列表，MySQL 就把同一条 SELECT 执行一万遍，返回一模一样的结果。读请求和写请求是两种完全不同的动物，这一章我们专门收拾读接口。  本文是「秒杀系统（C++ &#x2F; Drogon）」系列的第">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：5.1 缓存 Key 设计规范与接口基线压测">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0501/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="阶段一我们打出基线 QPS≈371 &#x2F; 0 超卖，根因钉死在 seckill_sku 单行锁串行化——那是写接口（下单）的问题。但同一时刻还有两个读接口在被反复调用：一万个用户同时刷新列表，MySQL 就把同一条 SELECT 执行一万遍，返回一模一样的结果。读请求和写请求是两种完全不同的动物，这一章我们专门收拾读接口。  本文是「秒杀系统（C++ &#x2F; Drogon）」系列的第">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-02T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-03T09:13:17.970Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="缓存">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Redis">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="高并发">
+<meta property="article:tag" content="压测">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测",
+  "url": "https://hespethorn.github.io/posts/seckcpp0501/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-02T16:00:00.000Z",
+  "dateModified": "2026-09-03T09:13:17.970Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0501/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">763</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1022</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">40</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>阶段一我们打出基线 <strong>QPS≈371 &#x2F; 0 超卖</strong>，根因钉死在 <code>seckill_sku</code> 单行锁串行化——那是<strong>写</strong>接口（下单）的问题。但同一时刻还有两个<strong>读</strong>接口在被反复调用：一万个用户同时刷新列表，MySQL 就把同一条 <code>SELECT</code> 执行一万遍，返回一模一样的结果。读请求和写请求是两种完全不同的动物，这一章我们专门收拾读接口。</p>
+<blockquote>
+<p>本文是「秒杀系统（C++ &#x2F; Drogon）」系列的第五章第一篇。配套资产：<code>docs/CACHE-DESIGN.md</code>（缓存规范全文）、<code>src/service/CacheKeys.h</code>（Key 唯一构造入口）、<code>src/service/SkuCache.*</code>（Redis 异步封装）、<code>scripts/read-bench.sh</code> + <code>jmeter/read-baseline.jmx</code>（读接口基线压测）。代码对应阶段二 <code>v0.2.x</code>。真实编译与压测在 WSL（i7-14650HX + 本地 MySQL + 本地 Redis）完成。</p>
+</blockquote>
+<h2 id="一、为什么现在才加缓存，加在哪"><a href="#一、为什么现在才加缓存，加在哪" class="headerlink" title="一、为什么现在才加缓存，加在哪"></a>一、为什么现在才加缓存，加在哪</h2><ul>
+<li><strong>是什么</strong>：读接口（<code>GET /api/seckill/list</code>、<code>GET /api/seckill/&#123;skuId&#125;</code>）的结果是<strong>重复、允许短暂陈旧、不参与正确性判断</strong>的——商品列表一秒内被查一万次，返回的也还是那 100 行。这类请求是缓存的最佳对象。</li>
+<li><strong>坑</strong>：若不加缓存，洪峰下 MySQL 会把同一条 SQL 执行成千上万遍，连接池和行锁被读流量占满，反而连累本就脆弱的写链路。</li>
+<li><strong>本质一句话</strong>：<strong>缓存只加在读接口；写接口（下单）缓存替代不了真相源，它只多一个动作——事务提交成功后让缓存失效</strong>。下单必须落在 MySQL 上拿行锁做原子扣减，缓存挡不了超卖。</li>
+</ul>
+<p>读接口的特点决定了它的缓存是「加速层」而非「真相源」：缓存坏了、慢了、不存在，最坏结果只是「多查一次库」，没有任何正确性损失。这一点直接决定了后面所有的失败策略（fail-open）。</p>
+<h2 id="二、Key-设计规范：六条规则及其代价"><a href="#二、Key-设计规范：六条规则及其代价" class="headerlink" title="二、Key 设计规范：六条规则及其代价"></a>二、Key 设计规范：六条规则及其代价</h2><p>缓存出问题时，最先要回答的是「到底有哪些 key、长什么样、能不能安全删」。如果 key 散落在各业务代码里用字符串硬拼，想清理只能 <code>KEYS *sku*</code>（生产禁用）或整库 <code>FLUSHDB</code>（误伤登录态）。所以本项目把 key 拼接收敛到一个文件——<code>CacheKeys.h</code> 就是缓存的「目录」：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/CacheKeys.h —— Key 的唯一构造入口（四段式，冒号分隔）</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CacheKeys</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="comment">// 商品列表（全量，不分页）</span></span><br><span class="line">    <span class="function">std::string <span class="title">list</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> <span class="built_in">base</span>() + <span class="string">&quot;:list&quot;</span>; &#125;</span><br><span class="line">    <span class="comment">// 单个商品详情</span></span><br><span class="line">    <span class="function">std::string <span class="title">item</span><span class="params">(<span class="type">int64_t</span> skuId)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">base</span>() + <span class="string">&quot;:item:&quot;</span> + std::<span class="built_in">to_string</span>(skuId);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 库存计数（阶段四 7.2 启用，当前只占位不读写）</span></span><br><span class="line">    <span class="function">std::string <span class="title">stock</span><span class="params">(<span class="type">int64_t</span> skuId)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">base</span>() + <span class="string">&quot;:stock:&quot;</span> + std::<span class="built_in">to_string</span>(skuId);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 运维通配：给 SCAN 用（生产禁用 KEYS）</span></span><br><span class="line">    <span class="function">std::string <span class="title">itemPattern</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> <span class="built_in">base</span>() + <span class="string">&quot;:item:*&quot;</span>; &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    <span class="function">std::string <span class="title">base</span><span class="params">()</span> <span class="type">const</span> </span>&#123; <span class="keyword">return</span> prefix_ + <span class="string">&quot;:sku:&quot;</span> + version_; &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>模板就是 <code>&lt;prefix&gt;:&lt;biz&gt;:&lt;version&gt;:&lt;type&gt;[:&lt;id&gt;]</code>，落到实际 key：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">seckill:sku:v1:list          # 商品列表（全量）</span><br><span class="line">seckill:sku:v1:item:1001     # 单个商品详情</span><br><span class="line">seckill:sku:v1:stock:1001    # 库存计数（阶段四预留）</span><br></pre></td></tr></table></figure>
+
+<p>规范六条，违反任何一条都会在某个时刻变成事故：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>规则</th>
+<th>违反之后会发生什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>必须带业务前缀</strong></td>
+<td>同 Redis 上还住着 <code>sess:</code>&#x2F;<code>sms:</code>&#x2F;<code>login:</code>&#x2F;<code>reg:ip:</code>，无前缀既没法按类清理，排查时也认不出归属</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>必须带结构版本号</strong></td>
+<td>JSON 结构改了不升版本，发布瞬间旧结构被新代码读到 → 解析全崩。升 v2 则新旧 key 并存到自然过期，<strong>不需要清库</strong>（清库 &#x3D; 主动制造一次缓存雪崩）</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>全小写、尽量短</strong></td>
+<td>key 本身占内存；100 万个 key 每个多 10 字节就是 10MB</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>绝不放易变维度</strong></td>
+<td>把 TTL、时间戳、userId 拼进 key，命中率直接趋零、内存无上限增长——新手最常踩的一条</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>不分页就不带分页参数</strong></td>
+<td>列表缓存是全量（<code>LIMIT 100</code>）；真要分页再开 <code>:list:&#123;page&#125;</code>，且必须限死最大页数，否则攻击者可打爆内存</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>冒号分段</strong></td>
+<td>运维可 <code>SCAN 0 MATCH seckill:sku:v1:item:*</code> 精确定位一类 key</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>历史包袱要说清</strong>：前 8 个 key（<code>sess:</code>&#x2F;<code>sms:</code>&#x2F;<code>login:</code>&#x2F;<code>reg:ip:</code>）是第三章登录模块引入的，没有 <code>seckill:</code> 前缀、没有版本号。这是既有事实，本次不改动它们（改了要同时动会话、验证码、限流四个模块，收益为零、风险不小）。规矩是<strong>从第五章起新增的 key 一律遵守新规范</strong>，历史 key 在阶段四统一迁移。</p>
+</blockquote>
+<h2 id="三、Value-设计：紧凑-JSON-字符串，不存-Hash，且不长大-key"><a href="#三、Value-设计：紧凑-JSON-字符串，不存-Hash，且不长大-key" class="headerlink" title="三、Value 设计：紧凑 JSON 字符串，不存 Hash，且不长大 key"></a>三、Value 设计：紧凑 JSON 字符串，不存 Hash，且不长大 key</h2><p><strong>存紧凑 JSON 字符串</strong>（不是 Hash）：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>读</th>
+<th>写</th>
+<th>为什么不选</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>String（紧凑 JSON）</strong> ✅</td>
+<td>1 次 <code>GET</code> 拿到完整对象</td>
+<td>整值覆盖 &#x2F; <code>DEL</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Hash（<code>HGETALL</code>）</td>
+<td>1 次 <code>HGETALL</code> 再拼装</td>
+<td>可字段级更新</td>
+<td>商品详情是<strong>整体失效</strong>语义，字段级更新会造出&quot;改了 name 忘了改 stock&quot;的半更新态；且 <code>HGETALL</code> 对大 hash 同样是 O(n)</td>
+</tr>
+</tbody></table>
+<p>紧凑（<code>indentation=&quot;&quot;</code>）而不是带缩进：20 条商品的列表带缩进约 4KB，紧凑后约 2.6KB，<strong>省 35% 内存与网络字节</strong>。</p>
+<p><strong>大 key 边界</strong>：列表接口 <code>LIMIT 100</code> 写在 SQL 里（不是靠约定），把列表 value 锁死在 ~13KB——无论总量 20 条还是 20 万条，列表缓存体积恒定，永远不会长成 string 大 key（Redis「大 key」通常指 string &gt; 100KB）。</p>
+<div align="center">
+<svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="210" fill="#ffffff"/>
+  <text x="340" y="22" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 1：LIMIT 100 把列表缓存锁死在 13KB，不随总量爆炸</text>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <rect x="60"  y="60" width="120" height="60" rx="5" fill="#dbeafe" stroke="#1d4ed8"/>
+    <text x="120" y="84" fill="#1e3a8a">商品总量</text>
+    <text x="120" y="104" fill="#1d4ed8" font-size="12">20 → 20 万</text>
+  </g>
+  <line x1="180" y1="90" x2="300" y2="90" stroke="#9ca3af" stroke-width="2"/>
+  <text x="240" y="82" font-size="10" font-family="sans-serif" fill="#6b7280" text-anchor="middle">SQL LIMIT 100</text>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <rect x="300" y="60" width="140" height="60" rx="5" fill="#dcfce7" stroke="#16a34a"/>
+    <text x="370" y="84" fill="#14532d">列表缓存 value</text>
+    <text x="370" y="104" fill="#15803d" font-size="12">恒 ≈ 13KB</text>
+  </g>
+  <line x1="440" y1="90" x2="560" y2="90" stroke="#9ca3af" stroke-width="2" stroke-dasharray="5,4"/>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <rect x="560" y="60" width="100" height="60" rx="5" fill="#fee2e2" stroke="#b91c1c"/>
+    <text x="610" y="84" fill="#7f1d1d">安全区</text>
+    <text x="610" y="104" fill="#991b1b" font-size="10">非大 key</text>
+  </g>
+  <text x="340" y="160" font-size="11" font-family="sans-serif" fill="#6b7280" text-anchor="middle">详情 key 基数随总量到 20 万（命中率/内存才测得出来），但单 key 体积恒定 ≈130B</text>
+  <text x="340" y="182" font-size="11" font-family="sans-serif" fill="#6b7280" text-anchor="middle">防大 key 是「写死上限」而非「约定」，攻击者无法用随机 page 打爆内存</text>
+</svg>
+</div>
+
+<h2 id="四、TTL-与抖动：没有抖动就是缓存雪崩"><a href="#四、TTL-与抖动：没有抖动就是缓存雪崩" class="headerlink" title="四、TTL 与抖动：没有抖动就是缓存雪崩"></a>四、TTL 与抖动：没有抖动就是缓存雪崩</h2><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>基准 TTL</th>
+<th>抖动</th>
+<th>为什么是这个数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>list</code></td>
+<td>30s</td>
+<td>+[0,30)s</td>
+<td>列表含全部商品的 stock，是聚合值，陈旧容忍度最低用短 TTL 补</td>
+</tr>
+<tr>
+<td><code>item</code></td>
+<td>60s</td>
+<td>+[0,30)s</td>
+<td>单品，且下单后会主动 <code>DEL</code>，TTL 可以放宽</td>
+</tr>
+<tr>
+<td>空值</td>
+<td>60s</td>
+<td>+[0,30)s</td>
+<td>见 §5.3 空值哨兵</td>
+</tr>
+</tbody></table>
+<p><strong>抖动是必须的，不是可选优化</strong>。没有抖动时，缓存预热起来的那批 key 会在同一秒集体失效，全部请求瞬间回源数据库——这就是<strong>缓存雪崩</strong>。抖动把「同一秒」摊平到一个 30 秒的窗口里。</p>
+<div align="center">
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="200" fill="#ffffff"/>
+  <text x="340" y="22" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 2：TTL 随机抖动把「集体失效」摊平成窗口</text>
+  <text x="160" y="55" font-size="12" font-family="sans-serif" fill="#7f1d1d" text-anchor="middle">无抖动：同一秒失效</text>
+  <line x1="60" y1="80" x2="280" y2="80" stroke="#ef4444" stroke-width="3"/>
+  <text x="170" y="100" font-size="10" font-family="sans-serif" fill="#991b1b" text-anchor="middle">全部 key 在 t 瞬间回源 → 雪崩</text>
+  <text x="500" y="55" font-size="12" font-family="sans-serif" fill="#14532d" text-anchor="middle">有抖动：失效铺开成窗口</text>
+  <g stroke="#22c55e" stroke-width="3">
+    <line x1="360" y1="80" x2="374" y2="80"/>
+    <line x1="392" y1="80" x2="412" y2="80"/>
+    <line x1="432" y1="80" x2="450" y2="80"/>
+    <line x1="472" y1="80" x2="502" y2="80"/>
+    <line x1="522" y1="80" x2="547" y2="80"/>
+    <line x1="562" y1="80" x2="592" y2="80"/>
+    <line x1="602" y1="80" x2="622" y2="80"/>
+  </g>
+  <text x="500" y="100" font-size="10" font-family="sans-serif" fill="#166534" text-anchor="middle">失效点散在 [base, base+jitter]，回源被摊平</text>
+  <text x="500" y="132" font-size="10" font-family="sans-serif" fill="#6b7280" text-anchor="middle">jitter=30s → 30s 窗口内逐步重建，DB 压力均摊</text>
+</svg>
+</div>
+
+<p>实现用 <code>thread_local std::mt19937</code>：Drogon 的 handler 跑在多个 IO 线程上，共享一个 <code>rand()</code> &#x2F; 全局 <code>mt19937</code> 会构成数据竞争（UB），每线程一份则无锁无竞争：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SkuCache.cc —— 每线程一个随机数发生器，无锁无竞争</span></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">SkuCache::ttlWithJitter</span><span class="params">(<span class="type">int</span> baseSeconds)</span> <span class="type">const</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (cfg_.jitterSeconds &lt;= <span class="number">0</span>) <span class="keyword">return</span> baseSeconds;</span><br><span class="line">    <span class="type">static</span> <span class="keyword">thread_local</span> std::mt19937 rng&#123;std::random_device&#123;&#125;()&#125;;</span><br><span class="line">    <span class="function">std::uniform_int_distribution&lt;<span class="type">int</span>&gt; <span class="title">dist</span><span class="params">(<span class="number">0</span>, cfg_.jitterSeconds)</span></span>;</span><br><span class="line">    <span class="keyword">return</span> baseSeconds + <span class="built_in">dist</span>(rng);  <span class="comment">// 实际 TTL = 基准 + [0, jitter)</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="五、接口基线压测：两量级对照（关键结论）"><a href="#五、接口基线压测：两量级对照（关键结论）" class="headerlink" title="五、接口基线压测：两量级对照（关键结论）"></a>五、接口基线压测：两量级对照（关键结论）</h2><p><strong>方法论</strong>：同一套流量跑两轮，只改 <code>cache.enabled</code> 一个变量（脚本自动改配置、重启、清缓存、预热、采集）。<code>off</code> 轮是接口基线，<code>on</code> 轮是缓存成果。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">mysql -h127.0.0.1 -useckill -pseckill seckill &lt; sql/seed_sku.sql   <span class="comment"># 默认 20 万条商品</span></span><br><span class="line"><span class="comment"># 纯 JMeter 干净环境（避免 WSL 代理变量把 Java 采样器路由到代理端口导致 0 样本）</span></span><br><span class="line">wsl -e <span class="built_in">env</span> LANG=C.UTF-8 JMETER_BIN=/opt/apache-jmeter-5.6.3/bin/jmeter \</span><br><span class="line">    bash scripts/read-bench.sh 100 60     <span class="comment"># 列表 60 / 详情 40 并发 × 60s</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>小数据量级（20 条，仅验证逻辑）</strong>：本地 MySQL 一次 SELECT &lt;1ms，对照组太强，缓存只动 QPS：</p>
+<table>
+<thead>
+<tr>
+<th>接口</th>
+<th>缓存</th>
+<th>QPS</th>
+<th>提升</th>
+<th>命中率</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>list</td>
+<td>off</td>
+<td>1463.4</td>
+<td>—</td>
+<td>100%（miss&#x3D;3）</td>
+</tr>
+<tr>
+<td>list</td>
+<td>on</td>
+<td>1526.7</td>
+<td>×1.04（+4%）</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>detail</td>
+<td>off</td>
+<td>1472.7</td>
+<td>—</td>
+<td>100%（miss&#x3D;3）</td>
+</tr>
+<tr>
+<td>detail</td>
+<td>on</td>
+<td>1539.7</td>
+<td>×1.05（+5%）</td>
+<td>同上</td>
+</tr>
+</tbody></table>
+<p><strong>真实数据量级（20 万条，JMeter 5.6.3 引擎，权威结论）</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>接口</th>
+<th>缓存</th>
+<th>QPS</th>
+<th>avg(ms)</th>
+<th>提升</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>list</td>
+<td>off</td>
+<td>7544.2</td>
+<td>6.95</td>
+<td>—</td>
+</tr>
+<tr>
+<td>list</td>
+<td>on</td>
+<td>10556.9</td>
+<td>3.84</td>
+<td><strong>×1.40（+40%）</strong></td>
+</tr>
+<tr>
+<td>detail</td>
+<td>off</td>
+<td>5591.2</td>
+<td>6.22</td>
+<td>—</td>
+</tr>
+<tr>
+<td>detail</td>
+<td>on</td>
+<td>8023.5</td>
+<td>3.23</td>
+<td><strong>×1.44（+44%）</strong></td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>命中率 83.8%</strong>（hit&#x3D;934466 &#x2F; miss&#x3D;180538 &#x2F; err&#x3D;0）；off 轮 60s 内 <del>788k 读全打 DB，on 轮同窗口仅 180k 回源 → <strong>DB 读负载降约 77%</strong>，同时总 QPS +40</del>44%，平均延迟砍半。</li>
+<li><strong>数据量级决定缓存收益的「能见度」</strong>：20 条小量级里缓存把「1ms 查询」换成「亚毫秒 Redis GET」，单请求省的时间被 <code>threads_num=4</code> 的 IO 线程摊平，QPS 只动 4~5%；量级一上去，83.8% 的读被挡在 Redis 门外，缓存才显出乘数级提升。<strong>真实部署里 MySQL 在远端、有连接池上限、洪峰读放大会先打满 DB——缓存挡掉的不是 4% 的 QPS，是 83.8% 可能压垮 DB 的读流量。</strong></li>
+<li><strong>脏数据警示</strong>：run 1&#x2F;run 2 曾出现「on 比 off 还低 20%、命中率仅 58%」的异常——那是 JMeter 因 WSL 代理 0 样本、回退 curl harness 后又另起进程抢 8080 端口的错配产物，<strong>不可信</strong>。「缓存提升反直觉为负」一定是压测链路错配，不是代码问题。</li>
+</ul>
+<h2 id="六、功能抉择"><a href="#六、功能抉择" class="headerlink" title="六、功能抉择"></a>六、功能抉择</h2><p><strong>① Cache-Aside 而非 Read-Through &#x2F; Write-Through</strong><br>本项目的读路径是「读缓存 → 命中返回 → 未命中回源 → 回写 → 返回」，写路径是「提交后 DEL」。没有用框架级的 Read&#x2F;Write-Through，因为秒杀的写是「事务提交后才允许缓存失效」，这个时序必须亲手挂在 commit 回调上，通用抽象反而藏不住它。</p>
+<p><strong>② 缓存 fail-open，会话 fail-close——同一个系统两种相反反应</strong><br>缓存模块（<code>SkuCache</code>）对「Redis 挂了」的反应是<strong>当未命中、回源 DB</strong>；而登录模块的会话校验（<code>SessionStore</code>）是<strong>拒绝</strong>。这不是双标，是代价结构不同：会话校验错放一次 &#x3D; 被封禁的 token 能继续下单（安全事件，不可逆）；缓存错放一次 &#x3D; 这个请求多查一次库（慢一点，无正确性损失）。判据只有一句：<strong>误放的代价 vs 误杀的代价，哪个更大就防哪个</strong>。</p>
+<p><strong>③ 紧凑 JSON 而非 Hash</strong><br>详情是整体失效语义，Hash 的字段级更新会造出半更新态；且我们只 <code>DEL</code> 不更新，String 一次 <code>GET</code> 拿到完整对象，网络字节也更省。</p>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ul>
+<li>缓存只加<strong>读接口</strong>；写接口（下单）缓存替代不了真相源，只多一个「提交成功后失效」动作。🐾</li>
+<li>Key 四段式 <code>&lt;prefix&gt;:&lt;biz&gt;:&lt;version&gt;:&lt;type&gt;[:&lt;id&gt;]</code>，六条规则防的是「未来某天的事故」；Key 拼接收敛到 <code>CacheKeys.h</code> 一个文件。</li>
+<li>Value 存紧凑 JSON 字符串（非 Hash），<code>LIMIT 100</code> 写死上限把列表锁在 ~13KB，防大 key。</li>
+<li>TTL 带 <code>[0,30)s</code> 随机抖动防雪崩；<code>thread_local mt19937</code> 规避多线程数据竞争。</li>
+<li>接口基线（20 万量级 JMeter）：list&#x2F;detail 在 on 轮 <strong>×1.40 &#x2F; ×1.44</strong>（+40%&#x2F;+44%），命中率 <strong>83.8%</strong>，DB 读负载降约 77%——量级决定缓存收益能见度。</li>
+<li>下一篇 5.2 落地列表接口的缓存读路径，5.3 落地详情接口（含空值哨兵防穿透）。</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0501/">https://hespethorn.github.io/posts/seckcpp0501/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E7%BC%93%E5%AD%98/">缓存</a><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Redis/">Redis</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a><a class="post-meta__tags" href="/tags/%E5%8E%8B%E6%B5%8B/">压测</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">763</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1022</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">40</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计</a><time datetime="2026-08-28T16:00:00.000Z" title="Created 2026-08-29 00:00:00">2026-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0204/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）">秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0205/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）">秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0302/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0303/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连">秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0304/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis">秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0305/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限">秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0306/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定">秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0307/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销">秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0308/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper">秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0309/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）">秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0310/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析">秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0401/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0402/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0403/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）">秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0404/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖">秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0405/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）">秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0406/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）">秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0407/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）">秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0408/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）">秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0503/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-vanishing-exploding-gradient/" title="叠浪镇的掌闸人">叠浪镇的掌闸人</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260903/" title="AI 新闻速递（2026-09-03）">AI 新闻速递（2026-09-03）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

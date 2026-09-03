@@ -1,0 +1,554 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透） | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="4.2 把商品详情接口（GET &#x2F;api&#x2F;seckill&#x2F;&#123;skuId&#125;）跑通了，主键点查、直连 MySQL。这一篇给它套缓存，并顺手落地一个常被放到 5.6 才讲的能力——空值哨兵防缓存穿透。原因很实际：详情接口的 &#123;skuId&#125; 是用户可控的，攻击者拿随机 id 狂打，缓存层若不做处理，会退化成「每次都穿透到 DB」，等于没缓存。所以防穿透和详情缓存是同">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0503/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="4.2 把商品详情接口（GET &#x2F;api&#x2F;seckill&#x2F;&#123;skuId&#125;）跑通了，主键点查、直连 MySQL。这一篇给它套缓存，并顺手落地一个常被放到 5.6 才讲的能力——空值哨兵防缓存穿透。原因很实际：详情接口的 &#123;skuId&#125; 是用户可控的，攻击者拿随机 id 狂打，缓存层若不做处理，会退化成「每次都穿透到 DB」，等于没缓存。所以防穿透和详情缓存是同">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-02T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-03T09:13:17.971Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="缓存">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Redis">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="高并发">
+<meta property="article:tag" content="缓存穿透">
+<meta property="article:tag" content="空值哨兵">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）",
+  "url": "https://hespethorn.github.io/posts/seckcpp0503/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-02T16:00:00.000Z",
+  "dateModified": "2026-09-03T09:13:17.971Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0503/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">763</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1022</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">40</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>8mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>4.2 把商品详情接口（<code>GET /api/seckill/&#123;skuId&#125;</code>）跑通了，主键点查、直连 MySQL。这一篇给它套缓存，并顺手落地一个常被放到 5.6 才讲的能力——<strong>空值哨兵防缓存穿透</strong>。原因很实际：详情接口的 <code>&#123;skuId&#125;</code> 是用户可控的，攻击者拿随机 id 狂打，缓存层若不做处理，会退化成「每次都穿透到 DB」，等于没缓存。所以防穿透和详情缓存是同一道题的正反两面，一起讲。</p>
+<blockquote>
+<p>本文是「秒杀系统（C++ &#x2F; Drogon）」系列的第五章第三篇，也是 5.1&#x2F;5.2&#x2F;5.3 读缓存三篇的收口。配套代码：<code>src/service/SeckillService.cc::detailSku/queryDetailFromDb</code>、<code>src/service/SkuCache.*</code>（<code>setNull</code>&#x2F;<code>kNullValue</code>）。代码对应阶段二 <code>v0.2.x</code>。Key 规范、TTL 抖动、列表缓存见 5.1&#x2F;5.2。</p>
+</blockquote>
+<h2 id="一、详情缓存-空值哨兵：是什么、坑在哪、本质一句话"><a href="#一、详情缓存-空值哨兵：是什么、坑在哪、本质一句话" class="headerlink" title="一、详情缓存 + 空值哨兵：是什么、坑在哪、本质一句话"></a>一、详情缓存 + 空值哨兵：是什么、坑在哪、本质一句话</h2><ul>
+<li><strong>是什么</strong>：详情接口按 <code>skuId</code> 主键点查，是「单品」语义，天然适合做 key&#x3D;<code>seckill:sku:v1:item:&#123;id&#125;</code> 的缓存；命中后连 DB 都不碰。</li>
+<li><strong>坑（缓存穿透）</strong>：用户拿一个<strong>不存在的 id</strong>（随机整数、已下架商品）狂刷，缓存里没有这个 key → 每次都穿透到 DB 查「空结果」。攻击者用随机 id 打库，<strong>每个 id 每分钟能穿透几十上百次</strong>，缓存层对这种攻击完全失效。</li>
+<li><strong>本质一句话</strong>：<strong>正常命中把读挡在 Redis 门内，空值哨兵把「查无此物」也缓存下来——两者合起来，DB 才真正只服务「有价值的读」</strong>。</li>
+</ul>
+<h2 id="二、读路径：Cache-Aside-空值哨兵"><a href="#二、读路径：Cache-Aside-空值哨兵" class="headerlink" title="二、读路径：Cache-Aside + 空值哨兵"></a>二、读路径：Cache-Aside + 空值哨兵</h2><p>详情读路径和列表同构（命中返回），多了一环：<strong>命中后先判是不是空值哨兵</strong>，是则直接当「不存在」返回，连 JSON 解析都省了：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SeckillService.cc —— 5.3 详情缓存读路径（+ 空值占位防穿透）</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">SeckillService::detailSku</span><span class="params">(<span class="type">int64_t</span> skuId,</span></span></span><br><span class="line"><span class="params"><span class="function">                               std::function&lt;<span class="type">void</span>(<span class="type">bool</span>, <span class="type">const</span> Json::Value &amp;)&gt; &amp;&amp;callback)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> cb = std::<span class="built_in">move</span>(callback);</span><br><span class="line">    <span class="keyword">if</span> (cache_ &amp;&amp; cache_-&gt;<span class="built_in">enabled</span>()) &#123;</span><br><span class="line">        cache_-&gt;<span class="built_in">getDetail</span>(skuId, [cb, <span class="keyword">this</span>, skuId](<span class="type">bool</span> hit, <span class="type">const</span> std::string &amp;value) &#123;</span><br><span class="line">            <span class="keyword">if</span> (hit) &#123;</span><br><span class="line">                <span class="comment">// 空值哨兵：上一次已查过库、确认这个 sku 不存在。</span></span><br><span class="line">                <span class="comment">// 命中它等于「没打数据库就知道不存在」——正是防穿透要的效果。</span></span><br><span class="line">                <span class="keyword">if</span> (value == seckill::cache::SkuCache::kNullValue) &#123;</span><br><span class="line">                    <span class="built_in">cb</span>(<span class="literal">false</span>, Json::<span class="built_in">Value</span>());</span><br><span class="line">                    <span class="keyword">return</span>;</span><br><span class="line">                &#125;</span><br><span class="line">                Json::Value item;</span><br><span class="line">                <span class="keyword">if</span> (<span class="built_in">fromJson</span>(value, item) &amp;&amp; item.<span class="built_in">isObject</span>()) &#123;</span><br><span class="line">                    <span class="built_in">cb</span>(<span class="literal">true</span>, item);</span><br><span class="line">                    <span class="keyword">return</span>;</span><br><span class="line">                &#125;</span><br><span class="line">                SK_LOG_WARN &lt;&lt; <span class="string">&quot;CACHE_ITEM_CORRUPTED skuId=&quot;</span> &lt;&lt; skuId;</span><br><span class="line">                cache_-&gt;<span class="built_in">invalidate</span>(skuId);  <span class="comment">// 坏值连带删列表，一起作废更省心</span></span><br><span class="line">            &#125;</span><br><span class="line">            <span class="built_in">queryDetailFromDb</span>(skuId, cb, <span class="comment">/*writeCache=*/</span><span class="literal">true</span>);  <span class="comment">// 回源并回写</span></span><br><span class="line">        &#125;);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">queryDetailFromDb</span>(skuId, cb, <span class="comment">/*writeCache=*/</span><span class="literal">false</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">SeckillService::queryDetailFromDb</span><span class="params">(<span class="type">int64_t</span> skuId, ..., <span class="type">bool</span> writeCache)</span> </span>&#123;</span><br><span class="line">    db_-&gt;<span class="built_in">execSqlAsync</span>(</span><br><span class="line">        <span class="string">&quot;SELECT id, name, stock, total, &quot;</span></span><br><span class="line">        <span class="string">&quot;DATE_FORMAT(start_time, &#x27;%Y-%m-%d %H:%i:%s&#x27;) AS start_time, &quot;</span></span><br><span class="line">        <span class="string">&quot;DATE_FORMAT(end_time, &#x27;%Y-%m-%d %H:%i:%s&#x27;) AS end_time &quot;</span></span><br><span class="line">        <span class="string">&quot;FROM seckill_sku WHERE id = ?&quot;</span>,</span><br><span class="line">        [cb, writeCache, <span class="keyword">this</span>, skuId](<span class="type">const</span> drogon::orm::Result &amp;result) &#123;</span><br><span class="line">            <span class="keyword">if</span> (result.<span class="built_in">size</span>() == <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="comment">// 查不到也要缓存（空值占位）：否则随机不存在的 id 反复请求，</span></span><br><span class="line">                <span class="comment">// 每次都穿透到 DB —— 缓存层失效，这就是缓存穿透</span></span><br><span class="line">                <span class="keyword">if</span> (writeCache &amp;&amp; cache_) cache_-&gt;<span class="built_in">setNull</span>(skuId);</span><br><span class="line">                <span class="built_in">cb</span>(<span class="literal">false</span>, Json::<span class="built_in">Value</span>());</span><br><span class="line">                <span class="keyword">return</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">// ...拼 item...</span></span><br><span class="line">            <span class="keyword">if</span> (writeCache &amp;&amp; cache_) cache_-&gt;<span class="built_in">setDetail</span>(skuId, <span class="built_in">toCompactJson</span>(item));</span><br><span class="line">            <span class="built_in">cb</span>(<span class="literal">true</span>, item);</span><br><span class="line">        &#125;, ...);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<div align="center">
+<svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="250" fill="#ffffff"/>
+  <text x="340" y="22" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 1：详情读路径含空值哨兵（穿透被挡在 Redis 内）</text>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <rect x="40"  y="60"  width="90"  height="36" rx="5" fill="#dbeafe" stroke="#1d4ed8"/><text x="85"  y="83"  fill="#1e3a8a">请求</text>
+    <rect x="170" y="60"  width="110" height="36" rx="5" fill="#e0e7ff" stroke="#4338ca"/><text x="225" y="83"  fill="#312e81">SkuCache</text>
+    <rect x="330" y="60"  width="90"  height="36" rx="5" fill="#ede9fe" stroke="#6d28d9"/><text x="375" y="83"  fill="#5b21b6">Redis</text>
+    <rect x="470" y="60"  width="110" height="36" rx="5" fill="#fee2e2" stroke="#b91c1c"/><text x="525" y="83"  fill="#7f1d1d">MySQL</text>
+  </g>
+  <!-- 正常命中 -->
+  <path d="M130 78 H170 M280 78 H330 M420 78 H110" stroke="#16a34a" stroke-width="2"/>
+  <text x="275" y="66" font-size="10" font-family="sans-serif" fill="#16a34a" text-anchor="middle">① GET item</text>
+  <text x="270" y="106" font-size="10" font-family="sans-serif" fill="#16a34a" text-anchor="middle">② 命中 JSON → 返回（DB 没碰）</text>
+  <!-- 空值哨兵命中 -->
+  <path d="M225 104 C225 140, 375 140, 375 96" stroke="#0891b2" stroke-width="2" fill="none" stroke-dasharray="5,4"/>
+  <text x="300" y="160" font-size="10" font-family="sans-serif" fill="#0e7490" text-anchor="middle">③ 命中 __nil__ → 直接返回「不存在」</text>
+  <!-- miss 回源 -->
+  <path d="M225 132 C225 180, 525 180, 525 96" stroke="#f59e0b" stroke-width="2" fill="none" stroke-dasharray="5,4"/>
+  <text x="375" y="205" font-size="10" font-family="sans-serif" fill="#b45309" text-anchor="middle">④ 真未命中 → 回源；查到回写 JSON，查不到回写 __nil__</text>
+  <text x="340" y="232" font-size="10" font-family="sans-serif" fill="#6b7280" text-anchor="middle">①②③ 全在 Redis 内完成，DB 只服务 ④ 这一小撮「有价值的读」</text>
+</svg>
+</div>
+
+<h2 id="三、空值哨兵：为什么安全、为什么-TTL-要短、为什么不是布隆"><a href="#三、空值哨兵：为什么安全、为什么-TTL-要短、为什么不是布隆" class="headerlink" title="三、空值哨兵：为什么安全、为什么 TTL 要短、为什么不是布隆"></a>三、空值哨兵：为什么安全、为什么 TTL 要短、为什么不是布隆</h2><p>空值哨兵就是把「DB 里确实没有这个 sku」也缓存成一个特殊值，让后续穿透请求在 Redis 层就被挡下：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SkuCache.h / SkuCache.cc —— 空值哨兵</span></span><br><span class="line"><span class="type">static</span> <span class="keyword">constexpr</span> <span class="type">const</span> <span class="type">char</span> *kNullValue = <span class="string">&quot;__nil__&quot;</span>;  <span class="comment">// 裸字符串，绝不可能是合法 JSON</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">SkuCache::setNull</span><span class="params">(<span class="type">int64_t</span> skuId)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 空值占位的 TTL 用最短的一档（60s）：</span></span><br><span class="line">    <span class="comment">//   设长了，刚上架的商品要等几分钟才能被看到；</span></span><br><span class="line">    <span class="comment">//   设短了，穿透防护就弱。60s 意味着攻击者用随机 id 打库，</span></span><br><span class="line">    <span class="comment">//   每个 id 每分钟最多穿透一次 —— 足以把「打穿」变成「打不穿」。</span></span><br><span class="line">    <span class="built_in">setex</span>(keys_.<span class="built_in">item</span>(skuId), kNullValue, <span class="built_in">ttlWithJitter</span>(cfg_.nullTtlSeconds));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>为什么 <code>__nil__</code> 不会和真实数据混淆</strong>：业务 value 只可能是 JSON 对象或数组，一个裸的 <code>__nil__</code> 字符串不可能是合法 JSON。读路径命中后先判 <code>== kNullValue</code> 即可，不需要额外的类型标记字段。</p>
+<p><strong>为什么不用布隆过滤器</strong>（5.7 才展开）：布隆过滤器解决的是「id 集合海量且基本不变」的穿透；秒杀商品是几十到几百个、还会上下架，空值缓存性价比更高且没有误判（布隆有假阳性，可能把存在的商品误判为不存在）。等商品量级真正上去再引入布隆做前置校验。</p>
+<p><strong>为什么在 20 万量级仍正确</strong>：哨兵验证用 <code>NONE_ID = 总量 + 1</code>（连续 id 下必超范围），<code>/api/seckill/200001</code> 在 20 万条数据里必然查无此物 → 写入 <code>__nil__</code>，TTL 84s（60s + 抖动）。这证明大 key 空间下穿透防护不漏。</p>
+<div align="center">
+<svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="190" fill="#ffffff"/>
+  <text x="340" y="22" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 2：空值哨兵把「穿透攻击」挡在 Redis 内</text>
+  <g font-family="sans-serif" font-size="11" text-anchor="middle">
+    <rect x="40"  y="60"  width="90"  height="36" rx="5" fill="#dbeafe" stroke="#1d4ed8"/><text x="85"  y="83"  fill="#1e3a8a">攻击者</text>
+    <rect x="180" y="60"  width="110" height="36" rx="5" fill="#e0e7ff" stroke="#4338ca"/><text x="235" y="83"  fill="#312e81">GET item/随机id</text>
+    <rect x="350" y="60"  width="90"  height="36" rx="5" fill="#ede9fe" stroke="#6d28d9"/><text x="395" y="83"  fill="#5b21b6">Redis</text>
+    <rect x="490" y="60"  width="110" height="36" rx="5" fill="#fee2e2" stroke="#b91c1c"/><text x="545" y="83"  fill="#7f1d1d">MySQL</text>
+  </g>
+  <path d="M130 78 H180 M290 78 H350" stroke="#9ca3af" stroke-width="2"/>
+  <path d="M440 78 H110" stroke="#0891b2" stroke-width="2" fill="none"/>
+  <text x="280" y="106" font-size="10" font-family="sans-serif" fill="#0e7490" text-anchor="middle">命中 __nil__ → 拦下，不回源</text>
+  <text x="340" y="140" font-size="10" font-family="sans-serif" fill="#6b7280" text-anchor="middle">无哨兵：随机 id 每次穿透 → DB 被打穿</text>
+  <text x="340" y="162" font-size="10" font-family="sans-serif" fill="#6b7280" text-anchor="middle">有哨兵：每个 id 每分钟最多穿透一次（TTL 60s）→ 打不穿</text>
+</svg>
+</div>
+
+<h2 id="四、写侧失效（与列表一致）"><a href="#四、写侧失效（与列表一致）" class="headerlink" title="四、写侧失效（与列表一致）"></a>四、写侧失效（与列表一致）</h2><p>详情缓存的写后失效复用 5.2 的机制：下单事务 <code>committed == true</code> 后调 <code>invalidateOnOrder(skuId)</code>，默认只删详情（<code>item</code>）。详情 key 是单品，被删后下次读自然重建，不影响其他 sku 的缓存——这正是「详情维度失效」相比「列表维度失效」友好的地方。</p>
+<h2 id="五、功能抉择"><a href="#五、功能抉择" class="headerlink" title="五、功能抉择"></a>五、功能抉择</h2><p><strong>① 空值哨兵 vs 布隆过滤器</strong><br>当前选空值哨兵：实现零依赖（一个特殊字符串 + 短 TTL）、无假阳性、对「几十到几百个还会上下架」的秒杀商品性价比最高。代价是「不存在的 id」也会占一个 key（内存成本），但 20 万量级下这点内存可忽略。等商品量级与 id 空间真正膨胀，再在前面加布隆做「前置否决」。</p>
+<p><strong>② 空值哨兵的 TTL 是安全与一致性的折中</strong><br>60s 是平衡点：太长，新上架商品要等几分钟才可见（一致性损失）；太短，穿透防护变弱。它不是「永久缓存不存在」，而是「用一分钟的短期代价换 DB 不被打穿」。</p>
+<p><strong>③ 详情维度失效而非列表维度</strong><br>详情 key 彼此独立，删一个 sku 的详情不影响其他 19.9 万个 key 的命中率；列表 key 是全量聚合，反而是「谁都不删 &#x2F; 只删详情」才能保住高命中率。两个接口用同一套 <code>invalidateOnOrder</code> 开关，但默认 <code>item</code> 对详情最友好。</p>
+<h2 id="六、效果"><a href="#六、效果" class="headerlink" title="六、效果"></a>六、效果</h2><p>详情接口接入缓存 + 空值哨兵后，在 <strong>20 万条商品量级（JMeter 5.6.3 引擎）</strong> 下的压测结果（两量级完整对照见 5.1）：</p>
+<table>
+<thead>
+<tr>
+<th>接口</th>
+<th>off QPS</th>
+<th>on QPS</th>
+<th>提升</th>
+<th>avg</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>detail</td>
+<td>5591.2</td>
+<td><strong>8023.5</strong></td>
+<td><strong>×1.44（+44%）</strong></td>
+<td>6.22 → 3.23ms</td>
+</tr>
+</tbody></table>
+<p>整体口径（list + detail 同窗口）：命中率 <strong>83.8%</strong>（hit&#x3D;934466 &#x2F; miss&#x3D;180538 &#x2F; err&#x3D;0），DB 读负载降约 <strong>77%</strong>，平均延迟砍半。空值哨兵验证：<code>/api/seckill/200001</code> → 写入 <code>__nil__</code>，TTL 84s，大 key 空间下不漏。</p>
+<blockquote>
+<p><strong>量级洞察（贯穿 5.1~5.3）</strong>：20 条小量级下本地 MySQL SELECT &lt;1ms、对照组太强，缓存只动 QPS +4~5%；量级一上到 20 万，83.8% 的读被挡在 Redis 门外，缓存才显出 <strong>×1.40 &#x2F; ×1.44</strong> 的乘数级提升。<strong>真实部署里 MySQL 在远端、有连接池上限、洪峰读放大会先打满 DB——缓存挡掉的不是 4% 的 QPS，是 83.8% 可能压垮 DB 的读流量。</strong></p>
+</blockquote>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ul>
+<li>详情接口读路径 Cache-Aside：命中 JSON 直接返回；命中<strong>空值哨兵</strong> <code>__nil__</code> 直接返回「不存在」，连解析都省。🐾</li>
+<li>空值哨兵防<strong>缓存穿透</strong>：查无此物的 id 也缓存 60s，攻击者每个 id 每分钟最多穿透一次 → 打不穿。</li>
+<li><code>__nil__</code> 是裸字符串，不可能是合法 JSON，不会与真实数据混淆；TTL 短（60s）是安全与一致性的折中。</li>
+<li>当前选空值哨兵而非布隆过滤器（无假阳性、零依赖），量级膨胀后再加布隆前置。</li>
+<li>20 万量级实测：detail <strong>×1.44（+44%）</strong>、命中率 83.8%、DB 读负载降约 77%；量级决定缓存收益能见度。</li>
+<li>读缓存三篇（5.1 规范 &#x2F; 5.2 列表 &#x2F; 5.3 详情+防穿透）闭环。后续 5.4 延迟双删、5.5 预热、5.6 正文、5.7 布隆、5.8 本地 LRU 逐级深入。</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0503/">https://hespethorn.github.io/posts/seckcpp0503/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E7%BC%93%E5%AD%98/">缓存</a><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Redis/">Redis</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a><a class="post-meta__tags" href="/tags/%E7%BC%93%E5%AD%98%E7%A9%BF%E9%80%8F/">缓存穿透</a><a class="post-meta__tags" href="/tags/%E7%A9%BA%E5%80%BC%E5%93%A8%E5%85%B5/">空值哨兵</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">763</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1022</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">40</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计</a><time datetime="2026-08-28T16:00:00.000Z" title="Created 2026-08-29 00:00:00">2026-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0204/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）">秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0205/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）">秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0302/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0303/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连">秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0304/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis">秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0305/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限">秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0306/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定">秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0307/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销">秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0308/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper">秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0309/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）">秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0310/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析">秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0401/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0402/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0403/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）">秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0404/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖">秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0405/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）">秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0406/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）">秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0407/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）">秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0408/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）">秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0503/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-vanishing-exploding-gradient/" title="叠浪镇的掌闸人">叠浪镇的掌闸人</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260903/" title="AI 新闻速递（2026-09-03）">AI 新闻速递（2026-09-03）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
