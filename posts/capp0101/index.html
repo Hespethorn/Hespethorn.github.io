@@ -1,0 +1,629 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>信息表示：位、字节、整数与浮点 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="0.1 + 0.2 在 C&#x2F;Java 里都不等于 0.3；300 强转成 unsigned char 会变成 44；网络里收到的 0x12345678 在你本机读出来是 0x78563412。这三个&quot;离谱&quot;现象，根子都在同一个问题上：计算机怎么用 0&#x2F;1 表示一个数。CSAPP 整门课都在讲&quot;程序员的计算机系统视角&quot;，第一篇就从地基开始—">
+<meta property="og:type" content="article">
+<meta property="og:title" content="信息表示：位、字节、整数与浮点">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0101/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="0.1 + 0.2 在 C&#x2F;Java 里都不等于 0.3；300 强转成 unsigned char 会变成 44；网络里收到的 0x12345678 在你本机读出来是 0x78563412。这三个&quot;离谱&quot;现象，根子都在同一个问题上：计算机怎么用 0&#x2F;1 表示一个数。CSAPP 整门课都在讲&quot;程序员的计算机系统视角&quot;，第一篇就从地基开始—">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-12-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-03T09:42:40.566Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="补码">
+<meta property="article:tag" content="信息表示">
+<meta property="article:tag" content="字节序">
+<meta property="article:tag" content="IEEE754">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "信息表示：位、字节、整数与浮点",
+  "url": "https://hespethorn.github.io/posts/capp0101/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-12-08T16:00:00.000Z",
+  "dateModified": "2026-09-03T09:42:40.566Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0101/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '信息表示：位、字节、整数与浮点',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">764</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1025</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">41</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">信息表示：位、字节、整数与浮点</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">信息表示：位、字节、整数与浮点</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p><code>0.1 + 0.2</code> 在 C&#x2F;Java 里都不等于 <code>0.3</code>；<code>300</code> 强转成 <code>unsigned char</code> 会变成 <code>44</code>；网络里收到的 <code>0x12345678</code> 在你本机读出来是 <code>0x78563412</code>。这三个&quot;离谱&quot;现象，根子都在同一个问题上：<strong>计算机怎么用 0&#x2F;1 表示一个数</strong>。CSAPP 整门课都在讲&quot;程序员的计算机系统视角&quot;，第一篇就从地基开始——信息表示。</p>
+<h2 id="1-位、字节与字长"><a href="#1-位、字节与字长" class="headerlink" title="1. 位、字节与字长"></a>1. 位、字节与字长</h2><p>计算机只能存两种状态，记作 0 和 1，一位就叫一个 <strong>bit（位）</strong>。8 个 bit 组成 1 字节（byte），这是内存编址的最小单位。所谓&quot;机器字长&quot;，指 CPU 一次能处理的位数——64 位机器上指针就是 8 字节。写一段代码把&quot;地基尺寸&quot;打出来：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(char)   = %zu 字节\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">char</span>));</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(int)    = %zu 字节\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">int</span>));</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(long)   = %zu 字节\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">long</span>));</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(float)  = %zu 字节\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">float</span>));</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(double) = %zu 字节\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">double</span>));</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;sizeof(int*)   = %zu 字节\n&quot;</span>, <span class="keyword">sizeof</span>(<span class="type">int</span> *));   <span class="comment">// 指针宽度 = 字长</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">sizeof(char)   = 1 字节</span><br><span class="line">sizeof(int)    = 4 字节</span><br><span class="line">sizeof(long)   = 8 字节</span><br><span class="line">sizeof(float)  = 4 字节</span><br><span class="line">sizeof(double) = 8 字节</span><br><span class="line">sizeof(int*)   = 8 字节</span><br></pre></td></tr></table></figure>
+
+<p><strong>本质一句话</strong>：C 只保证 <code>char</code> 是 1 字节、<code>int</code> 至少 2 字节、<code>sizeof(char*)</code> 等于机器字长——其余&quot;多大&quot;由平台决定。上面是 64 位 Linux 的 LP64 模型（<code>long</code> 8 字节）；Windows 上是 LLP64（<code>long</code> 仍 4 字节），所以<strong>别写死&quot;long 一定是 8 字节&quot;</strong>，要用 <code>sizeof</code> 或 <code>&lt;stdint.h&gt;</code> 的 <code>int32_t/int64_t</code>。</p>
+<h2 id="2-十六进制：人写给机器看的速记"><a href="#2-十六进制：人写给机器看的速记" class="headerlink" title="2. 十六进制：人写给机器看的速记"></a>2. 十六进制：人写给机器看的速记</h2><p>4 个 bit 能表示 16 种组合，正好对应一位十六进制数（0<del>9、A</del>F），所以 <strong>1 字节 &#x3D; 2 位十六进制</strong>。<code>0x3F800000</code> 这种写法不是给机器看的（机器只认二进制），而是让人一眼读出字节串：</p>
+<ul>
+<li><code>0x3F800000</code> &#x3D; 二进制 <code>0011 1111 1000 0000 0000 0000 0000 0000</code>，按 4 bit 一组直接翻译；</li>
+<li>反过来，网络抓包、调试器里看到的 <code>78 56 34 12</code>，心里补成 <code>0x12345678</code> 需要先知道一件事——<strong>字节怎么排</strong>。</li>
+</ul>
+<h2 id="3-字节序：0x12345678-到底先存哪个字节"><a href="#3-字节序：0x12345678-到底先存哪个字节" class="headerlink" title="3. 字节序：0x12345678 到底先存哪个字节"></a>3. 字节序：0x12345678 到底先存哪个字节</h2><p>一个 4 字节整数在内存里占 4 个连续地址。问题是：<strong>高字节存低地址（大端）还是低字节存低地址（小端）</strong>？x86 &#x2F; 主流 ARM 默认小端，网络协议用大端。写个小程序看本机：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdint.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">uint32_t</span> x = <span class="number">0x12345678</span>;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> *p = (<span class="type">unsigned</span> <span class="type">char</span> *)&amp;x;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;低地址 -&gt; 高地址:&quot;</span>);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; <span class="number">4</span>; i++)</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot; %02X&quot;</span>, p[i]);</span><br><span class="line">    <span class="built_in">putchar</span>(<span class="string">&#x27;\n&#x27;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">低地址 -&gt; 高地址: 78 56 34 12</span><br></pre></td></tr></table></figure>
+
+<p>打印出 <code>78 56 34 12</code>，说明这台机器是<strong>小端</strong>：<code>0x12</code> 这个最高字节被放在了最高地址。同样一串字节，两种读法完全不同：</p>
+<div align="center">
+<svg viewBox="0 0 680 270" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="14">
+<rect x="0" y="0" width="680" height="270" fill="#fbfbfd"/>
+<text x="340" y="28" text-anchor="middle" font-size="16" fill="#333">int32 x = 0x12345678 在内存中的两种字节排布</text>
+<text x="30" y="70" font-size="13" fill="#555">大端 Big-Endian（网络字节序）</text>
+<rect x="30" y="84" width="70" height="42" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<rect x="108" y="84" width="70" height="42" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<rect x="186" y="84" width="70" height="42" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<rect x="264" y="84" width="70" height="42" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="65" y="110" text-anchor="middle" fill="#1f2328" font-size="15">0x12</text>
+<text x="143" y="110" text-anchor="middle" fill="#1f2328" font-size="15">0x34</text>
+<text x="221" y="110" text-anchor="middle" fill="#1f2328" font-size="15">0x56</text>
+<text x="299" y="110" text-anchor="middle" fill="#1f2328" font-size="15">0x78</text>
+<text x="65" y="146" text-anchor="middle" font-size="10" fill="#888">地址 0x100</text>
+<text x="143" y="146" text-anchor="middle" font-size="10" fill="#888">0x101</text>
+<text x="221" y="146" text-anchor="middle" font-size="10" fill="#888">0x102</text>
+<text x="299" y="146" text-anchor="middle" font-size="10" fill="#888">0x103</text>
+<text x="30" y="182" font-size="13" fill="#555">小端 Little-Endian（x86 / 主流 ARM）</text>
+<rect x="30" y="196" width="70" height="42" rx="6" fill="#fde8e8" stroke="#e5484d"/>
+<rect x="108" y="196" width="70" height="42" rx="6" fill="#fde8e8" stroke="#e5484d"/>
+<rect x="186" y="196" width="70" height="42" rx="6" fill="#fde8e8" stroke="#e5484d"/>
+<rect x="264" y="196" width="70" height="42" rx="6" fill="#fde8e8" stroke="#e5484d"/>
+<text x="65" y="222" text-anchor="middle" fill="#1f2328" font-size="15">0x78</text>
+<text x="143" y="222" text-anchor="middle" fill="#1f2328" font-size="15">0x56</text>
+<text x="221" y="222" text-anchor="middle" fill="#1f2328" font-size="15">0x34</text>
+<text x="299" y="222" text-anchor="middle" fill="#1f2328" font-size="15">0x12</text>
+<text x="65" y="258" text-anchor="middle" font-size="10" fill="#888">地址 0x100</text>
+<text x="143" y="258" text-anchor="middle" font-size="10" fill="#888">0x101</text>
+<text x="221" y="258" text-anchor="middle" font-size="10" fill="#888">0x102</text>
+<text x="299" y="258" text-anchor="middle" font-size="10" fill="#888">0x103</text>
+</svg>
+</div>
+
+<p><strong>坑</strong>：跨机器传输或读写二进制文件时，两端字节序不一致就会读反。C 的做法是用 <code>ntohl/htonl</code> 这类&quot;网络序 ⇄ 主机序&quot;转换函数；Java 里 <code>ByteBuffer.order()</code> 显式指定 <code>BIG_ENDIAN/LITTLE_ENDIAN</code>；C++ 20 起用 <code>&lt;bit&gt;</code> 里的 <code>std::byteswap</code>。<strong>任何跨端二进制协议都逃不开显式约定字节序这一步</strong>。</p>
+<h2 id="4-整数编码：无符号-vs-补码"><a href="#4-整数编码：无符号-vs-补码" class="headerlink" title="4. 整数编码：无符号 vs 补码"></a>4. 整数编码：无符号 vs 补码</h2><p>字节排好之后，一串 bit 到底代表几，取决于&quot;读法&quot;。C 里有两种读法：</p>
+<ul>
+<li><strong>无符号（unsigned）</strong>：直接按位权累加，范围 <code>[0, 2^N − 1]</code>；</li>
+<li><strong>补码（two&#39;s complement）</strong>：最高位权取负，范围 <code>[−2^(N−1), 2^(N−1) − 1]</code>。</li>
+</ul>
+<p>补码的妙处在于<strong>同一个加法电路不用区分符号</strong>：<code>−1</code> 的 32 位补码是 <code>0xFFFFFFFF</code>，<code>0xFFFFFFFF + 1</code> 和 <code>−1 + 1</code> 在硬件里是同一件事——溢出丢掉进位后回到 <code>0</code>。看代码验证&quot;位不变、读法变&quot;：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdint.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">uint32_t</span> u = <span class="number">0xFFFFFFFF</span>;          <span class="comment">// 一串全 1 的位</span></span><br><span class="line">    <span class="type">int32_t</span>  s = (<span class="type">int32_t</span>)u;          <span class="comment">// 换种读法</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;0xFFFFFFFF 当无符号读 = %u\n&quot;</span>, u);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;0xFFFFFFFF 当补码读   = %d\n&quot;</span>, s);</span><br><span class="line"></span><br><span class="line">    <span class="type">int32_t</span> m = <span class="number">-2</span>;                   <span class="comment">// 补码里 -2 = 0xFFFFFFFE</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;-2 的位模式          = 0x%08X\n&quot;</span>, (<span class="type">uint32_t</span>)m);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">0xFFFFFFFF 当无符号读 = 4294967295</span><br><span class="line">0xFFFFFFFF 当补码读   = -1</span><br><span class="line">-2 的位模式          = 0xFFFFFFFE</span><br></pre></td></tr></table></figure>
+
+<p>下面这张图是&quot;同一根 32 位标尺&quot;的两种刻度：左半边从 <code>0</code> 数到 <code>2147483647</code>，右半边从 <code>0x80000000</code> 开始读作负数，一路到 <code>−1</code> 恰好闭合回 <code>0</code>——这正是补码能&quot;减法变加法&quot;的原因：</p>
+<div align="center">
+<svg viewBox="0 0 680 210" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="13">
+<rect x="0" y="0" width="680" height="210" fill="#fbfbfd"/>
+<text x="340" y="24" text-anchor="middle" font-size="15" fill="#333">同一个 32 位串的两种读法（0x00000000 → 0xFFFFFFFF）</text>
+<text x="200" y="58" text-anchor="middle" font-size="12" fill="#333">补码读左半边为正：0x00000000 ~ 0x7FFFFFFF</text>
+<text x="480" y="58" text-anchor="middle" font-size="12" fill="#333">右半边开头 0x80000000 = -2147483648（INT_MIN）</text>
+<rect x="60" y="96" width="560" height="16" rx="8" fill="#d7e3f8" stroke="#5b7bd5"/>
+<line x1="340" y1="78" x2="340" y2="132" stroke="#ea4335" stroke-dasharray="4 4"/>
+<text x="200" y="146" text-anchor="middle" font-size="11" fill="#555">0xFFFFFFFF 按无符号读 = 4294967295</text>
+<text x="480" y="146" text-anchor="middle" font-size="11" fill="#555">0xFFFFFFFF 按补码读 = -1</text>
+<text x="340" y="170" text-anchor="middle" font-size="14" fill="#1f6feb">本质：-1 与 0xFFFFFFFF 是同一个位模式（mod 2^32）</text>
+<text x="340" y="192" text-anchor="middle" font-size="12" fill="#333">减法在硬件里不存在——a - b 就是 a + b 的补码，全加器不区分符号</text>
+</svg>
+</div>
+
+<p><strong>本质一句话</strong>：无符号和补码是<strong>同一串 bit 的两种解释</strong>；补码让&quot;负数&quot;参与加法时无需任何特殊电路，代价只是范围不对称（负数比正数多一个）。</p>
+<h2 id="5-转换、截断与符号扩展：位模式变了，数字就变了"><a href="#5-转换、截断与符号扩展：位模式变了，数字就变了" class="headerlink" title="5. 转换、截断与符号扩展：位模式变了，数字就变了"></a>5. 转换、截断与符号扩展：位模式变了，数字就变了</h2><p>C 里类型转换非常&quot;物理&quot;：赋值、强转基本都是<strong>位模式重解释</strong>，于是出现两类经典坑。</p>
+<p><strong>截断（truncation）</strong>：把大类型塞进小类型，高位直接丢弃，等价于对 <code>2^N</code> 取模：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdint.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int</span> big = <span class="number">300</span>;                     <span class="comment">// 0x012C</span></span><br><span class="line">    <span class="type">uint8_t</span> t = (<span class="type">uint8_t</span>)big;          <span class="comment">// 截断成低 8 位</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;300 截断到 uint8_t = %u\n&quot;</span>, t);   <span class="comment">// 300 mod 256 = 44</span></span><br><span class="line"></span><br><span class="line">    <span class="type">int</span> neg = <span class="number">-2</span>;                      <span class="comment">// 0xFFFFFFFE</span></span><br><span class="line">    <span class="type">uint8_t</span> n = (<span class="type">uint8_t</span>)neg;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;-2 截断到 uint8_t = %u\n&quot;</span>, n);    <span class="comment">// 低 8 位 0xFE = 254</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">300 截断到 uint8_t = 44</span><br><span class="line">-2 截断到 uint8_t = 254</span><br></pre></td></tr></table></figure>
+
+<p><strong>符号扩展（sign extension）</strong>：把小类型转回大类型时，若原来是有符号数，高位要补符号位而不是补 0，否则 <code>-2</code> 会变成 <code>254</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdint.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">int8_t</span>  s8 = <span class="number">-2</span>;          <span class="comment">// 0xFE</span></span><br><span class="line">    <span class="type">int32_t</span> s32 = s8;         <span class="comment">// 符号扩展 -&gt; 0xFFFFFFFE，仍是 -2</span></span><br><span class="line">    <span class="type">uint32_t</span> u32 = (<span class="type">uint32_t</span>)(<span class="type">uint8_t</span>)s8;  <span class="comment">// 先转无符号再扩展 -&gt; 0x000000FE = 254</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;int8 -2 扩展为 int32 = %d\n&quot;</span>, s32);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;int8 -2 先当无符号   = %u\n&quot;</span>, u32);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">int8 -2 扩展为 int32 = -2</span><br><span class="line">int8 -2 先当无符号   = 254</span><br></pre></td></tr></table></figure>
+
+<p><strong>坑</strong>：C 里 <code>uint8_t → int32_t</code> 这种&quot;窄→宽&quot;的隐式转换行为取决于源类型——源是无符号就补 0，源是有符号就补符号位。想当然&quot;反正变宽了数值不变&quot;就会在混用 <code>char</code>&#x2F;<code>int</code> 时翻车。Java 的 <code>byte</code> 参与运算前也会被提升（promotion）成 <code>int</code> 并做符号扩展，同样要注意；C++ 规则与 C 一致，只是推荐用 <code>static_cast</code> 让意图显式。</p>
+<p>另外注意：无符号溢出是<strong>标准定义</strong>的回绕（mod 2^N），而有符号溢出在 C&#x2F;C++ 里是<strong>未定义行为（UB）</strong>——编译器可以假设它不发生并据此优化，别写依赖&quot;回绕&quot;的代码；Java 则规定所有整数溢出都按补码回绕，行为确定。</p>
+<h2 id="6-浮点：IEEE-754-的位布局"><a href="#6-浮点：IEEE-754-的位布局" class="headerlink" title="6. 浮点：IEEE 754 的位布局"></a>6. 浮点：IEEE 754 的位布局</h2><p>整数之外，带小数的数用 <strong>IEEE 754</strong> 表示。<code>float</code> 用 32 位：1 位符号 + 8 位阶码（偏置 127）+ 23 位尾数；<code>double</code> 用 64 位：1 + 11（偏置 1023）+ 52。核心思想是<strong>科学计数法的二进制版</strong>：<code>值 = (−1)^S × 1.F × 2^(E−127)</code>。</p>
+<div align="center">
+<svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="13">
+<rect x="0" y="0" width="680" height="250" fill="#fbfbfd"/>
+<text x="340" y="24" text-anchor="middle" font-size="15" fill="#333">float（单精度）IEEE 754 位布局：S | E | F</text>
+<rect x="60" y="70" width="30" height="46" fill="#fde7e9" stroke="#e5484d"/>
+<rect x="100" y="70" width="200" height="46" fill="#e7f0fd" stroke="#2f7de1"/>
+<rect x="310" y="70" width="310" height="46" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="75" y="140" text-anchor="middle" font-size="12" fill="#333">S 1位</text>
+<text x="200" y="140" text-anchor="middle" font-size="12" fill="#333">E 阶码 8 位（偏置 127）</text>
+<text x="465" y="140" text-anchor="middle" font-size="12" fill="#333">F 尾数 23 位（隐含整数位 1.）</text>
+<text x="340" y="168" text-anchor="middle" font-size="14" fill="#1f2328">规格化值 = (-1)^S × 1.F × 2^(E-127)</text>
+<text x="340" y="196" text-anchor="middle" font-size="13" fill="#1f2328">1.0f = 0x3F800000 → S=0 E=127 F=0 → 1.0 × 2^0 = 1.0</text>
+<text x="340" y="220" text-anchor="middle" font-size="13" fill="#555">0.1f = 0x3DCCCCCD：0.1 的二进制是无限循环 0.000110011…，只能近似</text>
+<text x="340" y="242" text-anchor="middle" font-size="12" fill="#333">E=255 → ±∞ / NaN；E=0 且 F≠0 → 非规格化；S 决定正负</text>
+</svg>
+</div>
+
+<p>代码验证&quot;打印浮点数的位&quot;：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdint.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">dump_float</span><span class="params">(<span class="type">float</span> f)</span> &#123;</span><br><span class="line">    <span class="type">uint32_t</span> bits;</span><br><span class="line">    <span class="built_in">memcpy</span>(&amp;bits, &amp;f, <span class="number">4</span>);   <span class="comment">// 用 memcpy 取位，别用 union/强转（有别名/UB 争议）</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;%.6f = 0x%08X\n&quot;</span>, f, bits);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    dump_float(<span class="number">1.0f</span>);</span><br><span class="line">    dump_float(<span class="number">0.1f</span>);</span><br><span class="line">    dump_float(<span class="number">-2.0f</span>);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;0.1 + 0.2 = %.17g\n&quot;</span>, <span class="number">0.1</span> + <span class="number">0.2</span>);</span><br><span class="line">    <span class="type">float</span> f = <span class="number">16777217.0f</span>;      <span class="comment">// 2^24 + 1</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;16777217.0f 存进 float 后 = %.0f\n&quot;</span>, f);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">1.000000 = 0x3F800000</span><br><span class="line">0.100000 = 0x3DCCCCCD</span><br><span class="line">-2.000000 = 0xC0000000</span><br><span class="line">0.1 + 0.2 = 0.30000000000000004</span><br><span class="line">16777217.0f 存进 float 后 = 16777216</span><br></pre></td></tr></table></figure>
+
+<p>三个现象逐一解释：</p>
+<ul>
+<li><code>0.1f = 0x3DCCCCCD</code>：0.1 在二进制里是无限循环小数，IEEE 754 只能存<strong>最接近的近似值</strong>，所以 <code>0.1 + 0.2</code> 对不上精确的 <code>0.3</code>——<code>0.30000000000000004</code> 就是累加两次舍入的误差。<strong>判断浮点相等别用 <code>==</code></strong>，用误差容限（如 <code>fabs(a - b) &lt; 1e-9</code>）或干脆用整数&#x2F;十进制定点数；</li>
+<li><code>16777217.0f</code> 变回 <code>16777216</code>：<code>float</code> 尾数只有 23 位 + 隐含 1 位 &#x3D; 24 位有效精度，<strong>只能精确表示到 2^24 &#x3D; 16777216</strong>，再大的整数会&quot;跳着走&quot;，每 2 的幂密度减半；</li>
+<li><code>-2.0f = 0xC0000000</code>：最高位 S&#x3D;1 表示负数，印证&quot;符号位独立于数值部分&quot;。</li>
+</ul>
+<h2 id="7-三种语言对照表与小结"><a href="#7-三种语言对照表与小结" class="headerlink" title="7. 三种语言对照表与小结"></a>7. 三种语言对照表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>C</th>
+<th>C++</th>
+<th>Java</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>无符号整数</td>
+<td>有 <code>unsigned</code>&#x2F;<code>uintN_t</code></td>
+<td>同 C</td>
+<td><strong>没有</strong>（用 <code>long</code> + 位运算模拟）</td>
+</tr>
+<tr>
+<td><code>int</code> 宽度</td>
+<td>平台相关（常 32 位）</td>
+<td>同 C</td>
+<td><strong>固定 32 位</strong></td>
+</tr>
+<tr>
+<td>有符号溢出</td>
+<td><strong>未定义行为 UB</strong></td>
+<td>同 C</td>
+<td>定义好的补码回绕</td>
+</tr>
+<tr>
+<td>无符号溢出</td>
+<td>定义好的 mod 2^N</td>
+<td>同 C</td>
+<td>无无符号类型</td>
+</tr>
+<tr>
+<td>窄→宽转换</td>
+<td>按源类型补 0&#x2F;符号扩展</td>
+<td>同 C（推荐 <code>static_cast</code>）</td>
+<td>有符号类型一律符号扩展</td>
+</tr>
+<tr>
+<td>浮点</td>
+<td>IEEE 754（主流）</td>
+<td>同 C</td>
+<td>IEEE 754，行为与平台无关</td>
+</tr>
+<tr>
+<td>判浮点相等</td>
+<td>别用 <code>==</code></td>
+<td>同 C</td>
+<td>同 C（<code>Math.abs(a-b)&lt;eps</code>）</td>
+</tr>
+</tbody></table>
+<p><strong>🐾 小结</strong>：信息表示这节课就三件事——① <strong>位模式是唯一的真实</strong>，字节序决定&quot;串怎么排&quot;，无符号&#x2F;补码&#x2F;浮点只是同一串 bit 的不同读法；② <strong>读法切换会带来截断、符号扩展、溢出这些&quot;物理性&quot;后果</strong>，C&#x2F;C++ 里它们大多是 UB 或实现定义，Java 里则是确定语义，但原理同源；③ <strong>浮点天生有精度边界</strong>，二进制近似 + 有限尾数决定了它不适合精确比较和精确金额计算。记住这张位布局图和&quot;减法&#x3D;加补码&quot;这两句话，后面看汇编、看缓冲区溢出、看数据对齐，全都是这几块的展开。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0101/">https://hespethorn.github.io/posts/capp0101/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E8%A1%A5%E7%A0%81/">补码</a><a class="post-meta__tags" href="/tags/%E4%BF%A1%E6%81%AF%E8%A1%A8%E7%A4%BA/">信息表示</a><a class="post-meta__tags" href="/tags/%E5%AD%97%E8%8A%82%E5%BA%8F/">字节序</a><a class="post-meta__tags" href="/tags/IEEE754/">IEEE754</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">764</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1025</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">41</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-vanishing-exploding-gradient/" title="叠浪镇的掌闸人">叠浪镇的掌闸人</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260903/" title="AI 新闻速递（2026-09-03）">AI 新闻速递（2026-09-03）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0503/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
