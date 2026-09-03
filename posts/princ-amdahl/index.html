@@ -1,0 +1,561 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Amdahl 定律——从哪来、为什么、有什么用 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="Amdahl 定律——从哪来、为什么、有什么用 钩子：你花大价钱把训练从 1 张卡扩到 8 张，满心期待快 8 倍，结果只快了 3 倍；给服务加了 16 个线程，吞吐量却卡在 4 倍上不去。问题往往不在你并行得不好，而在那段&quot;怎么也并行不掉&quot;的串行代码，给整体加速焊死了一个天花板。 这条天花板，就是 Amdahl 定律。  0. 一个反直觉的事实先抛个问题：一段程序，90% 能">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Amdahl 定律——从哪来、为什么、有什么用">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-amdahl/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="Amdahl 定律——从哪来、为什么、有什么用 钩子：你花大价钱把训练从 1 张卡扩到 8 张，满心期待快 8 倍，结果只快了 3 倍；给服务加了 16 个线程，吞吐量却卡在 4 倍上不去。问题往往不在你并行得不好，而在那段&quot;怎么也并行不掉&quot;的串行代码，给整体加速焊死了一个天花板。 这条天花板，就是 Amdahl 定律。  0. 一个反直觉的事实先抛个问题：一段程序，90% 能">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-02T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-03T05:47:31.409Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="系统&#x2F;并发">
+<meta property="article:tag" content="并行">
+<meta property="article:tag" content="Amdahl">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Amdahl 定律——从哪来、为什么、有什么用",
+  "url": "https://hespethorn.github.io/posts/princ-amdahl/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-02T16:00:00.000Z",
+  "dateModified": "2026-09-03T05:47:31.409Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-amdahl/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Amdahl 定律——从哪来、为什么、有什么用',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">759</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1016</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Amdahl 定律——从哪来、为什么、有什么用</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Amdahl 定律——从哪来、为什么、有什么用</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.8k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>5mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h1 id="Amdahl-定律——从哪来、为什么、有什么用"><a href="#Amdahl-定律——从哪来、为什么、有什么用" class="headerlink" title="Amdahl 定律——从哪来、为什么、有什么用"></a>Amdahl 定律——从哪来、为什么、有什么用</h1><blockquote>
+<p>钩子：你花大价钱把训练从 1 张卡扩到 8 张，满心期待快 8 倍，结果只快了 3 倍；给服务加了 16 个线程，吞吐量却卡在 4 倍上不去。<strong>问题往往不在你并行得不好，而在那段&quot;怎么也并行不掉&quot;的串行代码，给整体加速焊死了一个天花板。</strong> 这条天花板，就是 Amdahl 定律。</p>
+</blockquote>
+<h2 id="0-一个反直觉的事实"><a href="#0-一个反直觉的事实" class="headerlink" title="0. 一个反直觉的事实"></a>0. 一个反直觉的事实</h2><p>先抛个问题：一段程序，90% 能并行、10% 必须串行。给你无限多的核，它最快能快多少倍？</p>
+<p>直觉可能是&quot;无限倍&quot;——毕竟 90% 都能并行嘛。但答案冷冰冰：<strong>最多 10 倍</strong>。因为那 10% 的串行部分，无论你堆多少核，它都得一个人慢慢走，而总耗时里永远含着这一段。串行占比，就是加速比的天花板。</p>
+<h2 id="1-它从哪来：1967-年，一场对-并行狂热-的泼冷水"><a href="#1-它从哪来：1967-年，一场对-并行狂热-的泼冷水" class="headerlink" title="1. 它从哪来：1967 年，一场对&quot;并行狂热&quot;的泼冷水"></a>1. 它从哪来：1967 年，一场对&quot;并行狂热&quot;的泼冷水</h2><p>1967 年，IBM 的计算机架构师 <strong>Gene Amdahl</strong> 在 AFIPS 会议上提出这条定律（原称 Amdahl&#39;s Argument），本意是给当时方兴未艾的并行机热潮&quot;降降温&quot;。那时候业界流行一种乐观：核越多，程序就越快。Amdahl 用一个极简模型指出——<strong>只要程序里还有必须串行的部分，加速比就有硬上限，堆硬件的收益会快速饱和。</strong></p>
+<p>他的模型假设：问题规模固定，其中比例 <code>p</code> 可并行、比例 <code>1-p</code> 必须串行；并行部分用 <code>n</code> 个处理器后加速 <code>n</code> 倍（理想情况）。于是总加速比：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">S(n) = 1 / ( (1 - p) + p / n )</span><br></pre></td></tr></table></figure>
+
+<p>当 <code>n → ∞</code>，分母里的 <code>p/n → 0</code>，加速比逼近 <code>1 / (1 - p)</code>。这就是那条天花板。</p>
+<h2 id="2-为什么需要它：没有它，就会在-伪瓶颈-上砸错钱"><a href="#2-为什么需要它：没有它，就会在-伪瓶颈-上砸错钱" class="headerlink" title="2. 为什么需要它：没有它，就会在&quot;伪瓶颈&quot;上砸错钱"></a>2. 为什么需要它：没有它，就会在&quot;伪瓶颈&quot;上砸错钱</h2><p>没有 Amdahl 定律这把尺子，团队很容易犯两类错：</p>
+<ul>
+<li><strong>盲目堆硬件</strong>：以为加卡、加核、加机器是线性加速，结果钱花了大半，性能只动了一点，因为真正的瓶颈是那 10% 串行代码。</li>
+<li><strong>优化错地方</strong>：花大力气把本来只占 5% 的可并行部分优化到极致，对整体加速几乎无感；反而是那 30% 的串行热点，才是该动刀的地方。</li>
+</ul>
+<p>Amdahl 定律的价值，是逼你在动手前先问一句：<strong>&quot;这段里，到底有多少是本质上必须串行的？&quot;</strong> 答案决定了你所有并行投入的上限。</p>
+<h2 id="3-本质一句话"><a href="#3-本质一句话" class="headerlink" title="3. 本质一句话"></a>3. 本质一句话</h2><blockquote>
+<p><strong>Amdahl 定律的本质是：一个系统的整体加速比，由其中&quot;无法并行的最大部分&quot;决定；可并行部分决定你能多快接近天花板，串行部分决定天花板本身有多高。</strong></p>
+</blockquote>
+<h2 id="4-它有什么用：从多核到分布式，处处是它"><a href="#4-它有什么用：从多核到分布式，处处是它" class="headerlink" title="4. 它有什么用：从多核到分布式，处处是它"></a>4. 它有什么用：从多核到分布式，处处是它</h2><p>Amdahl 不是教科书公式，它写进了每一处&quot;加资源换速度&quot;的工程决策里。</p>
+<p><strong>① 多核编译：<code>make -j</code> 为什么不是越快越好</strong></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">make -j4    <span class="comment"># 4 路并行编译</span></span><br><span class="line">make -j16   <span class="comment"># 16 路并行</span></span><br></pre></td></tr></table></figure>
+<p>并行度从 4 提到 16，耗时并不会降到 1&#x2F;4——链接、依赖解析、单线程的收尾阶段是串行的。<code>-j</code> 的甜区通常在核数附近，再往上收益骤减，正是 Amdahl 在说话。</p>
+<p><strong>② 分布式训练：数据并行加速比的硬约束</strong></p>
+<p>用 <code>n</code> 张卡做数据并行，每张卡算 <code>1/n</code> 的前向反向，但<strong>梯度同步（all-reduce）是跨卡串行的全局屏障</strong>。卡数越多，同步占比越高，<code>p/n</code> 里的通信项吃掉收益。工程上常看到 8 卡接近线性、64 卡只剩二三十倍，就是天花板在生效。</p>
+<p><strong>③ 数据库分库分表：读写放大的串行锚点</strong></p>
+<p>把一个大表按 user_id 分 16 片，点查能并行 16 倍；但<strong>跨片聚合（如 <code>SELECT SUM(amount)</code> 不带分片键）必须汇总 16 片结果</strong>——这一步天然串行。分片再细，这类查询的加速也被&quot;汇总&quot;这段焊死。</p>
+<p><strong>④ 一个更通用的判断：先估串行占比，再决定投不投</strong></p>
+<p>任何&quot;加机器&#x2F;加线程&quot;的提案，先用 Amdahl 算一遍天花板。若目标加速 10 倍，则串行占比必须压到 10% 以内——这立刻告诉你：该去重构那块串行热点，而不是去买第 17 台服务器。</p>
+<div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+<text x="340" y="26" text-anchor="middle" font-size="16" font-weight="bold" fill="#333">加速比 S(n) = 1 / ((1-p) + p/n)：核越多，越被串行占比焊死</text>
+<line x1="70" y1="60" x2="70" y2="250" stroke="#888" stroke-width="1.5"/>
+<line x1="70" y1="250" x2="650" y2="250" stroke="#888" stroke-width="1.5"/>
+<text x="20" y="64" font-size="11" fill="#666">20x</text>
+<text x="20" y="150" font-size="11" fill="#666">10x</text>
+<text x="20" y="246" font-size="11" fill="#666">1x</text>
+<text x="68" y="266" font-size="11" fill="#666">1核</text>
+<text x="630" y="266" font-size="11" fill="#666">16核</text>
+<line x1="70" y1="60" x2="650" y2="60" stroke="#bbb" stroke-dasharray="5"/>
+<line x1="70" y1="150" x2="650" y2="150" stroke="#bbb" stroke-dasharray="5"/>
+<line x1="70" y1="230" x2="650" y2="230" stroke="#bbb" stroke-dasharray="5"/>
+<text x="560" y="56" font-size="10" fill="#999">p=0.95 → 天花板 20x</text>
+<text x="560" y="146" font-size="10" fill="#999">p=0.90 → 天花板 10x</text>
+<text x="560" y="226" font-size="10" fill="#999">p=0.50 → 天花板 2x</text>
+<polyline points="70,240 117,221 192,209 341,181 650,149" fill="none" stroke="#E0567A" stroke-width="2.5"/>
+<polyline points="70,240 117,222 192,209 341,193 650,176" fill="none" stroke="#3FA67A" stroke-width="2.5"/>
+<polyline points="70,240 117,227 192,224 341,222 650,221" fill="none" stroke="#4A90D9" stroke-width="2.5"/>
+<rect x="360" y="276" width="14" height="10" fill="#E0567A"/><text x="380" y="285" font-size="11" fill="#555">p=0.95</text>
+<rect x="460" y="276" width="14" height="10" fill="#3FA67A"/><text x="480" y="285" font-size="11" fill="#555">p=0.90</text>
+<rect x="560" y="276" width="14" height="10" fill="#4A90D9"/><text x="580" y="285" font-size="11" fill="#555">p=0.50</text>
+</svg>
+</div>
+
+<h2 id="5-反例与边界：它什么时候会-骗-你"><a href="#5-反例与边界：它什么时候会-骗-你" class="headerlink" title="5. 反例与边界：它什么时候会&quot;骗&quot;你"></a>5. 反例与边界：它什么时候会&quot;骗&quot;你</h2><p>Amdahl 定律很强，但有三个常被忽视的边界：</p>
+<ul>
+<li><strong>它假设问题规模固定（强缩放）</strong>。现实中很多任务会随资源变多而&quot;变大&quot;——比如你有了 64 卡，就会去训更大的模型、更大的数据集。此时适用的是 <strong>Gustafson 定律（弱缩放）</strong>：总工作量随处理器数增长，并行部分也变大，加速比可以接近线性。所以&quot;加核没用&quot;只对&quot;死守原问题规模&quot;成立。</li>
+<li><strong>串行占比 <code>p</code> 往往不是常数</strong>。重构、缓存、异步化常常能把串行段本身并行掉或缩短，于是天花板被抬高——Amdahl 给的是某一刻的硬上限，不是永恒宿命。</li>
+<li><strong>它忽略了通信、同步、争用的隐性串行</strong>。公式里 <code>p/n</code> 假设并行段完美加速，真实系统里锁竞争、缓存一致性、I&#x2F;O 会把有效 <code>n</code> 打折，实际曲线比公式更早就塌。</li>
+</ul>
+<p>一句话：<strong>Amdahl 告诉你&quot;现在&quot;的天花板，而不是&quot;优化后&quot;的天花板；它管强缩放，不替弱缩放背书。</strong></p>
+<h2 id="6-对比表-🐾-小结"><a href="#6-对比表-🐾-小结" class="headerlink" title="6. 对比表 + 🐾 小结"></a>6. 对比表 + 🐾 小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>只看直觉（误）</th>
+<th>按 Amdahl 定律（正）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>加 8 核的期望</td>
+<td>快 8 倍</td>
+<td>取决于串行占比，可能只快 3 倍</td>
+</tr>
+<tr>
+<td>优化优先级</td>
+<td>哪段好并行优化哪段</td>
+<td>先砍串行热点（它定天花板）</td>
+</tr>
+<tr>
+<td>资源投入</td>
+<td>无脑堆核&#x2F;堆卡</td>
+<td>先算天花板，再决定投不投</td>
+</tr>
+<tr>
+<td>问题变大时</td>
+<td>仍按固定规模算</td>
+<td>改用 Gustafson（弱缩放）</td>
+</tr>
+<tr>
+<td>串行段被重构后</td>
+<td>天花板不变（错觉）</td>
+<td>天花板本身被抬高</td>
+</tr>
+</tbody></table>
+<p><strong>这条原则带走的几句话 🐾</strong></p>
+<ul>
+<li>加速比的上限，写在那段&quot;怎么也并行不掉&quot;的代码里，不在你买了多少核。</li>
+<li>先估串行占比，再决定是去重构、还是去买第 17 台服务器——前者往往更划算。</li>
+<li>Amdahl 管&quot;强缩放&quot;（问题不变），问题跟着资源一起变大时，请换 Gustafson 上场。</li>
+<li>它给的是此刻的天花板，不是宿命；把串行段并行掉或缩短，天花板就会升高。</li>
+</ul>
+<p><strong>相关阅读</strong></p>
+<ul>
+<li>《性能与 Amdahl 定律》（CS-Fundamentals 课程版，从体系化&#x2F;课程视角展开）：<a href="/c61c0110/">&#x2F;c61c0110&#x2F;</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-amdahl/">https://hespethorn.github.io/posts/princ-amdahl/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E7%B3%BB%E7%BB%9F-%E5%B9%B6%E5%8F%91/">系统/并发</a><a class="post-meta__tags" href="/tags/%E5%B9%B6%E8%A1%8C/">并行</a><a class="post-meta__tags" href="/tags/Amdahl/">Amdahl</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">759</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1016</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-vanishing-exploding-gradient/" title="叠浪镇的掌闸人">叠浪镇的掌闸人</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260903/" title="AI 新闻速递（2026-09-03）">AI 新闻速递（2026-09-03）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-ensemble-learning/" title="临渊镇的合议官">临渊镇的合议官</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
