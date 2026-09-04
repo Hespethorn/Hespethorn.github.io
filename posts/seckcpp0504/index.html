@@ -1,0 +1,601 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="5.2 &#x2F; 5.3 给读接口加了缓存，但缓存是副本——副本和真相源（MySQL）之间随时可能不一致。这一篇把缓存层最容易被问倒的问题讲透：写操作之后缓存怎么办？为什么顺序错了会出事故？单次删除还留了什么缝？延迟双删补的是哪条缝？ 配套代码在 5.4 已落地为可开关的 double_delete_ms（默认关），这篇讲清它到底在防什么、以及为什么默认不开。  本文是「秒杀系统（C++ &amp;#">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0504/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="5.2 &#x2F; 5.3 给读接口加了缓存，但缓存是副本——副本和真相源（MySQL）之间随时可能不一致。这一篇把缓存层最容易被问倒的问题讲透：写操作之后缓存怎么办？为什么顺序错了会出事故？单次删除还留了什么缝？延迟双删补的是哪条缝？ 配套代码在 5.4 已落地为可开关的 double_delete_ms（默认关），这篇讲清它到底在防什么、以及为什么默认不开。  本文是「秒杀系统（C++ &amp;#">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-02T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-04T07:48:45.638Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="缓存一致性">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Redis">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="高并发">
+<meta property="article:tag" content="Cache-Aside">
+<meta property="article:tag" content="延迟双删">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删",
+  "url": "https://hespethorn.github.io/posts/seckcpp0504/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-02T16:00:00.000Z",
+  "dateModified": "2026-09-04T07:48:45.638Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0504/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>5.2 &#x2F; 5.3 给读接口加了缓存，但缓存是<strong>副本</strong>——副本和真相源（MySQL）之间随时可能不一致。这一篇把缓存层最容易被问倒的问题讲透：<strong>写操作之后缓存怎么办？为什么顺序错了会出事故？单次删除还留了什么缝？延迟双删补的是哪条缝？</strong> 配套代码在 5.4 已落地为可开关的 <code>double_delete_ms</code>（默认关），这篇讲清它到底在防什么、以及为什么默认不开。</p>
+<blockquote>
+<p>本文是「秒杀系统（C++ &#x2F; Drogon）」系列第五章第四篇。配套代码：<code>src/service/SkuCache.*</code>（失效策略 + <code>DelayDeleter</code> 延迟删除线程）、<code>config.json</code> 的 <code>cache.double_delete_ms</code>。代码对应阶段二 <code>v0.2.x</code>。</p>
+</blockquote>
+<h2 id="一、缓存一致性：是什么、坑在哪、本质一句话"><a href="#一、缓存一致性：是什么、坑在哪、本质一句话" class="headerlink" title="一、缓存一致性：是什么、坑在哪、本质一句话"></a>一、缓存一致性：是什么、坑在哪、本质一句话</h2><ul>
+<li><strong>是什么</strong>：读接口走缓存后，系统里同一份数据存在两个地方——MySQL（真相）和 Redis（副本）。<strong>写操作发生的那一刻，两处就不一致了</strong>。所谓缓存一致性，就是管理&quot;副本何时作废、何时重建、作废后会不会读到脏值&quot;这一整套时序问题。</li>
+<li><strong>坑（最常见的两处）</strong>：① 顺序反了——先删缓存再更新库，中间来的读请求会把<strong>旧值</strong>回填进缓存，且要等 TTL 到期才自愈；② 顺序对了但仍有窗口——读请求在 <code>DEL</code> <strong>之前</strong>读库读到旧值、在 <code>DEL</code> <strong>之后</strong>才把旧值写回缓存。</li>
+<li><strong>本质一句话</strong>：<strong>缓存的&quot;一致性&quot;不是靠同步（把新值也写一份），而是靠&quot;失效&quot;（删掉旧副本让下次读重建）——因为 DEL 幂等、与时序无关，而写新值要回答&quot;我手上的新值来自哪个事务&quot;。</strong></li>
+</ul>
+<h2 id="二、为什么用-删-而不是-写-：失效的语义更安全"><a href="#二、为什么用-删-而不是-写-：失效的语义更安全" class="headerlink" title="二、为什么用&quot;删&quot;而不是&quot;写&quot;：失效的语义更安全"></a>二、为什么用&quot;删&quot;而不是&quot;写&quot;：失效的语义更安全</h2><p>下单成功后，我们面对的缓存值里含 <strong>stock</strong>——它是多个并发事务共同修改的字段。假如&quot;更新缓存&quot;而不是&quot;删缓存&quot;：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">事务 A：扣减 stock 10→9，提交成功</span><br><span class="line">事务 B：扣减 stock 9→8，提交成功</span><br><span class="line">问题：A、B 都试图&quot;把新 stock 写进缓存&quot;。若 B 先写（8）、A 后写（9），</span><br><span class="line">缓存里就是 9 —— 比真实值 8 还多 1，而且这个错值要等 TTL 才消失。</span><br></pre></td></tr></table></figure>
+
+<p>更新缓存必须回答&quot;我手上的值是不是最新&quot;，而这需要版本号&#x2F;时间戳——把事务提交顺序和缓存写入顺序对齐，复杂度瞬间爆炸。<strong>删除则完全绕开这个问题</strong>：<code>DEL</code> 是幂等的，谁先谁后无所谓，任何一次删除之后到达的读请求都会 miss、回源数据库拿到真相再重建。这正是 Cache-Aside 里 &quot;Aside&quot; 的含义：缓存是旁路，写路径根本不维护它，只负责把它作废。</p>
+<p>再叠一层：本项目列表缓存 value 里含<strong>全部</strong>商品的 stock，想&quot;更新&quot;就得重算整个 JSON，代价比删除大得多。所以 5.2 &#x2F; 5.3 落地时就把语义定死了：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SkuCache.h —— 为什么是&quot;删&quot;不是&quot;改&quot;</span></span><br><span class="line"><span class="comment">//   1) 列表 value 里含全部 sku 的 stock，要改就得重算整个 JSON，不如交给下次读重建；</span></span><br><span class="line"><span class="comment">//   2) 改值要回答&quot;我手上的新库存来自哪个事务&quot;，时序一乱就把旧值盖回去；</span></span><br><span class="line"><span class="comment">//      DEL 是幂等的，且与时序无关 —— 任意一次 DEL 之后到达的读请求必然 miss 重建。</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="三、最经典的顺序坑：先删缓存再更新数据库"><a href="#三、最经典的顺序坑：先删缓存再更新数据库" class="headerlink" title="三、最经典的顺序坑：先删缓存再更新数据库"></a>三、最经典的顺序坑：先删缓存再更新数据库</h2><p>假设把&quot;删缓存&quot;放在事务提交<strong>之前</strong>，事故时序是：</p>
+<div align="center">
+<svg viewBox="0 0 680 320" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="320" fill="#ffffff"/>
+  <text x="340" y="22" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 1：顺序反了（先 DEL 后更新 DB）——旧值回填，TTL 内全是脏数据</text>
+  <g font-family="sans-serif" font-size="11">
+    <text x="60" y="60" fill="#1e3a8a" font-weight="bold">写请求（下单）</text>
+    <text x="400" y="60" fill="#166534" font-weight="bold">读请求（查详情）</text>
+    <line x1="60" y1="80" x2="620" y2="80" stroke="#e5e7eb" stroke-width="1"/>
+    <text x="80" y="110" fill="#7f1d1d">① DEL 缓存</text>
+    <text x="80" y="135" fill="#6b7280">   ② 更新 DB stock=9</text>
+    <text x="80" y="160" fill="#6b7280">   （事务提交中…）</text>
+    <text x="430" y="110" fill="#166534">③ GET 缓存 → miss</text>
+    <text x="430" y="135" fill="#166534">④ 回源 DB，读到【旧 stock=10】</text>
+    <text x="430" y="160" fill="#166534">⑤ 把旧值写回缓存</text>
+    <text x="430" y="185" fill="#b91c1c">⑥ DB 更新完成 stock=9</text>
+    <rect x="400" y="205" width="230" height="70" rx="6" fill="#fef2f2" stroke="#b91c1c"/>
+    <text x="420" y="228" fill="#7f1d1d" font-weight="bold">结果：缓存 = 旧值 stock=10</text>
+    <text x="420" y="248" fill="#7f1d1d">所有读请求在 TTL 内都看到 10，</text>
+    <text x="420" y="268" fill="#7f1d1d">明明已经卖到 9 了。</text>
+  </g>
+</svg>
+</div>
+
+<p>这个事故的本质：<strong>删除是一个&quot;瞬时&quot;动作，而更新数据库是一个&quot;持续&quot;过程</strong>——删除和更新之间有一段时间窗，任何读请求落在窗内都会把旧值填回去，把我们的删除&quot;抵消&quot;掉。</p>
+<p><strong>解法一句话：顺序绝不能反——先让数据库落定，再删缓存。</strong> 本项目把删除挂在事务提交回调里，天然保证顺序：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SeckillService.cc :: doSeckill —— DEL 挂在 commit 回调里</span></span><br><span class="line">tx-&gt;<span class="built_in">setCommitCallback</span>(</span><br><span class="line">    [cb, token, <span class="keyword">this</span>, skuId](<span class="type">bool</span> committed) &#123;</span><br><span class="line">        <span class="keyword">if</span> (committed) &#123;</span><br><span class="line">            <span class="comment">// 5.2 / 5.3 写侧：committed 之后才删缓存 ——</span></span><br><span class="line">            <span class="comment">// 保证&quot;数据库已落定&quot;先于&quot;缓存作废&quot;。</span></span><br><span class="line">            <span class="keyword">if</span> (cache_) cache_-&gt;<span class="built_in">invalidateOnOrder</span>(skuId);</span><br><span class="line">            <span class="built_in">cb</span>(<span class="literal">true</span>, <span class="string">&quot;OK&quot;</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;DB_ERROR: commit failed&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;);</span><br></pre></td></tr></table></figure>
+
+<p><code>committed == true</code> 才执行删除——删除时数据库已经提交，读请求即使 miss 回源，读到的也必然是<strong>新值</strong>。</p>
+<h2 id="四、顺序对了，仍有一条缝：旧值回填窗口与延迟双删"><a href="#四、顺序对了，仍有一条缝：旧值回填窗口与延迟双删" class="headerlink" title="四、顺序对了，仍有一条缝：旧值回填窗口与延迟双删"></a>四、顺序对了，仍有一条缝：旧值回填窗口与延迟双删</h2><p>先提交 DB 再删缓存，还剩下一条极窄的缝：</p>
+<div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="680" height="300" fill="#ffffff"/>
+  <text x="340" y="22" font-size="15" font-family="sans-serif" fill="#1f2937" text-anchor="middle">图 2：顺序正确（先提交后 DEL）下的残留窗口 —— 延迟双删要补的缝</text>
+  <g font-family="sans-serif" font-size="11">
+    <text x="60" y="60" fill="#1e3a8a" font-weight="bold">写请求（下单）</text>
+    <text x="400" y="60" fill="#166534" font-weight="bold">读请求（查详情）</text>
+    <line x1="60" y1="80" x2="620" y2="80" stroke="#e5e7eb" stroke-width="1"/>
+    <text x="80" y="105" fill="#6b7280">① 更新 DB stock=10→9，提交成功</text>
+    <text x="430" y="105" fill="#166534">② 回源 DB —— 恰好在这条缝里</text>
+    <text x="430" y="128" fill="#7f1d1d">   读到的是【旧 stock=10】？</text>
+    <text x="80" y="155" fill="#1d4ed8">③ DEL 缓存</text>
+    <text x="430" y="175" fill="#b91c1c">④ 旧值回填缓存 stock=10</text>
+    <rect x="400" y="195" width="230" height="60" rx="6" fill="#fef2f2" stroke="#b91c1c"/>
+    <text x="420" y="218" fill="#7f1d1d" font-weight="bold">缓存又被旧值占了，等 TTL 自愈</text>
+    <text x="420" y="238" fill="#7f1d1d">—— 单次删除留下的不一致窗口</text>
+  </g>
+</svg>
+</div>
+
+<p>等等——按图 2 的时序，读请求在 ② 回源 DB 时，写事务<strong>已经提交</strong>（① 完成），它为什么会读到旧值？答案是 <strong>InnoDB 的快照读 &#x2F; 事务隔离</strong>：读请求自己的事务如果在写提交前就已开启（或走的是较早的 consistent snapshot），仍可能读到旧版本。加上 MySQL 主从架构下&quot;主库已提交、从库延迟&quot;的回源，这个窗口在真实分布式系统里并不罕见。</p>
+<p><strong>延迟双删</strong>就是为这条缝设计的：第一次 DEL 之后，隔一小段时间（比如 1 秒）<strong>再删一次</strong>。窗口内如果有旧值回填，第二次删除把它清掉；窗口之后再回填的读请求，读到的已经是新值，没有脏数据可填。它不追求&quot;绝对无窗口&quot;，而是把窗口的<strong>危害</strong>（脏值长期驻留）压缩成<strong>多一次 miss</strong>（缓存被多删一次，下次读多回源一次——正确性无损）。</p>
+<h2 id="五、落地：专用延迟删除线程，而不是-sleep"><a href="#五、落地：专用延迟删除线程，而不是-sleep" class="headerlink" title="五、落地：专用延迟删除线程，而不是 sleep"></a>五、落地：专用延迟删除线程，而不是 sleep</h2><p>直觉写法是在 IO 线程里 <code>sleep(1s)</code> 再删——这在 Drogon 里是红线（IO 线程一次 sleep 会卡住同线程所有排队请求，见本系列 ADR-2）。5.4 的落地实现是一个<strong>专用后台线程 + 延时任务队列</strong>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SkuCache.cc —— 5.4 延迟双删专用执行线程（延时队列实现）</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">DelayDeleter</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">schedule</span><span class="params">(std::vector&lt;std::string&gt; keys)</span> </span>&#123;</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="function">std::lock_guard&lt;std::mutex&gt; <span class="title">lk</span><span class="params">(m_)</span></span>;</span><br><span class="line">            queue_.<span class="built_in">push_back</span>(&#123;std::chrono::steady_clock::<span class="built_in">now</span>() + delay_,</span><br><span class="line">                              std::<span class="built_in">move</span>(keys)&#125;);   <span class="comment">// 投递 = push + notify，纳秒级</span></span><br><span class="line">        &#125;</span><br><span class="line">        cv_.<span class="built_in">notify_one</span>();</span><br><span class="line">    &#125;</span><br><span class="line"><span class="keyword">private</span>:</span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">run</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="function">std::unique_lock&lt;std::mutex&gt; <span class="title">lk</span><span class="params">(m_)</span></span>;</span><br><span class="line">        <span class="keyword">while</span> (!stop_) &#123;</span><br><span class="line">            <span class="keyword">if</span> (queue_.<span class="built_in">empty</span>()) &#123; cv_.<span class="built_in">wait</span>(lk); <span class="keyword">continue</span>; &#125;</span><br><span class="line">            <span class="keyword">auto</span> &amp;next = queue_.<span class="built_in">front</span>();</span><br><span class="line">            <span class="keyword">if</span> (std::chrono::steady_clock::<span class="built_in">now</span>() &lt; next.fireAt) &#123;</span><br><span class="line">                cv_.<span class="built_in">wait_until</span>(lk, next.fireAt);   <span class="comment">// 睡到最早任务的到点时刻</span></span><br><span class="line">                <span class="keyword">continue</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">auto</span> keys = std::<span class="built_in">move</span>(next.keys);</span><br><span class="line">            queue_.<span class="built_in">pop_front</span>();</span><br><span class="line">            lk.<span class="built_in">unlock</span>();                            <span class="comment">// 执行 DEL 期间不持锁</span></span><br><span class="line">            <span class="built_in">fire_</span>(std::<span class="built_in">move</span>(keys));                 <span class="comment">// 回调里发起异步 DEL</span></span><br><span class="line">            lk.<span class="built_in">lock</span>();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>投递端（IO 线程）只做 <code>push + notify</code>；到点后由<strong>后台线程</strong>发起 Redis 异步 <code>DEL</code>（<code>execCommandAsync</code> 线程安全，命令投递回 Redis 客户端的事件循环，后台线程也不阻塞）。失效路径统一挂上二次删除：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// SkuCache::invalidateOnOrder → invalidateItem / invalidate / invalidateList</span></span><br><span class="line"><span class="comment">// 在第一次 DEL 之后：把同一组 key 投进延时队列，到点再删一次</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">SkuCache::invalidateItem</span><span class="params">(<span class="type">int64_t</span> skuId)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (!cfg_.enabled || !redis_) <span class="keyword">return</span>;</span><br><span class="line">    <span class="type">const</span> std::string key = keys_.<span class="built_in">item</span>(skuId);</span><br><span class="line">    <span class="built_in">del</span>(key);                              <span class="comment">// 第一次删除（挂在 commit 回调里）</span></span><br><span class="line">    <span class="built_in">scheduleDelayedDelete</span>(&#123;key&#125;);          <span class="comment">// 5.4：延迟 doubleDeleteMs 再删一次</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>开关与可观测：</p>
+<figure class="highlight jsonc"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// config.json → cache 段</span></span><br><span class="line"><span class="attr">&quot;double_delete_ms&quot;</span><span class="punctuation">:</span> <span class="number">0</span>   <span class="comment">// 0 = 关闭（默认）；&gt;0（如 500/1000）= 开启延迟双删（毫秒）</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight jsonc"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// GET /api/cache/stats</span></span><br><span class="line"><span class="attr">&quot;delayed_delete&quot;</span><span class="punctuation">:</span> <span class="number">12</span>    <span class="comment">// 二次删除累计执行次数（0 = 没开）</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="六、为什么默认关闭：延迟双删是一次显式的交易"><a href="#六、为什么默认关闭：延迟双删是一次显式的交易" class="headerlink" title="六、为什么默认关闭：延迟双删是一次显式的交易"></a>六、为什么默认关闭：延迟双删是一次显式的交易</h2><table>
+<thead>
+<tr>
+<th>项</th>
+<th>单次 DEL（默认）</th>
+<th>延迟双删（开启）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>不一致窗口</td>
+<td>一次&quot;旧值回填&quot;窗口（极窄）</td>
+<td>理论上仍有，但窗口内回填的旧值会被第二次 DEL 清掉</td>
+</tr>
+<tr>
+<td>代价</td>
+<td>无</td>
+<td><strong>多删一次&quot;可能已被新值重建&quot;的缓存</strong> → 多一次 miss 回源</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>读多写少、写后立即 DEL、窗口本来就窄（本项目）</td>
+<td>对 stock 新鲜度极敏感、或回源链路有主从延迟（从库读旧）的场景</td>
+</tr>
+</tbody></table>
+<p>本项目秒杀下单 QPS 远小于读 QPS，且写后立即失效、TTL 兜底，那条缝的<strong>实际危害</strong>很低；而多删一次会让每次下单后紧接着的读都白 miss 一次。所以 5.4 把能力做出来、默认关掉，需要更严一致性时再开——这符合本项目一贯的原则：<strong>先量清楚再优化，把取舍做成显式开关而不是悄悄写死</strong>。</p>
+<h2 id="七、小结"><a href="#七、小结" class="headerlink" title="七、小结"></a>七、小结</h2><table>
+<thead>
+<tr>
+<th>护栏</th>
+<th>作用</th>
+<th>在代码哪里</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>只删不写</td>
+<td>DEL 幂等、与时序无关，绕开&quot;新值来自哪个事务&quot;的难题</td>
+<td><code>SkuCache</code> 只有 <code>del/invalidate*</code>，没有&quot;更新缓存&quot;</td>
+</tr>
+<tr>
+<td>先提交后删除</td>
+<td>杜绝&quot;删了之后读请求回填旧值&quot;的最常见事故</td>
+<td>DEL 挂在 <code>setCommitCallback</code>（committed 才删）</td>
+</tr>
+<tr>
+<td>删哪些 key 可配</td>
+<td>item &#x2F; all &#x2F; none 三档，新鲜度↔命中率显式交换</td>
+<td><code>invalidate_on_order</code></td>
+</tr>
+<tr>
+<td>延迟双删（默认关）</td>
+<td>补&quot;先读旧值后回填&quot;的残留窗口</td>
+<td><code>double_delete_ms</code> + <code>DelayDeleter</code> 专用线程</td>
+</tr>
+<tr>
+<td>计数可观测</td>
+<td>删除行为可以被量化验证，不是黑盒</td>
+<td>stats <code>delayed_delete</code></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>🐾 核心三句话：<strong>缓存一致性靠&quot;失效&quot;不靠&quot;同步&quot;；删除必须在数据库落定之后；删除后仍有极窄回填窗口，延迟双删多花一次删除把它清掉——值不值，取决于你的不一致窗口有多宽。</strong></p>
+<p>验证：<code>config.json</code> 开 <code>&quot;double_delete_ms&quot;: 1000</code> → 重启 → 下单一个 sku → <code>redis-cli MONITOR</code> 能看到同一 key 两次 <code>DEL</code>（间隔约 1s），<code>/api/cache/stats</code> 的 <code>delayed_delete</code> 递增；改回 0 后只有一次。5.4 之后，5.5 讲缓存预热与雪崩——抖动已经有了，缺的是&quot;流量进来之前把缓存填满&quot;。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0504/">https://hespethorn.github.io/posts/seckcpp0504/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E7%BC%93%E5%AD%98%E4%B8%80%E8%87%B4%E6%80%A7/">缓存一致性</a><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Redis/">Redis</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a><a class="post-meta__tags" href="/tags/Cache-Aside/">Cache-Aside</a><a class="post-meta__tags" href="/tags/%E5%BB%B6%E8%BF%9F%E5%8F%8C%E5%88%A0/">延迟双删</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0102/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择">秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计</a><time datetime="2026-08-28T16:00:00.000Z" title="Created 2026-08-29 00:00:00">2026-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0204/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）">秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0205/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）">秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0302/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0303/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连">秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0304/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis">秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0305/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限">秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0306/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定">秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0307/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销">秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0308/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper">秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0309/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）">秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0310/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析">秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0401/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0402/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0403/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）">秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0404/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖">秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0405/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）">秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0406/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）">秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0407/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）">秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0408/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）">秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0503/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0504/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删">秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0505/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.5 缓存预热与雪崩：冷启动的回写风暴，和流量进来前该做的事">秒杀系统高并发优化实战（C++ / Drogon）：5.5 缓存预热与雪崩：冷启动的回写风暴，和流量进来前该做的事</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0506/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.6 防缓存穿透：空值策略——把&quot;查无此物&quot;也缓存下来">秒杀系统高并发优化实战（C++ / Drogon）：5.6 防缓存穿透：空值策略——把&quot;查无此物&quot;也缓存下来</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0507/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.7 防缓存穿透：自实现布隆过滤器——海量随机 id 的终结者">秒杀系统高并发优化实战（C++ / Drogon）：5.7 防缓存穿透：自实现布隆过滤器——海量随机 id 的终结者</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0508/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.8 多级缓存：自实现本地 LRU 做 L1">秒杀系统高并发优化实战（C++ / Drogon）：5.8 多级缓存：自实现本地 LRU 做 L1</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-dropout/" title="闻莺坊的歇弦师">闻莺坊的歇弦师</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260904/" title="AI 新闻速递（2026-09-04）">AI 新闻速递（2026-09-04）</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0101/" title="Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0102/" title="Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载">Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

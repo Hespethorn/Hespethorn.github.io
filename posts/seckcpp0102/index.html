@@ -1,0 +1,828 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="上一篇 1.1 里我用五句话交代了&quot;为什么选 Drogon&quot;，但那五句太像宣传册了。真到了面试或者技术评审上，一定会有人追问一句：&quot;工业界到底谁在用 Drogon？&quot; 这个问题很扎心，而且必须正面回答。这篇文章就干三件事：把 Drogon 和它的同类放到一张桌子上比，把&quot;工业界实际用什么&quot;讲清楚，最后交代我在这个项目上做这个选型时放弃了什">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0102/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="上一篇 1.1 里我用五句话交代了&quot;为什么选 Drogon&quot;，但那五句太像宣传册了。真到了面试或者技术评审上，一定会有人追问一句：&quot;工业界到底谁在用 Drogon？&quot; 这个问题很扎心，而且必须正面回答。这篇文章就干三件事：把 Drogon 和它的同类放到一张桌子上比，把&quot;工业界实际用什么&quot;讲清楚，最后交代我在这个项目上做这个选型时放弃了什">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-03T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-04T07:48:45.636Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="高并发">
+<meta property="article:tag" content="技术选型">
+<meta property="article:tag" content="brpc">
+<meta property="article:tag" content="架构">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择",
+  "url": "https://hespethorn.github.io/posts/seckcpp0102/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-03T16:00:00.000Z",
+  "dateModified": "2026-09-04T07:48:45.636Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0102/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>16mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>上一篇 1.1 里我用五句话交代了&quot;为什么选 <code>Drogon</code>&quot;，但那五句太像宣传册了。真到了面试或者技术评审上，一定会有人追问一句：<strong>&quot;工业界到底谁在用 <code>Drogon</code>？&quot;</strong></p>
+<p>这个问题很扎心，而且必须正面回答。这篇文章就干三件事：把 <code>Drogon</code> 和它的同类放到一张桌子上比，把&quot;工业界实际用什么&quot;讲清楚，最后交代我在这个项目上做这个选型时<strong>放弃了什么</strong>。</p>
+<h2 id="一、先回答最扎心的那个问题：工业界真用-Drogon-吗？"><a href="#一、先回答最扎心的那个问题：工业界真用-Drogon-吗？" class="headerlink" title="一、先回答最扎心的那个问题：工业界真用 Drogon 吗？"></a>一、先回答最扎心的那个问题：工业界真用 <code>Drogon</code> 吗？</h2><p>诚实答案分三层。</p>
+<p><strong>第一层：大厂的 <code>C++</code> 后端，几乎不使用&quot;<code>Web</code> 框架&quot;这个词。</strong> 你去问百度、腾讯、字节的 <code>C++</code> 团队用什么，答案不会是 <code>Drogon</code>，也不会是 <code>oat++</code>，而是 <strong><code>RPC</code> 框架</strong>——<code>brpc</code>、<code>Sogou Workflow</code>（及其上的 <code>SRPC</code>）、<code>TARS</code>、<code>gRPC</code>。原因很简单：大厂内部服务之间走的是二进制协议 + 服务发现，<code>HTTP</code> 只是南北向入口那一层，而入口通常由 <code>Nginx</code> &#x2F; <code>OpenResty</code> &#x2F; <code>Envoy</code> &#x2F; <code>Go</code> 网关承担，轮不到 <code>C++</code> 业务服务直接对公网。</p>
+<p><strong>第二层：<code>Drogon</code> 是&quot;社区里最好的 <code>C++</code> <code>Web</code> 框架&quot;，不是&quot;大厂标配&quot;。</strong> 这两件事不矛盾。<code>Drogon</code> 在 <code>GitHub</code> 上是 <code>C++</code> <code>Web</code> 框架里星标最高的那一档，<code>TechEmpower</code> Round 19（2020-05）综合榜拿过第一，Round 21 综合分 7801 排在所有框架之首（同期 <code>Rust</code> <code>actix</code> 7667、<code>ASP.NET Core</code> 7077、<code>Go</code> <code>gin</code> 1943、<code>Spring</code> 1846）。但这只能证明它<strong>跑得快、功能全</strong>，不能证明大厂在生产用它。它的真实用户画像是：个人项目、创业公司、边缘&#x2F;嵌入式 <code>Linux</code> 上的 <code>HTTP</code> 服务、以及需要 <code>C++</code> 性能又不想自己拼装全家桶的小团队。</p>
+<p><strong>第三层：真正被生产验证的 <code>C++</code> 通信框架，都有公开的落地清单。</strong> 举两个我查得到出处的：</p>
+<table>
+<thead>
+<tr>
+<th>框架</th>
+<th>落地规模（公开资料）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong><code>brpc</code></strong>（百度开源，2022-12 从 <code>Apache</code> 孵化器毕业成 <code>TLP</code>）</td>
+<td>百度内部 4000+ 活跃模块、600 万+ 实例；小红书推荐 1 万+ 实例；爱奇艺广告 3000+ 台机器；<code>vivo</code>、滴滴、B站、作业帮、欢聚时代、第四范式等均有落地；<code>Apache Doris</code> &#x2F; <code>BaikalDB</code> &#x2F; <code>StarRocks</code> 用它做节点间 <code>RPC</code></td>
+</tr>
+<tr>
+<td><strong><code>Sogou </code>C++<code> Workflow</code></strong></td>
+<td>支撑搜狗几乎所有 <code>C++</code> 后端在线服务（搜索、云输入法、在线广告），日处理请求百亿级；官方压测小包（64&#x2F;512 B）可稳定在 50 万 <code>QPS</code></td>
+</tr>
+</tbody></table>
+<p>注意这两位都不是&quot;<code>Web</code> 框架&quot;：<code>brpc</code> 是 <code>RPC</code> 框架，<code>Workflow</code> 是&quot;通信 + 计算&quot;一体的任务流引擎。它们的共同点是<strong>内部服务通信</strong>，不是&quot;给你一个 <code>HTTP</code> 路由 + <code>ORM</code> + 模板引擎让你写业务&quot;。</p>
+<blockquote>
+<p><strong>本质一句话</strong>：<code>C++</code> 在工业界的主战场是<strong>基础设施</strong>（存储、检索引擎、推荐、广告、音视频、游戏服务端），那里的关键词是 <code>RPC</code> 和延迟；而&quot;用 <code>C++</code> 写对外 <code>HTTP</code> 业务后端&quot;本身就是小众选择，<code>Drogon</code> 是这个小众赛道里最好的那一个 🐾。</p>
+</blockquote>
+<h2 id="二、把赛道分清楚：Web-框架-RPC-框架-网络库，别跨赛道比"><a href="#二、把赛道分清楚：Web-框架-RPC-框架-网络库，别跨赛道比" class="headerlink" title="二、把赛道分清楚：Web 框架 &#x2F; RPC 框架 &#x2F; 网络库，别跨赛道比"></a>二、把赛道分清楚：<code>Web</code> 框架 &#x2F; <code>RPC</code> 框架 &#x2F; 网络库，别跨赛道比</h2><p>技术选型文章最常见的错误，就是把 <code>Drogon</code> 和 <code>brpc</code> 拉到一起比&quot;谁更强&quot;。它们解决的不是同一个问题。先把赛道画出来：</p>
+<div align="center">
+<svg viewBox="0 0 680 350" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+  <text x="340" y="26" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">C++ 服务端框架的三个赛道（越往上越靠近业务，越往下越靠近内核）</text>
+  <rect x="12" y="56" width="86" height="76" rx="8" fill="#eef4ff" stroke="#409eff" stroke-width="2" />
+  <text x="55" y="86" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">Web 框架</text>
+  <text x="55" y="106" text-anchor="middle" font-size="10" fill="#555">对外 HTTP</text>
+  <text x="55" y="122" text-anchor="middle" font-size="10" fill="#555">+ 全家桶</text>
+  <rect x="110" y="56" width="128" height="76" rx="8" fill="#ffffff" stroke="#409eff" stroke-width="2" />
+  <text x="174" y="84" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">Drogon</text>
+  <text x="174" y="104" text-anchor="middle" font-size="10" fill="#555">ORM + Redis + WS</text>
+  <text x="174" y="120" text-anchor="middle" font-size="10" fill="#555">HTTP/2 · 异步</text>
+  <rect x="248" y="56" width="128" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="312" y="84" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">oat++</text>
+  <text x="312" y="104" text-anchor="middle" font-size="10" fill="#555">零依赖 · 体积小</text>
+  <text x="312" y="120" text-anchor="middle" font-size="10" fill="#555">Swagger 内置</text>
+  <rect x="386" y="56" width="128" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="450" y="84" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">userver</text>
+  <text x="450" y="104" text-anchor="middle" font-size="10" fill="#555">Yandex 生产级</text>
+  <text x="450" y="120" text-anchor="middle" font-size="10" fill="#555">组件模型 + DB 驱动</text>
+  <rect x="524" y="56" width="144" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="596" y="84" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">Crow / Pistache</text>
+  <text x="596" y="104" text-anchor="middle" font-size="10" fill="#555">只要路由</text>
+  <text x="596" y="120" text-anchor="middle" font-size="10" fill="#555">轻量微框架</text>
+  <rect x="12" y="146" width="86" height="76" rx="8" fill="#fff7e6" stroke="#e6a23c" stroke-width="2" />
+  <text x="55" y="176" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">RPC 框架</text>
+  <text x="55" y="196" text-anchor="middle" font-size="10" fill="#555">服务间调用</text>
+  <text x="55" y="212" text-anchor="middle" font-size="10" fill="#555">二进制 + 治理</text>
+  <rect x="110" y="146" width="128" height="76" rx="8" fill="#ffffff" stroke="#e6a23c" stroke-width="2" />
+  <text x="174" y="174" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">brpc</text>
+  <text x="174" y="194" text-anchor="middle" font-size="10" fill="#555">百度 600w+ 实例</text>
+  <text x="174" y="210" text-anchor="middle" font-size="10" fill="#555">bthread · bvar</text>
+  <rect x="248" y="146" width="128" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="312" y="174" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">Sogou Workflow</text>
+  <text x="312" y="194" text-anchor="middle" font-size="10" fill="#555">搜狗全站</text>
+  <text x="312" y="210" text-anchor="middle" font-size="10" fill="#555">任务流 + 异步客户端</text>
+  <rect x="386" y="146" width="128" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="450" y="174" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">TARS</text>
+  <text x="450" y="194" text-anchor="middle" font-size="10" fill="#555">腾讯开源</text>
+  <text x="450" y="210" text-anchor="middle" font-size="10" fill="#555">含运营平台</text>
+  <rect x="524" y="146" width="144" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="596" y="174" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">gRPC C++</text>
+  <text x="596" y="194" text-anchor="middle" font-size="10" fill="#555">跨语言通用</text>
+  <text x="596" y="210" text-anchor="middle" font-size="10" fill="#555">生态最广</text>
+  <rect x="12" y="236" width="86" height="76" rx="8" fill="#eafaf0" stroke="#67c23a" stroke-width="2" />
+  <text x="55" y="266" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">网络库</text>
+  <text x="55" y="286" text-anchor="middle" font-size="10" fill="#555">只有事件循环</text>
+  <text x="55" y="302" text-anchor="middle" font-size="10" fill="#555">其余自己搭</text>
+  <rect x="110" y="236" width="128" height="76" rx="8" fill="#ffffff" stroke="#67c23a" stroke-width="1.5" />
+  <text x="174" y="264" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">Boost.Asio</text>
+  <text x="174" y="284" text-anchor="middle" font-size="10" fill="#555">事实标准</text>
+  <text x="174" y="300" text-anchor="middle" font-size="10" fill="#555">Beast 提供 HTTP</text>
+  <rect x="248" y="236" width="128" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="312" y="264" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">muduo</text>
+  <text x="312" y="284" text-anchor="middle" font-size="10" fill="#555">陈硕 · one loop</text>
+  <text x="312" y="300" text-anchor="middle" font-size="10" fill="#555">教科书实现</text>
+  <rect x="386" y="236" width="128" height="76" rx="8" fill="#ffffff" stroke="#909399" stroke-width="1.5" />
+  <text x="450" y="264" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">libevent / libuv</text>
+  <text x="450" y="284" text-anchor="middle" font-size="10" fill="#555">C 语言底层</text>
+  <text x="450" y="300" text-anchor="middle" font-size="10" fill="#555">跨语言生态</text>
+  <rect x="524" y="236" width="144" height="76" rx="8" fill="#ffffff" stroke="#67c23a" stroke-width="1.5" />
+  <text x="596" y="264" text-anchor="middle" font-size="13" font-weight="bold" fill="#1f2d3d">trantor</text>
+  <text x="596" y="284" text-anchor="middle" font-size="10" fill="#555">Drogon 的底座</text>
+  <text x="596" y="300" text-anchor="middle" font-size="10" fill="#555">非阻塞网络库</text>
+  <text x="340" y="336" text-anchor="middle" font-size="11" fill="#909399">本项目：阶段一~三用 Drogon（赛道一）；阶段四服务拆分后的内部 RPC 用 brpc（赛道二）</text>
+</svg>
+</div>
+
+<p>把这张表压成文字版：</p>
+<table>
+<thead>
+<tr>
+<th>框架</th>
+<th>赛道</th>
+<th>并发模型</th>
+<th>内置件</th>
+<th>谁在生产用</th>
+<th>最适合的场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong><code>Drogon</code></strong></td>
+<td><code>Web</code> 全家桶</td>
+<td><code>epoll</code>&#x2F;<code>kqueue</code> + 回调 &#x2F; <code>C++20</code> 协程</td>
+<td><code>ORM</code>（<code>PG</code>&#x2F;<code>MySQL</code>&#x2F;<code>SQLite</code>）、<code>Redis</code> 客户端、<code>WebSocket</code>、<code>HTTP/2</code>、<code>Session</code>、模板</td>
+<td>社区、创业公司、边缘设备</td>
+<td>想用 <code>C++</code> 写完整 <code>HTTP</code> 服务，且不想拼装十个库</td>
+</tr>
+<tr>
+<td><strong><code>oat++</code></strong></td>
+<td><code>Web</code>（零依赖）</td>
+<td>自研异步 <code>API</code></td>
+<td><code>ORM</code> 模块化、<code>Swagger</code>&#x2F;<code>OpenAPI</code>、<code>WebSocket</code></td>
+<td><code>IoT</code> &#x2F; 嵌入式 &#x2F; 受限环境</td>
+<td>二进制体积和依赖数量是硬约束</td>
+</tr>
+<tr>
+<td><strong><code>userver</code></strong></td>
+<td><code>Web</code> &#x2F; 微服务</td>
+<td>异步 + 组件模型</td>
+<td><code>PG</code> &#x2F; <code>Mongo</code> &#x2F; <code>Redis</code> &#x2F; <code>ClickHouse</code> 驱动、完善的测试与可观测工具</td>
+<td><code>Yandex</code> 内部大量生产服务</td>
+<td><code>C++</code> 微服务，且团队愿意接受它的组件范式</td>
+</tr>
+<tr>
+<td><strong><code>Crow</code></strong></td>
+<td><code>Web</code> 微框架</td>
+<td>同步&#x2F;半异步（无协程）</td>
+<td>只有路由 + <code>JSON</code></td>
+<td>原型、教学</td>
+<td>半天搭个 <code>demo</code>，别指望生产</td>
+</tr>
+<tr>
+<td><strong><code>Pistache</code></strong></td>
+<td><code>Web</code> 微框架</td>
+<td>异步</td>
+<td>路由 + <code>REST</code> 语义</td>
+<td>少量自用</td>
+<td>想要干净的 <code>C++11</code> <code>REST</code> <code>API</code></td>
+</tr>
+<tr>
+<td><strong><code>brpc</code></strong></td>
+<td><code>RPC</code></td>
+<td><code>bthread</code>（M:N 用户态线程）</td>
+<td>多协议、<code>bvar</code> 监控、内置调试服务</td>
+<td>百度 &#x2F; 小红书 &#x2F; 爱奇艺 &#x2F; <code>vivo</code> &#x2F; 滴滴 &#x2F; B站…</td>
+<td>内部服务间高性能调用，要治理要可观测</td>
+</tr>
+<tr>
+<td><strong><code>Sogou Workflow</code></strong></td>
+<td>通信+计算引擎</td>
+<td>异步任务流</td>
+<td><code>HTTP</code>&#x2F;<code>Redis</code>&#x2F;<code>MySQL</code>&#x2F;<code>Kafka</code> 异步客户端、<code>DAG</code> 调度</td>
+<td>搜狗全站</td>
+<td>一个进程里要编排复杂异步依赖</td>
+</tr>
+<tr>
+<td><strong><code>Boost.Asio</code> &#x2F; <code>muduo</code></strong></td>
+<td>网络库</td>
+<td><code>proactor</code> &#x2F; <code>reactor</code></td>
+<td>什么都没有</td>
+<td>自研框架的地基</td>
+<td>想自己造轮子、或者要极致可控</td>
+</tr>
+</tbody></table>
+<p>看清这张表，很多争论就没意义了：<strong>拿 <code>brpc</code> 和 <code>Drogon</code> 比&quot;谁更适合写 <code>HTTP</code> 接口&quot;，就像拿变速箱和整车比谁更能跑。</strong></p>
+<h2 id="三、那这个项目为什么选-Drogon：六条硬理由，每条都带代价"><a href="#三、那这个项目为什么选-Drogon：六条硬理由，每条都带代价" class="headerlink" title="三、那这个项目为什么选 Drogon：六条硬理由，每条都带代价"></a>三、那这个项目为什么选 <code>Drogon</code>：六条硬理由，每条都带代价</h2><p>我给这个项目定的目标是&quot;把一个秒杀系统从 400 <code>QPS</code> 一路优化到万级，并把每一层的取舍讲透&quot;。在这个目标下，选型的判据不是&quot;哪个最工业&quot;，而是**&quot;哪个把我的精力留在架构上，而不是消耗在胶水代码上&quot;**。</p>
+<p><strong>理由一：它把地基活一次性干完了。</strong> <code>HTTP</code> 服务、<code>ORM</code>、<code>Redis</code> 客户端、<code>WebSocket</code>、<code>Session</code>、<code>JSON</code> 全内置。换成 <code>Crow</code> 或 <code>Pistache</code>，我得自己接 <code>MySQL</code> 客户端、自己包 <code>hiredis</code>、自己写连接池——主线会从我真正想讲的&quot;行锁竞争 &#x2F; 缓存一致性 &#x2F; <code>MQ</code> 削峰&quot;漂移成&quot;如何集成七个第三方库&quot;。</p>
+<blockquote>
+<p>代价：全家桶意味着框架偏&quot;重&quot;，它要拥有 <code>main()</code> 和事件循环，想和别的框架共存很难（不像 <code>Poco</code>、<code>Pistache</code> 那样可以只取一部分用）。</p>
+</blockquote>
+<p><strong>理由二：异步是内核级的，不是外挂的。</strong> <code>Drogon</code> 的网络层是自带的<code> trantor</code>：每个 <code>IO</code> 线程一个 <code>EventLoop</code>，连接 <code>accept</code> 后绑定到某个 <code>EventLoop</code>，后续读写回调都在那一个线程内执行——<strong>天然免锁</strong>。数据库和 <code>Redis</code> 客户端同样异步，回调统一派发回 <code>EventLoop</code> 线程。</p>
+<p>这一条对本项目是决定性的。配置里 <code>threads_num=4</code>，也就是只有 4 个 <code>IO</code> 线程；如果 <code>MySQL</code> 客户端是同步的，一次 <code>DB</code> 往返就会把该线程上排队的请求<strong>全部</strong>卡住，4 线程直接变成 4 并发。实测阶段一干净态基线约 440 <code>QPS</code>，排查下来瓶颈完全在 <code>MySQL</code> 行锁串行化上（每个请求占一条连接、并持 <code>seckill_sku</code> 行锁直到事务提交），<strong>框架层没有成为瓶颈</strong>——这正是我要的：让瓶颈暴露在架构层，而不是被框架的实现方式掩盖。</p>
+<p><strong>理由三：内置 <code>ORM</code> 的异步事务语义。</strong> 秒杀下单的&quot;扣库存 + 落订单&quot;必须在同一个事务里，<code>Drogon</code> 的 <code>Transaction</code> 给了这个能力。下面是项目里真实在跑的写法（<code>Drogon</code> 1.9.10 回调式，节选）：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// src/service/SeckillService.cc（节选，省略异常回调与日志）</span></span><br><span class="line">db_-&gt;<span class="built_in">newTransactionAsync</span>(</span><br><span class="line">    [<span class="keyword">this</span>, userId, skuId, cb = std::<span class="built_in">move</span>(callback), token](</span><br><span class="line">        <span class="type">const</span> std::shared_ptr&lt;drogon::orm::Transaction&gt; &amp;tx) &#123;</span><br><span class="line">        <span class="keyword">if</span> (!tx) &#123; <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;DB_ERROR: no transaction (timeout)&quot;</span>); <span class="keyword">return</span>; &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// v1.9.10 的坑：Transaction 根本没有 commit() 成员。</span></span><br><span class="line">        <span class="comment">// 提交发生在“最后一个 shared_ptr&lt;Transaction&gt; 析构”时，成功才回调这里；</span></span><br><span class="line">        <span class="comment">// rollback() 会置标志位，析构便不再自动提交。</span></span><br><span class="line">        tx-&gt;<span class="built_in">setCommitCallback</span>([cb, token, <span class="keyword">this</span>, skuId](<span class="type">bool</span> committed) &#123;</span><br><span class="line">            <span class="keyword">if</span> (committed) &#123;</span><br><span class="line">                <span class="keyword">if</span> (cache_) cache_-&gt;<span class="built_in">invalidateOnOrder</span>(skuId);  <span class="comment">// 提交后才删缓存</span></span><br><span class="line">                <span class="built_in">cb</span>(<span class="literal">true</span>, <span class="string">&quot;OK&quot;</span>);</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;DB_ERROR: commit failed&quot;</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;);</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 步骤 1：单行原子扣减。affectedRows==0 即已售罄——绝不先 SELECT 再 UPDATE</span></span><br><span class="line">        tx-&gt;<span class="built_in">execSqlAsync</span>(</span><br><span class="line">            <span class="string">&quot;UPDATE seckill_sku SET stock = stock - 1 WHERE id = ? AND stock &gt; 0&quot;</span>,</span><br><span class="line">            [tx, userId, skuId, cb, token](<span class="type">const</span> drogon::orm::Result &amp;result) &#123;</span><br><span class="line">                <span class="keyword">if</span> (result.<span class="built_in">affectedRows</span>() == <span class="number">0</span>) &#123;</span><br><span class="line">                    tx-&gt;<span class="built_in">rollback</span>();                            <span class="comment">// 售罄：显式回滚</span></span><br><span class="line">                    <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;SOLD_OUT&quot;</span>);</span><br><span class="line">                    <span class="keyword">return</span>;</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="comment">// 步骤 2：同事务内落订单。用 ON DUPLICATE KEY 而非裸 INSERT：</span></span><br><span class="line">                <span class="comment">// 裸 INSERT 撞上 uk_user_sku 唯一键会抛异常，被当成 DB 错误回滚，</span></span><br><span class="line">                <span class="comment">// 而它本该是“重复下单”的业务拒绝。</span></span><br><span class="line">                tx-&gt;<span class="built_in">execSqlAsync</span>(</span><br><span class="line">                    <span class="string">&quot;INSERT INTO seckill_order (user_id, sku_id, status, create_time) &quot;</span></span><br><span class="line">                    <span class="string">&quot;VALUES (?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE id = id&quot;</span>,</span><br><span class="line">                    [tx, cb, token](<span class="type">const</span> drogon::orm::Result &amp;r2) &#123;</span><br><span class="line">                        <span class="keyword">if</span> (r<span class="number">2.</span><span class="built_in">affectedRows</span>() == <span class="number">0</span>) &#123;          <span class="comment">// 命中唯一键 = 重复下单</span></span><br><span class="line">                            tx-&gt;<span class="built_in">rollback</span>();                    <span class="comment">// 把步骤 1 多扣的库存还回去</span></span><br><span class="line">                            <span class="built_in">cb</span>(<span class="literal">false</span>, <span class="string">&quot;DUPLICATE_ORDER&quot;</span>);</span><br><span class="line">                            <span class="keyword">return</span>;</span><br><span class="line">                        &#125;</span><br><span class="line">                        <span class="comment">// 成功路径不手动提交：本 lambda 返回后 tx 的拷贝相继析构</span></span><br><span class="line">                        <span class="comment">// → 自动 commit → setCommitCallback → cb(true, &quot;OK&quot;)</span></span><br><span class="line">                    &#125;,</span><br><span class="line">                    <span class="comment">/* 异常回调：rollback + 记日志 + cb(DB_ERROR) */</span>,</span><br><span class="line">                    userId, skuId);</span><br><span class="line">            &#125;,</span><br><span class="line">            <span class="comment">/* 异常回调：rollback + 记日志 + cb(DB_ERROR) */</span>,</span><br><span class="line">            skuId);</span><br><span class="line">    &#125;);</span><br></pre></td></tr></table></figure>
+
+<p>用 <code>Crow </code>这类&quot;只有路由&quot;的框架，这套异步事务语义得自己基于 <code>MySQL</code> C <code>API</code> 实现一遍。</p>
+<p>顺带说一句：<code>token</code>（4.8 应用层在途闸门的标记）被<strong>按值捕获进每一层 <code>lambda</code></strong>，这不是啰嗦——只捕获进最外层的话，最外层 <code>lambda</code> 发起第一条 <code>SQL</code> 后就析构了，标记会被提前清掉，闸门形同虚设。异步框架里的资源生命周期，全靠 <code>shared_ptr</code> 的析构时机来兜。</p>
+<p><strong>理由四：内置 <code>Redis</code> 客户端是异步的，这一点在登录模块救了命。</strong> 我最初规划的是 <code>redis-plus-plus</code>，落地时换成了 <code>Drogon</code> 内置的 <code>nosql::RedisClient</code>（底层 <code>hiredis</code>）。原因很硬：<code>redis-plus-plus</code> 是<strong>同步</strong> <code>API</code>，而我们的 <code>handler</code> 跑在 <code>IO</code> 线程上，同步等一次 <code>Redis</code> 往返会阻塞整个线程上的排队请求——这是结构性缺陷，不是调优能解决的。内置客户端异步、与事件循环同构，且零额外依赖（只需 <code>libhiredis-dev</code>）。</p>
+<p><strong>理由五：性能天花板足够高，不会反过来成为我要优化的对象。</strong> <code>TechEmpower</code> Round 19 综合榜第一；Round 21 综合分 7801 居首；<code>Fortunes</code> 场景（带 <code>ORM</code> + 模板渲染，最接近真实业务）<code>drogon-core</code> 长期在百万 <code>rps</code> 量级；官方口径是 <code>Ryzen</code> 3700X 单核 &gt; 15 万 req&#x2F;s。我要练的是架构优化，不希望中途发现&quot;框架本身就是天花板&quot;。</p>
+<p><strong>理由六：工程约束——两条 <code>cmake</code> 命令能构建。</strong> 这个项目要跟着文章一起发布，读者能复现是硬指标。<code>drogon_ctl</code> 一键生成脚手架，依赖用 <code>apt</code> 装齐，<code>cmake .. &amp;&amp; make</code> 就完事。如果为了引入某个库需要 <code>FetchContent</code> 从 <code>GitHub</code> 拉源码（我在 <code>JWT</code> 选型上正是因此放弃 <code>jwt-cpp</code>、改为自实现 HS256），在 <code>WSL</code> 网络环境下就多一个损坏点。</p>
+<blockquote>
+<p><strong>最关键的代价</strong>：<code>Drogon </code>不提供任何服务治理件——没有分布式锁、没有限流、没有注册中心、没有熔断。<code>Java</code> 那边 <code>Redisson</code> &#x2F; <code>Sentinel</code> &#x2F; <code>Nacos</code> 开箱即用，这里全部得自己写。但对这个项目来说这不是缺点而是<strong>设计意图</strong>：阶段四&quot;自实现治理&quot;本来就是我要练的东西。反过来说，如果你要做的是交付周期紧张的生产系统，这条会直接劝退。</p>
+</blockquote>
+<h2 id="四、诚实地讲-Drogon-的短板"><a href="#四、诚实地讲-Drogon-的短板" class="headerlink" title="四、诚实地讲 Drogon 的短板"></a>四、诚实地讲 <code>Drogon</code> 的短板</h2><p>选型论证如果只讲优点，就是广告。下面这些是真实的代价，我也确实被它们绊过：</p>
+<table>
+<thead>
+<tr>
+<th>短板</th>
+<th>具体表现</th>
+<th>我在项目里怎么应对</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>生态薄</strong></td>
+<td><code>C++</code> <code>Web</code> 框架整体都是小众赛道，<code>Drogon</code> 已是星标最高的那档，但和 <code>Spring</code> &#x2F; <code>Gin</code> 完全不是一个量级；第三方中间件集成要自己写</td>
+<td>只依赖框架核心能力，业务逻辑尽量不绑框架特性</td>
+</tr>
+<tr>
+<td><strong>治理件为零</strong></td>
+<td>分布式锁 &#x2F; 限流 &#x2F; 注册配置 &#x2F; 熔断，一个都没有</td>
+<td>全部自实现（阶段四主线），<code>Redis</code> <code>SET NX</code> + <code>Lua</code> 打底</td>
+</tr>
+<tr>
+<td><strong>回调与协程双模式并存</strong></td>
+<td>历史包袱：早期 <code>API</code> 是回调式，新版加协程。1.9.10 的 <code>Transaction</code> 连 <code>commit()</code> 成员都没有——提交靠&quot;最后一个 <code>shared_ptr&lt;Transaction&gt;</code> 析构&quot;自动触发，<code>rollback()</code> 置标志阻止自动提交；且流式 <code>&lt;&lt;</code> &#x2F; <code>&gt;&gt;</code> 不支持 <code>(Result, exception_ptr)</code> 合并回调，每条 <code>SQL</code> 只能用 <code>execSqlAsync(sql, 成功回调, 异常回调, 参数...)</code>。开 <code>C++20</code> 协程的新版才回到 <code>co_await</code> 形态</td>
+<td>钉死 <code>Drogon</code> 1.9.x 回调式写法（见项目 <code>ADR-5</code>），升级协程版时统一改写</td>
+</tr>
+<tr>
+<td><strong>文档与社区响应</strong></td>
+<td>中文资料相对多，但深度问题基本靠读源码</td>
+<td>关键实现（如取客户端 <code>IP</code>）直接翻 <code>HttpRequest.h</code> 确认</td>
+</tr>
+<tr>
+<td><strong>单机框架</strong></td>
+<td>不带服务发现、配置中心、链路追踪</td>
+<td>阶段四用 <code>brpc</code> + <code>etcd</code> 补</td>
+</tr>
+<tr>
+<td><strong>招人难</strong></td>
+<td>团队里没人会就得自己扛，且 <code>C++</code> 开发者价格高、供给少</td>
+<td>这个项目的定位是个人技术实践，不是团队协作产品</td>
+</tr>
+</tbody></table>
+<p>其中第三和第四条我都踩过实坑。举个具体的：<code>Drogon</code> 1.9.10 的 <code>HttpRequest</code> <strong>只有 <code>getPeerAddr()</code>，没有 <code>getClientIp()</code> 也没有 <code>getRealIp()</code></strong>——框架不内建&quot;从 <code>X-Forwarded-For</code> 解析真实客户端 <code>IP</code>&quot;的能力。我按直觉写了 <code>req-&gt;getClientIp()</code>，编译直接挂，翻官方头文件才确认得自己解析请求头。这是小众框架最典型的风险：<strong>没有足够的博客告诉你坑在哪，你得自己去读源码。</strong></p>
+<h2 id="五、那-实际工作中该用什么框架-？"><a href="#五、那-实际工作中该用什么框架-？" class="headerlink" title="五、那&quot;实际工作中该用什么框架&quot;？"></a>五、那&quot;实际工作中该用什么框架&quot;？</h2><p>这才是问题里最有价值的一半。我的判断规则很简单——<strong>先看你在写什么，再看 <code>C++</code> 是不是这个场景的正确语言</strong>：</p>
+<div align="center">
+<svg viewBox="0 0 680 330" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+  <text x="340" y="26" text-anchor="middle" font-size="15" font-weight="bold" fill="#1f2d3d">C++ 服务端选型决策：先问清场景，再谈框架</text>
+  <rect x="16" y="50" width="250" height="58" rx="8" fill="#f4f6f9" stroke="#c0c4cc" stroke-width="1.5" />
+  <text x="141" y="72" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">你在写"业务 CRUD / 中台"吗？</text>
+  <text x="141" y="92" text-anchor="middle" font-size="11" fill="#666">订单、用户、后台管理、报表</text>
+  <rect x="300" y="50" width="178" height="58" rx="8" fill="#fdeef5" stroke="#f56c8e" stroke-width="2" />
+  <text x="389" y="74" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">别用 C++</text>
+  <text x="389" y="94" text-anchor="middle" font-size="11" fill="#666">Go(gin/go-zero) / Java(Spring)</text>
+  <rect x="494" y="50" width="170" height="58" rx="8" fill="#ffffff" stroke="#dcdfe6" stroke-width="1.5" />
+  <text x="579" y="74" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">继续往下</text>
+  <text x="579" y="94" text-anchor="middle" font-size="11" fill="#666">确实需要 C++</text>
+  <rect x="16" y="122" width="250" height="58" rx="8" fill="#f4f6f9" stroke="#c0c4cc" stroke-width="1.5" />
+  <text x="141" y="144" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">是"服务间调用"还是"对外 HTTP"？</text>
+  <text x="141" y="164" text-anchor="middle" font-size="11" fill="#666">南北向入口 vs 东西向通信</text>
+  <rect x="300" y="122" width="178" height="58" rx="8" fill="#fff7e6" stroke="#e6a23c" stroke-width="2" />
+  <text x="389" y="146" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">服务间 → RPC 框架</text>
+  <text x="389" y="166" text-anchor="middle" font-size="11" fill="#666">brpc / Workflow / TARS</text>
+  <rect x="494" y="122" width="170" height="58" rx="8" fill="#eef4ff" stroke="#409eff" stroke-width="2" />
+  <text x="579" y="146" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">对外 HTTP → Web 框架</text>
+  <text x="579" y="166" text-anchor="middle" font-size="11" fill="#666">Drogon / oat++ / userver</text>
+  <rect x="16" y="194" width="250" height="58" rx="8" fill="#f4f6f9" stroke="#c0c4cc" stroke-width="1.5" />
+  <text x="141" y="216" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">二进制体积 / 依赖数量敏感吗？</text>
+  <text x="141" y="236" text-anchor="middle" font-size="11" fill="#666">嵌入式、容器镜像、离线交付</text>
+  <rect x="300" y="194" width="178" height="58" rx="8" fill="#eafaf0" stroke="#67c23a" stroke-width="2" />
+  <text x="389" y="218" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">是 → oat++</text>
+  <text x="389" y="238" text-anchor="middle" font-size="11" fill="#666">零依赖，sub-MB 二进制</text>
+  <rect x="494" y="194" width="170" height="58" rx="8" fill="#ffffff" stroke="#409eff" stroke-width="2" />
+  <text x="579" y="218" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">否 → Drogon</text>
+  <text x="579" y="238" text-anchor="middle" font-size="11" fill="#666">要 ORM + Redis + WS</text>
+  <rect x="16" y="266" width="250" height="50" rx="8" fill="#f4f6f9" stroke="#c0c4cc" stroke-width="1.5" />
+  <text x="141" y="288" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">团队有 infra 能力且要极致可控？</text>
+  <text x="141" y="304" text-anchor="middle" font-size="11" fill="#666">自研网关、专用协议、定制调度</text>
+  <rect x="300" y="266" width="364" height="50" rx="8" fill="#ffffff" stroke="#67c23a" stroke-width="1.5" />
+  <text x="482" y="288" text-anchor="middle" font-size="12" font-weight="bold" fill="#1f2d3d">是 → Boost.Asio / muduo 自研（或在其上封装）</text>
+  <text x="482" y="304" text-anchor="middle" font-size="11" fill="#666">代价：所有上层能力自己维护，只有大厂 infra 团队扛得住</text>
+</svg>
+</div>
+
+<p>对应到具体岗位和场景：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>该用什么</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>电商 &#x2F; 金融 &#x2F; 中后台业务系统</td>
+<td><code>Java</code>（<code>Spring Boot</code> + 全家桶）</td>
+<td>中间件生态 100% 覆盖、招人容易、十年可维护</td>
+</tr>
+<tr>
+<td>云原生基础设施、<code>API</code> 网关、<code>IM</code> 长连接</td>
+<td><code>Go</code>（<code>gin</code> &#x2F; <code>go-zero</code> &#x2F; <code>Kratos</code>）</td>
+<td><code>goroutine</code> 模型 + 单二进制部署，人效与性能的甜点</td>
+</tr>
+<tr>
+<td>存储引擎、检索引擎、推荐 &#x2F; 广告、特征服务</td>
+<td><code>C++</code> + <strong><code>brpc</code> &#x2F; <code>Workflow</code> &#x2F; <code>TARS</code></strong></td>
+<td>延迟与内存可控，且有工业级验证（<code>brpc</code> 在百度 600 万+ 实例）</td>
+</tr>
+<tr>
+<td>游戏服务端 &#x2F; 音视频 &#x2F; 高频交易</td>
+<td><code>C++</code> + 自研或 <code>Asio</code> 生态</td>
+<td><code>GC</code> 停顿不可接受，需要精细控制内存布局</td>
+</tr>
+<tr>
+<td>嵌入式 &#x2F; <code>IoT</code> 设备上的 <code>HTTP</code> 服务</td>
+<td><strong><code>oat++</code></strong></td>
+<td>零外部依赖、二进制体积可压到 MB 以下</td>
+</tr>
+<tr>
+<td>需要 <code>C++</code> 性能、又要快速出 <code>HTTP</code> 服务的中小项目</td>
+<td><strong><code>Drogon</code></strong></td>
+<td>全家桶最全、性能天花板最高、社区最大</td>
+</tr>
+<tr>
+<td>学习 &#x2F; 面试用的练手项目</td>
+<td><strong><code>Drogon</code></strong>（想讲架构）或 <strong><code>muduo</code> 自研</strong>（想讲底层）</td>
+<td>前者让你专注架构，后者让你吃透 <code>epoll</code></td>
+</tr>
+</tbody></table>
+<h2 id="六、如果有人问你-工业界没人用-Drogon-，怎么答"><a href="#六、如果有人问你-工业界没人用-Drogon-，怎么答" class="headerlink" title="六、如果有人问你&quot;工业界没人用 Drogon&quot;，怎么答"></a>六、如果有人问你&quot;工业界没人用 <code>Drogon</code>&quot;，怎么答</h2><p>这是我给自己的标准答案，三层递进：</p>
+<ol>
+<li><strong>承认事实</strong>：对，大厂 <code>C++</code> 后端的主力是 <code>brpc</code> &#x2F; <code>Workflow</code> &#x2F; <code>TARS</code> 这类 <code>RPC</code> 框架，<code>C++</code> 的 <code>HTTP</code> 业务后端本身就是小众场景，<code>Drogon</code> 不是大厂标配。</li>
+<li><strong>说清定位</strong>：<code>Drogon</code> 是&quot;社区最好的 <code>C++</code> <code>Web</code> 框架&quot;——<code>TechEmpower</code> 综合榜拿过第一，功能完整度（<code>ORM</code> + <code>Redis</code> + <code>WebSocket</code> + <code>HTTP/2</code>）在同类里没有对手。用它不等于宣称它是工业标准。</li>
+<li><strong>回到目标</strong>：这个项目的目标是&quot;把高并发架构的每一层优化讲透&quot;，不是&quot;交付一个生产级电商系统&quot;。<code>Drogon</code> 把 <code>HTTP</code> &#x2F; <code>ORM</code> &#x2F; <code>Redis</code> 的地基活干完，把架构层的取舍完整地留给我——<strong>实测基线 440 <code>QPS</code> 的瓶颈在 <code>MySQL</code> 行锁，不在框架</strong>，后续每一级跃迁（缓存 → <code>MQ</code> → <code>Lua</code> 原子预扣）也都是架构收益，没有一级来自换框架。这恰恰证明选型是对的：我把力气花在了该花的地方。</li>
+</ol>
+<blockquote>
+<p><strong>本质一句话</strong>：选框架不是选&quot;最强的那个&quot;，而是选**&quot;把你的瓶颈留在你想练的地方&quot;的那个**。<code>Drogon</code> 让我把 90% 的精力花在行锁、缓存一致性、削峰、原子扣减上，只有 10% 花在框架本身——这就是我选它的全部理由 🐾。</p>
+</blockquote>
+<h2 id="七、本项目里的实际取舍清单"><a href="#七、本项目里的实际取舍清单" class="headerlink" title="七、本项目里的实际取舍清单"></a>七、本项目里的实际取舍清单</h2><p>最后把落到代码上的决策一次列清，方便对照源码：</p>
+<table>
+<thead>
+<tr>
+<th>决策</th>
+<th>选择</th>
+<th>放弃的</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Redis</code> 客户端</td>
+<td><code>Drogon</code> 内置 <code>nosql::RedisClient</code>（异步，<code>hiredis</code> 底层）</td>
+<td><code>redis-plus-plus</code>（同步，会阻塞 <code>IO</code> 线程）</td>
+</tr>
+<tr>
+<td><code>JWT</code> 签发</td>
+<td>自实现 HS256（<code>OpenSSL</code> <code>HMAC</code> + <code>base64url</code>）</td>
+<td><code>jwt-cpp</code>（需 <code>FetchContent</code> 拉 <code>GitHub</code>）</td>
+</tr>
+<tr>
+<td><code>ORM</code> &#x2F; 事务</td>
+<td><code>Drogon</code> 内置 <code>DbClient</code> 异步事务</td>
+<td><code>mysql-connector-cpp</code> &#x2F; <code>SOCI</code></td>
+</tr>
+<tr>
+<td>短信发送</td>
+<td>自签发 &#x2F; 日志模式，不接网关</td>
+<td>腾讯云 <code>API</code> + <code>libcurl</code> + <code>TC3</code> 签名</td>
+</tr>
+<tr>
+<td>版本与写法</td>
+<td><code>Drogon</code> 1.9.x 回调式 <code>ORM</code> <code>API</code></td>
+<td><code>C++20</code> 协程版（<code>API</code> 语义会变，见 <code>ADR-5</code>）</td>
+</tr>
+<tr>
+<td>服务治理</td>
+<td>全部自实现（<code>Lua</code> 原子限流 &#x2F; 令牌桶 &#x2F; 布隆）</td>
+<td>任何第三方治理库</td>
+</tr>
+<tr>
+<td>前端</td>
+<td>阶段四之前不做（<code>ADR-4</code>）</td>
+<td><code>Vue</code> &#x2F; <code>Vite</code> 构建链</td>
+</tr>
+</tbody></table>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0102/">https://hespethorn.github.io/posts/seckcpp0102/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a><a class="post-meta__tags" href="/tags/%E6%8A%80%E6%9C%AF%E9%80%89%E5%9E%8B/">技术选型</a><a class="post-meta__tags" href="/tags/brpc/">brpc</a><a class="post-meta__tags" href="/tags/%E6%9E%B6%E6%9E%84/">架构</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0102/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择">秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计</a><time datetime="2026-08-28T16:00:00.000Z" title="Created 2026-08-29 00:00:00">2026-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0204/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）">秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0205/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）">秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0302/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0303/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连">秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0304/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis">秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0305/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限">秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0306/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定">秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0307/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销">秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0308/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper">秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0309/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）">秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0310/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析">秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0401/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0402/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0403/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）">秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0404/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖">秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0405/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）">秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0406/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）">秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0407/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）">秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0408/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）">秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0503/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0504/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删">秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0505/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.5 缓存预热与雪崩：冷启动的回写风暴，和流量进来前该做的事">秒杀系统高并发优化实战（C++ / Drogon）：5.5 缓存预热与雪崩：冷启动的回写风暴，和流量进来前该做的事</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0506/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.6 防缓存穿透：空值策略——把&quot;查无此物&quot;也缓存下来">秒杀系统高并发优化实战（C++ / Drogon）：5.6 防缓存穿透：空值策略——把&quot;查无此物&quot;也缓存下来</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0507/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.7 防缓存穿透：自实现布隆过滤器——海量随机 id 的终结者">秒杀系统高并发优化实战（C++ / Drogon）：5.7 防缓存穿透：自实现布隆过滤器——海量随机 id 的终结者</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0508/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.8 多级缓存：自实现本地 LRU 做 L1">秒杀系统高并发优化实战（C++ / Drogon）：5.8 多级缓存：自实现本地 LRU 做 L1</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-dropout/" title="闻莺坊的歇弦师">闻莺坊的歇弦师</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260904/" title="AI 新闻速递（2026-09-04）">AI 新闻速递（2026-09-04）</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0101/" title="Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0102/" title="Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载">Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

@@ -1,0 +1,584 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>二八定律（Pareto）：热点总是集中 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="线上出了个诡异的事故：一台网关机器 CPU 跑满，报警刷屏，可负责的同事查了半天，发现流量并没有暴涨——总量跟平时差不多。最后抓包一看，全网 1000 多个接口里，有 3 个接口扛走了 82% 的请求，而其中 1 个接口自己就占了一半。平时没人细看，因为总量不大；可一旦那几个热点接口抖动，整台机器就跟着抖。 这不是偶然，而是一条反复出现的规律：少数的东西，总是贡献了大部分的结果。 一、它从哪来18">
+<meta property="og:type" content="article">
+<meta property="og:title" content="二八定律（Pareto）：热点总是集中">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-pareto/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="线上出了个诡异的事故：一台网关机器 CPU 跑满，报警刷屏，可负责的同事查了半天，发现流量并没有暴涨——总量跟平时差不多。最后抓包一看，全网 1000 多个接口里，有 3 个接口扛走了 82% 的请求，而其中 1 个接口自己就占了一半。平时没人细看，因为总量不大；可一旦那几个热点接口抖动，整台机器就跟着抖。 这不是偶然，而是一条反复出现的规律：少数的东西，总是贡献了大部分的结果。 一、它从哪来18">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-03T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-04T07:48:45.611Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="系统设计">
+<meta property="article:tag" content="性能优化">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "二八定律（Pareto）：热点总是集中",
+  "url": "https://hespethorn.github.io/posts/princ-pareto/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-03T16:00:00.000Z",
+  "dateModified": "2026-09-04T07:48:45.611Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-pareto/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '二八定律（Pareto）：热点总是集中',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">二八定律（Pareto）：热点总是集中</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">二八定律（Pareto）：热点总是集中</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>7mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>线上出了个诡异的事故：一台网关机器 CPU 跑满，报警刷屏，可负责的同事查了半天，发现流量并没有暴涨——总量跟平时差不多。最后抓包一看，全网 1000 多个接口里，有 3 个接口扛走了 82% 的请求，而其中 1 个接口自己就占了一半。平时没人细看，因为总量不大；可一旦那几个热点接口抖动，整台机器就跟着抖。</p>
+<p>这不是偶然，而是一条反复出现的规律：<strong>少数的东西，总是贡献了大部分的结果。</strong></p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>1896 年前后，意大利经济学家 <strong>维尔弗雷多·帕累托（Vilfredo Pareto）</strong> 在研究财富与土地分配时发现：意大利大约 20% 的人口拥有约 80% 的土地。他把这个&quot;少数占大头&quot;的观察推广到更多领域，后人便称其为<strong>帕累托法则（Pareto Principle）</strong>，俗称<strong>二八定律</strong>。</p>
+<p>真正把它带进工程与管理世界的，是质量大师<strong>约瑟夫·朱兰（Joseph Juran）</strong>。1951 年他在《质量控制手册》中提出&quot;关键少数与琐碎多数&quot;（vital few and trivial many）的思想：质量缺陷并非均匀分布，少数几种缺陷类型造成了大部分损失——所以改进要集中火力打那&quot;关键少数&quot;。他还戏称这是帕累托留下的&quot;非均衡原则&quot;，并发明了用于排序的<strong>帕累托图（Pareto Chart）</strong>：按影响从大到小排柱子，再画累计占比折线。</p>
+<p>此后人们发现同样的形状反复出现在各种系统里：图书借阅量、网页访问量、文件被引用次数……20 世纪语言学家**乔治·齐普夫（George Zipf）**总结出词频服从幂律（少数词被频繁使用，绝大多数词难得一见），即 <strong>Zipf 定律</strong>——它是二八定律在&quot;排名-频率&quot;坐标下的精确版本，也是理解互联网流量、缓存收益的数学底座。</p>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>假设资源无限、时间无限，二八定律毫无意义——每个请求都全力服务、每行代码都精心优化就是了。可现实是：<strong>缓存空间有限、人力有限、算力有限</strong>。既然有限，就必须回答一个问题：把资源投到哪里收益最大？</p>
+<p>如果错误地假设&quot;所有东西同等重要&quot;，会得到两个典型恶果：</p>
+<ul>
+<li><strong>平均用力，热点失守</strong>：给 1000 个接口配同样的缓存、同样的限流、同样的监控阈值。结果热点接口打爆了缓存，冷门接口的缓存却在浪费内存——资源被均匀地浪费掉了。</li>
+<li><strong>优化没有优先级</strong>：性能优化时从第一个函数优化到最后一个函数，把力气花在只占 1% 执行时间的长尾代码上，真正占 90% 时间的热点函数反而没碰。</li>
+</ul>
+<p>二八定律给出的回答是：<strong>不均匀才是常态，均匀才是例外</strong>。与其跟分布较劲，不如顺着分布做资源分配——这正是缓存的命中率、索引的收益、CDN 的加速比全部建立在这条规律之上的原因。</p>
+<h2 id="三、本质一句话"><a href="#三、本质一句话" class="headerlink" title="三、本质一句话"></a>三、本质一句话</h2><p><strong>系统的产出与消耗天然不均匀：少数&quot;关键少数&quot;贡献了大部分价值（或大部分问题），优化的第一性原理就是先找到那 20%，再动手。</strong></p>
+<div align="center">
+<svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg">
+<rect width="680" height="340" fill="#ffffff"/>
+<text x="340" y="28" font-size="16" fill="#1a1a1a" text-anchor="middle" font-weight="bold">帕累托图：20% 的项目贡献 80% 的结果</text>
+<line x1="70" y1="300" x2="640" y2="300" stroke="#888" stroke-width="1.5"/>
+<line x1="70" y1="300" x2="70" y2="60" stroke="#888" stroke-width="1.5"/>
+<g font-size="12" fill="#444">
+<text x="70" y="318" text-anchor="middle">1</text>
+<text x="155" y="318" text-anchor="middle">5</text>
+<text x="240" y="318" text-anchor="middle">10</text>
+<text x="325" y="318" text-anchor="middle">15</text>
+<text x="410" y="318" text-anchor="middle">20%</text>
+<text x="570" y="318" text-anchor="middle">100% 项目</text>
+<text x="30" y="310" text-anchor="middle" transform="rotate(-90 30 310)">贡献占比</text>
+</g>
+<g fill="#e8a0a0">
+<rect x="80" y="96" width="60" height="204"/>
+<rect x="145" y="140" width="60" height="160"/>
+<rect x="210" y="176" width="60" height="124"/>
+<rect x="275" y="212" width="60" height="88"/>
+<rect x="340" y="240" width="60" height="60"/>
+</g>
+<g fill="#cfd8dc">
+<rect x="405" y="258" width="52" height="42"/>
+<rect x="462" y="272" width="52" height="28"/>
+<rect x="519" y="282" width="52" height="18"/>
+<rect x="576" y="290" width="52" height="10"/>
+</g>
+<polyline points="140,108 310,160 455,232 560,280 640,296" fill="none" stroke="#1e88e5" stroke-width="2.5"/>
+<g stroke="#1a1a1a" stroke-width="1.2" stroke-dasharray="5 4">
+<line x1="410" y1="60" x2="410" y2="300"/>
+<line x1="70" y1="140" x2="640" y2="140"/>
+</g>
+<text x="418" y="52" font-size="13" fill="#1a1a1a">前 20% 项目</text>
+<text x="560" y="132" font-size="13" fill="#1a1a1a">累计 80%</text>
+<text x="92" y="88" font-size="12" fill="#1a1a1a">贡献从高到低排序</text>
+</svg>
+</div>
+
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p>二八定律在计算机系统里几乎是&quot;隐形地基&quot;——凡是带缓存、带索引、带优先级的地方，背后都是它在起作用。</p>
+<ul>
+<li><strong>Redis 缓存热点数据</strong>：互联网访问服从 Zipf 分布，通常 20% 不到的&quot;热 key&quot;扛走绝大部分流量。于是缓存只存热 key、给热 key 单独调大容量，冷 key 直接穿透到数据库也扛得住。反过来说，缓存未命中率高的系统，十有八九是没先做&quot;热点统计&quot;就盲目全量缓存。</li>
+<li><strong>数据库索引与慢查询</strong>：为什么 MySQL 里 <code>EXPLAIN</code> 一定要看 <code>rows</code>？因为一条 SQL 能不能走索引，决定了它是扫 100 行还是扫 1000 万行——而线上 90% 的慢查询，往往集中在少数几张表和少数几条 SQL 上。先 <code>SHOW GLOBAL STATUS</code> 看 <code>Com_select</code> 类计数、或开慢查询日志按耗时排序，抓的就是那 20% 的语句。</li>
+<li><strong>性能剖析 perf 的热点函数</strong>：<code>perf top</code> 或 <code>perf record</code> 跑一会儿，排在前面的几个函数往往就占了 70% 以上的 CPU。优化只做前几名，收益立竿见影；从第 50 名开始优化，纯属感动自己。这就是&quot;先剖析、后优化&quot;这一铁律背后的数学。</li>
+<li><strong>分代垃圾回收</strong>：JVM&#x2F;Go 的 GC 之所以分&quot;新生代&#x2F;老年代&quot;，正是因为观察到<strong>大部分对象朝生夕死</strong>——少数长寿对象占住了大部分堆。把新对象集中在一个小空间快速回收，正是顺着二八定律设计。</li>
+<li><strong>日志与监控的采样</strong>：全量日志写不下时，按错误码、按耗时区间聚合，先处理&quot;数量最多 + 影响最大&quot;的那几类——告警分级、SRE 的&quot;错误预算&quot;分配，本质都是帕累托排序。</li>
+<li><strong>CDN 与存储分级</strong>：文件访问热度同样服从幂律，于是有了热&#x2F;温&#x2F;冷分层存储（如对象存储按访问频率自动降冷），把贵的高速介质只给那 20% 的热文件。</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 一个 5 分钟的&quot;找关键少数&quot;示范：统计访问日志里 Top 10 请求路径</span></span><br><span class="line">awk <span class="string">&#x27;&#123;print $7&#125;&#x27;</span> access.log | <span class="built_in">sort</span> | <span class="built_in">uniq</span> -c | <span class="built_in">sort</span> -rn | <span class="built_in">head</span> -10</span><br></pre></td></tr></table></figure>
+
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><p>二八定律是<strong>经验法则，不是物理定律</strong>——用错地方会得出危险结论。</p>
+<ul>
+<li><strong>比例不是恒定的 80&#x2F;20</strong>：有的场景是 90&#x2F;10，有的更极端是 99&#x2F;1（超级热点），有的接近 60&#x2F;40（相对均匀）。所以正确用法不是背数字，而是<strong>先统计、后排序</strong>，用数据找出你那个系统里真实的&quot;关键少数&quot;。</li>
+<li><strong>长尾不是没价值</strong>：二八定律告诉你热点集中，但没告诉你长尾可以丢弃。搜索引擎、推荐系统恰恰靠长尾内容差异化取胜；&quot;只服务头部&quot;会毁掉这类产品。二八定律指导的是<strong>资源分配优先级</strong>，不是<strong>业务取舍清单</strong>。</li>
+<li><strong>安全与合规场景不可只护热点</strong>：攻击者专挑没人看护的冷门接口下手——薄弱环节往往藏在长尾里。安全领域的正确姿势与缓存相反：热点要护，长尾更要扫，两者都要，只是手段不同。</li>
+<li><strong>别把&quot;帕累托法则&quot;和&quot;帕累托最优&quot;搞混</strong>：帕累托最优（Pareto Optimality）是博弈论&#x2F;多目标优化里的概念，指&quot;无法在不损害任何一方的前提下让某人变得更好&quot;的分配状态。两者同名不同物——一个描述&quot;分布不均&quot;的事实，一个描述&quot;无可改进&quot;的边界。</li>
+<li><strong>优化热点过头同样有害</strong>：当热点函数已经优化到只剩 1% 时间，继续抠它收益趋近于零，此时瓶颈早已转移——二八定律只是起点，不是终点，每轮优化后都要重新做一次帕累托排序。</li>
+</ul>
+<h2 id="六、对比表-🐾小结"><a href="#六、对比表-🐾小结" class="headerlink" title="六、对比表 + 🐾小结"></a>六、对比表 + 🐾小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>均匀假设（错误直觉）</th>
+<th>二八定律（现实）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求分布</td>
+<td>1000 个接口各扛 0.1%</td>
+<td>少数接口扛走 80% 流量</td>
+</tr>
+<tr>
+<td>资源分配</td>
+<td>平均分配缓存&#x2F;限流</td>
+<td>按热度分层分配</td>
+</tr>
+<tr>
+<td>性能优化</td>
+<td>从头到尾逐个优化</td>
+<td>先剖析，只优化 Top 热点</td>
+</tr>
+<tr>
+<td>代码缺陷</td>
+<td>均匀散布在各模块</td>
+<td>集中在少数模块（朱兰：关键少数）</td>
+</tr>
+<tr>
+<td>GC 设计</td>
+<td>所有对象一视同仁</td>
+<td>分代：朝生夕死 vs 长寿</td>
+</tr>
+<tr>
+<td>数据价值</td>
+<td>每个文件一样重要</td>
+<td>20% 热数据支撑主要访问</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>易混概念</th>
+<th>是什么</th>
+<th>区别</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>帕累托法则（二八定律）</td>
+<td>少数项目贡献大部分结果</td>
+<td>描述&quot;分布不均匀&quot;的事实</td>
+</tr>
+<tr>
+<td>帕累托最优</td>
+<td>无法再让任何人变好而不损害他人</td>
+<td>描述&quot;无可改进&quot;的边界状态</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：二八定律是系统设计者的&quot;第一直觉校正器&quot;——看到缓存、索引、GC、监控、优化，先问一句&quot;那 20% 在哪&quot;，再决定资源往哪儿放。它不替你做取舍，但帮你把取舍做在数据上：<strong>先找关键少数，再谈优化；先护热点，再补长尾。</strong></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-pareto/">https://hespethorn.github.io/posts/princ-pareto/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1/">系统设计</a><a class="post-meta__tags" href="/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/">性能优化</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-dropout/" title="闻莺坊的歇弦师">闻莺坊的歇弦师</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260904/" title="AI 新闻速递（2026-09-04）">AI 新闻速递（2026-09-04）</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0101/" title="Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0102/" title="Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载">Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

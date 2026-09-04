@@ -1,0 +1,635 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你大概率没写过一行 Lua，但你的电脑每天都在跑它：Redis 的原子脚本、Nginx 的 OpenResty 插件、Wireshark 的协议解析、Neovim 的配置、魔兽世界的 UI 框架……这些八竿子打不着的软件，不约而同地选择把 Lua 嵌进去当&quot;内脏语言&quot;。 一门 1993 年诞生、源码只有三万多行、解释器能裁剪到 300KB 以下的小语言，凭什么被嵌入到全世界最流">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构">
+<meta property="og:url" content="https://hespethorn.github.io/posts/lua0101/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="你大概率没写过一行 Lua，但你的电脑每天都在跑它：Redis 的原子脚本、Nginx 的 OpenResty 插件、Wireshark 的协议解析、Neovim 的配置、魔兽世界的 UI 框架……这些八竿子打不着的软件，不约而同地选择把 Lua 嵌进去当&quot;内脏语言&quot;。 一门 1993 年诞生、源码只有三万多行、解释器能裁剪到 300KB 以下的小语言，凭什么被嵌入到全世界最流">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-03T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-04T07:48:45.627Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="嵌入式">
+<meta property="article:tag" content="Lua">
+<meta property="article:tag" content="脚本语言">
+<meta property="article:tag" content="table元表">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构",
+  "url": "https://hespethorn.github.io/posts/lua0101/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-03T16:00:00.000Z",
+  "dateModified": "2026-09-04T07:48:45.627Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/lua0101/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Languages/">Languages</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Languages/Lua/">Lua</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你大概率没写过一行 Lua，但你的电脑每天都在跑它：Redis 的原子脚本、Nginx 的 OpenResty 插件、Wireshark 的协议解析、Neovim 的配置、魔兽世界的 UI 框架……这些八竿子打不着的软件，不约而同地选择把 Lua 嵌进去当&quot;内脏语言&quot;。</p>
+<p>一门 1993 年诞生、源码只有三万多行、解释器能裁剪到 300KB 以下的小语言，凭什么被嵌入到全世界最流行的软件里？</p>
+<p>答案藏在一个反直觉的设计里：<strong>Lua 只有一种数据结构——table（表）</strong>。数组是它，字典是它，对象是它，模块是它，连&quot;类&quot;都是它。这篇文章就把它拆开讲透：这一张表，到底是怎么撑起一整门语言的。</p>
+<h2 id="一、从哪来：为-可嵌入-而生的小语言"><a href="#一、从哪来：为-可嵌入-而生的小语言" class="headerlink" title="一、从哪来：为&quot;可嵌入&quot;而生的小语言"></a>一、从哪来：为&quot;可嵌入&quot;而生的小语言</h2><p>Lua 诞生于 1993 年，作者是巴西里约热内卢天主教大学（PUC-Rio）的 Roberto Ierusalimschy、Waldemar Celes 和 Luiz Henrique de Figueiredo。&quot;Lua&quot;在葡萄牙语里是&quot;月亮&quot;的意思——这个名字本身就在致敬它的前身 SOL（葡萄牙语&quot;太阳&quot;），也暗含&quot;小&quot;的定位。</p>
+<p>它出生的场景和你熟悉的通用语言完全不同：不是要造一门独立生态的语言，而是给巴西石油公司的数据录入应用做<strong>可嵌入脚本</strong>。这个出身决定了 Lua 的全部性格：</p>
+<ul>
+<li><strong>小</strong>：整个解释器用 ANSI C 编写，编译后一两百 KB，任何 C&#x2F;C++ 程序都能&quot;包一层&quot;把它吞进去。</li>
+<li><strong>快</strong>：解释器内核极简，再加一个 LuaJIT，数值循环能跑到接近 C 的速度。</li>
+<li><strong>嵌入友好</strong>：和宿主程序通过一个栈交互，宿主想暴露什么函数就压什么函数。</li>
+</ul>
+<p>你可以把 Lua 想成一块&quot;语言的乐高底板&quot;——它自己不长成一栋楼，但它让任何 C&#x2F;C++ 程序都能迅速在自己身上长出一层可热更新的脚本层。</p>
+<blockquote>
+<p>一个常见误区是&quot;Lua 就是给游戏写脚本的&quot;。游戏只是它最出名的战场之一；它真正的定位是<strong>嵌入式脚本语言</strong>：宿主程序（Redis、Nginx、游戏引擎）是主角，Lua 是随时可以替换、不用重新编译宿主就能改逻辑的那层&quot;软肉&quot;。</p>
+</blockquote>
+<h2 id="二、table：数组和字典，原来是一回事"><a href="#二、table：数组和字典，原来是一回事" class="headerlink" title="二、table：数组和字典，原来是一回事"></a>二、table：数组和字典，原来是一回事</h2><p>在 Python 里，<code>list</code> 和 <code>dict</code> 是两种类型；在 C++ 里，<code>std::vector</code> 和 <code>std::map</code> 是两种容器；在 Lua 里，它们<strong>全部是 table</strong>。</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- 1) 当数组用（注意：索引从 1 开始！）</span></span><br><span class="line"><span class="keyword">local</span> arr = &#123;<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>&#125;</span><br><span class="line"><span class="built_in">print</span>(arr[<span class="number">1</span>], arr[<span class="number">2</span>], arr[<span class="number">3</span>])   <span class="comment">-- a b c</span></span><br><span class="line"><span class="built_in">print</span>(#arr)                     <span class="comment">-- 3（# 取序列长度）</span></span><br><span class="line"></span><br><span class="line"><span class="comment">-- 2) 当字典用</span></span><br><span class="line"><span class="keyword">local</span> cfg = &#123;name = <span class="string">&quot;redis&quot;</span>, port = <span class="number">6379</span>&#125;</span><br><span class="line"><span class="built_in">print</span>(cfg.name, cfg[<span class="string">&quot;port&quot;</span>])    <span class="comment">-- redis 6379</span></span><br><span class="line"></span><br><span class="line"><span class="comment">-- 3) 混着用也合法：前半截是数组，后半截挂字段</span></span><br><span class="line"><span class="keyword">local</span> mixed = &#123;<span class="string">&quot;GET&quot;</span>, <span class="string">&quot;SET&quot;</span>&#125;</span><br><span class="line">mixed.timeout = <span class="number">100</span>             <span class="comment">-- 数组部分 + 字段部分并存</span></span><br><span class="line"><span class="built_in">print</span>(#mixed, mixed.timeout)    <span class="comment">-- 2 100</span></span><br><span class="line"></span><br><span class="line"><span class="comment">-- 4) 甚至可以当&quot;对象&quot;：把函数放进表里</span></span><br><span class="line"><span class="keyword">local</span> obj = &#123;&#125;</span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">obj.say</span><span class="params">(n)</span></span></span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;hello, &quot;</span> .. n       <span class="comment">-- .. 是字符串拼接</span></span><br><span class="line"><span class="keyword">end</span></span><br><span class="line"><span class="built_in">print</span>(obj.say(<span class="string">&quot;lua&quot;</span>))           <span class="comment">-- hello, lua</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">a	b	c</span><br><span class="line">3</span><br><span class="line">redis	6379</span><br><span class="line">2	100</span><br><span class="line">hello, lua</span><br></pre></td></tr></table></figure>
+
+<p><strong>table 内部是怎么做到&quot;一表两用&quot;的？</strong> 这恰恰是 Lua 最精妙的地方——它不是把数组和字典揉在一起，而是<strong>一个结构、两段存储</strong>：连续的整数键（1、2、3…）放进一段紧凑的数组区，其余键值对放进哈希区。访问 <code>arr[2]</code> 是 O(1) 的数组下标，访问 <code>cfg.name</code> 是 O(1) 的哈希查找，互不干扰，取长补短。</p>
+<div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+<rect width="680" height="300" fill="#ffffff"/>
+<text x="340" y="30" font-size="16" fill="#1a1a1a" text-anchor="middle" font-weight="bold">一个 table = 数组区 + 哈希区（Lua 内部结构示意）</text>
+<rect x="40" y="70" width="150" height="60" rx="10" fill="#fde8e8" stroke="#b3261e" stroke-width="1.5"/>
+<text x="115" y="96" font-size="14" fill="#1a1a1a" text-anchor="middle" font-weight="bold">t = {"GET","SET"}</text>
+<text x="115" y="116" font-size="12" fill="#666" text-anchor="middle">栈上引用</text>
+<line x1="190" y1="100" x2="270" y2="100" stroke="#b3261e" stroke-width="2"/>
+<line x1="190" y1="100" x2="270" y2="180" stroke="#555" stroke-width="1.5" stroke-dasharray="4 3"/>
+<rect x="270" y="60" width="170" height="80" rx="8" fill="#e6f4ea" stroke="#137333" stroke-width="1.5"/>
+<text x="355" y="85" font-size="13" fill="#1a1a1a" text-anchor="middle" font-weight="bold">数组区（array part）</text>
+<text x="355" y="108" font-size="12" fill="#333" text-anchor="middle">[1]="GET"  [2]="SET"</text>
+<text x="355" y="128" font-size="12" fill="#666" text-anchor="middle">紧凑存储 · O(1) 下标</text>
+<rect x="270" y="160" width="170" height="80" rx="8" fill="#fef7e0" stroke="#b06000" stroke-width="1.5"/>
+<text x="355" y="185" font-size="13" fill="#1a1a1a" text-anchor="middle" font-weight="bold">哈希区（hash part）</text>
+<text x="355" y="208" font-size="12" fill="#333" text-anchor="middle">["timeout"]=100</text>
+<text x="355" y="228" font-size="12" fill="#666" text-anchor="middle">键值散列 · O(1) 平均</text>
+<text x="475" y="96" font-size="12" fill="#333">整数键 → 数组区</text>
+<text x="475" y="196" font-size="12" fill="#333">其他键 → 哈希区</text>
+</svg>
+</div>
+
+<p><strong>为什么 Lua 敢这么设计？</strong> 因为脚本语言的核心诉求是&quot;怎么方便怎么来&quot;。C++ 程序员要自己权衡&quot;这个数据该用 vector 还是 map&quot;，Lua 程序员永远不用选——先塞进去用，跑慢了再说。这种&quot;不做选择的自由&quot;，正是嵌入式场景最需要的开发效率。</p>
+<blockquote>
+<p>对照记忆：C++ 的 <code>std::vector</code> 和 <code>std::map</code> 是<strong>类型层面</strong>的二分；Lua 的 table 是<strong>存储层面</strong>的合一，语法上根本不区分。</p>
+</blockquote>
+<h2 id="三、metatable：给-裸表-装上行为"><a href="#三、metatable：给-裸表-装上行为" class="headerlink" title="三、metatable：给&quot;裸表&quot;装上行为"></a>三、metatable：给&quot;裸表&quot;装上行为</h2><p>到这里，table 还只是&quot;数据的容器&quot;。真正让 Lua 从&quot;好用的数据结构&quot;升级成&quot;完整的语言&quot;的，是 <strong>metatable（元表）</strong>——它是 Lua 最核心、也最容易被误解的机制。</p>
+<p>一句话本质：<strong>元表是一张&quot;行为表&quot;，它规定了&quot;当别人对这张表做某件事时，该怎么办&quot;。</strong></p>
+<p>每张表都可以挂一张元表。访问一个表的字段时，如果表自己找不到，Lua 就会去问它的元表——通过 <code>__index</code> 这个特殊字段。</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- 元表初体验：让&quot;查不到&quot;的字段有个默认值</span></span><br><span class="line"><span class="keyword">local</span> defaults = &#123;unknown = <span class="string">&quot;???&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">local</span> t = &#123;name = <span class="string">&quot;lua&quot;</span>&#125;</span><br><span class="line"><span class="built_in">setmetatable</span>(t, &#123;<span class="built_in">__index</span> = defaults&#125;)  <span class="comment">-- t 挂上元表：查不到就去 defaults 找</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(t.name)       <span class="comment">-- lua（自己有的，直接用）</span></span><br><span class="line"><span class="built_in">print</span>(t.unknown)    <span class="comment">-- ???（自己没有，通过 __index 去 defaults 找）</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">lua</span><br><span class="line">???</span><br></pre></td></tr></table></figure>
+
+<p><code>__index</code> 有两种形态：<strong>表</strong>（查不到就去这张表里找）或<strong>函数</strong>（查不到就调用这个函数）。而 Lua 里著名的&quot;面向对象&quot;，就是靠 <code>__index = 类表</code> 这条链式查找搭出来的——<strong>继承本质上就是&quot;查不到就往上找&quot;</strong>：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- 用元表模拟&quot;类&quot;：Lua 没有 class 关键字，但不需要</span></span><br><span class="line"><span class="keyword">local</span> Animal = &#123;&#125;</span><br><span class="line">Animal.<span class="built_in">__index</span> = Animal            <span class="comment">-- 实例查不到字段时，回 Animal 找</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">Animal.new</span><span class="params">(name)</span></span></span><br><span class="line">    <span class="keyword">local</span> <span class="built_in">self</span> = <span class="built_in">setmetatable</span>(&#123;&#125;, Animal)  <span class="comment">-- 空表 + 元表 = 新实例</span></span><br><span class="line">    <span class="built_in">self</span>.name = name</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">self</span></span><br><span class="line"><span class="keyword">end</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">Animal:speak</span><span class="params">()</span></span>            <span class="comment">-- 冒号 = 自动注入 self</span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">self</span>.name .. <span class="string">&quot; 发出声音&quot;</span></span><br><span class="line"><span class="keyword">end</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">local</span> dog = Animal.new(<span class="string">&quot;旺财&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(dog:speak())                 <span class="comment">-- 实例没有 speak，沿 __index 找到 Animal.speak</span></span><br><span class="line"></span><br><span class="line"><span class="comment">-- &quot;继承&quot;：子类的元表 __index 指向父类</span></span><br><span class="line"><span class="keyword">local</span> Dog = <span class="built_in">setmetatable</span>(&#123;&#125;, &#123;<span class="built_in">__index</span> = Animal&#125;)  <span class="comment">-- Dog 查不到 → Animal</span></span><br><span class="line">Dog.<span class="built_in">__index</span> = Dog</span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">Dog:speak</span><span class="params">()</span></span>               <span class="comment">-- 覆盖父类方法</span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">self</span>.name .. <span class="string">&quot; 汪汪叫&quot;</span></span><br><span class="line"><span class="keyword">end</span></span><br><span class="line"><span class="keyword">local</span> d2 = <span class="built_in">setmetatable</span>(&#123;name = <span class="string">&quot;大黄&quot;</span>&#125;, Dog)</span><br><span class="line"><span class="built_in">print</span>(d2:speak())                  <span class="comment">-- 大黄 汪汪叫（子类方法优先）</span></span><br><span class="line"><span class="built_in">print</span>(d2.new)                      <span class="comment">-- 子类没有 new → 沿链找到 Animal.new（方法&quot;继承&quot;）</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">旺财 发出声音</span><br><span class="line">大黄 汪汪叫</span><br><span class="line">function: 0x...</span><br></pre></td></tr></table></figure>
+
+<p>除了 <code>__index</code>，元表还能挂<strong>运算符重载</strong>和<strong>生命周期钩子</strong>：<code>__add</code>（<code>+</code>）、<code>__tostring</code>（<code>print</code> 时自动调用）、<code>__call</code>（让表能像函数一样被调用）、<code>__gc</code>（垃圾回收时触发）……</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- __tostring：让 print 输出&quot;人类可读&quot;的内容</span></span><br><span class="line"><span class="keyword">local</span> pt = &#123;x = <span class="number">3</span>, y = <span class="number">4</span>&#125;</span><br><span class="line"><span class="built_in">setmetatable</span>(pt, &#123;</span><br><span class="line">    <span class="built_in">__tostring</span> = <span class="function"><span class="keyword">function</span><span class="params">(p)</span></span> <span class="keyword">return</span> <span class="string">&quot;(&quot;</span> .. p.x .. <span class="string">&quot;, &quot;</span> .. p.y .. <span class="string">&quot;)&quot;</span> <span class="keyword">end</span></span><br><span class="line">&#125;)</span><br><span class="line"><span class="built_in">print</span>(pt)   <span class="comment">-- (3, 4)</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(3, 4)</span><br></pre></td></tr></table></figure>
+
+<p><strong>这跟 C++ 的运算符重载、Python 的 <code>__getattr__</code>&#x2F;<code>__str__</code> 本质是同一个东西</strong>——Lua 只是把所有&quot;魔法方法&quot;统一收进了一张普通的表里。你甚至可以现场给任意表&quot;加魔法&quot;而不需要改类型定义，这在编译型语言里是不可想象的灵活。</p>
+<h2 id="四、从一张表里长出的语言特性"><a href="#四、从一张表里长出的语言特性" class="headerlink" title="四、从一张表里长出的语言特性"></a>四、从一张表里长出的语言特性</h2><p>table + metatable 只是地基。Lua 那些让新手惊叹的&quot;高级特性&quot;，几乎都是在这两块地基上&quot;长&quot;出来的：</p>
+<p><strong>1. 多返回值——不需要包装</strong></p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">local</span> <span class="function"><span class="keyword">function</span> <span class="title">divmod</span><span class="params">(a, b)</span></span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">math</span>.<span class="built_in">floor</span>(a / b), a % b   <span class="comment">-- 一次返回两个值</span></span><br><span class="line"><span class="keyword">end</span></span><br><span class="line"><span class="keyword">local</span> q, r = divmod(<span class="number">17</span>, <span class="number">5</span>)</span><br><span class="line"><span class="built_in">print</span>(q, r)     <span class="comment">-- 3 2</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">3	2</span><br></pre></td></tr></table></figure>
+
+<p><strong>2. 协程——&quot;可暂停的函数&quot;</strong></p>
+<p>Lua 的协程是<strong>非抢占式</strong>的：函数执行到 <code>coroutine.yield()</code> 主动让出，外部用 <code>coroutine.resume()</code> 唤醒。它不需要多线程，不需要锁——因为同一时刻只有一条执行流。</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">local</span> co = <span class="built_in">coroutine</span>.<span class="built_in">create</span>(<span class="function"><span class="keyword">function</span><span class="params">()</span></span></span><br><span class="line">    <span class="keyword">for</span> i = <span class="number">1</span>, <span class="number">3</span> <span class="keyword">do</span></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;协程内: &quot;</span>, i)</span><br><span class="line">        <span class="built_in">coroutine</span>.<span class="built_in">yield</span>(i)          <span class="comment">-- 让出，把 i 传给 resume</span></span><br><span class="line">    <span class="keyword">end</span></span><br><span class="line"><span class="keyword">end</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;外部: 第一次 resume 返回&quot;</span>, <span class="built_in">coroutine</span>.<span class="built_in">resume</span>(co))  <span class="comment">-- 协程跑到第一个 yield 停住</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;外部: 第二次 resume 返回&quot;</span>, <span class="built_in">coroutine</span>.<span class="built_in">resume</span>(co))</span><br></pre></td></tr></table></figure>
+
+<p>输出（注意两条执行流交替打印，这就是&quot;协作&quot;）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">协程内: 	1</span><br><span class="line">外部: 第一次 resume 返回	true	1</span><br><span class="line">协程内: 	2</span><br><span class="line">外部: 第二次 resume 返回	true	2</span><br></pre></td></tr></table></figure>
+
+<p><strong>3. 模块——一张被 return 的表</strong></p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- mymath.lua（模块文件）</span></span><br><span class="line"><span class="keyword">local</span> M = &#123;&#125;          <span class="comment">-- 模块就是一张表</span></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">M.add</span><span class="params">(a, b)</span></span> <span class="keyword">return</span> a + b <span class="keyword">end</span></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">M.mul</span><span class="params">(a, b)</span></span> <span class="keyword">return</span> a * b <span class="keyword">end</span></span><br><span class="line"><span class="keyword">return</span> M              <span class="comment">-- require 拿到这张表</span></span><br><span class="line"></span><br><span class="line"><span class="comment">-- 使用处</span></span><br><span class="line"><span class="keyword">local</span> mymath = <span class="built_in">require</span>(<span class="string">&quot;mymath&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(mymath.add(<span class="number">2</span>, <span class="number">3</span>))   <span class="comment">-- 5</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">5</span><br></pre></td></tr></table></figure>
+
+<p>看到规律了吗？数组、字典、对象、类、模块、协程调度……<strong>Lua 几乎不发明新概念，而是反复复用&quot;表&quot;这一个概念</strong>。这种&quot;用极少的机制表达极多的语义&quot;的克制，是 Lua 源码短小、易于嵌入、行为可预测的根本原因。</p>
+<h2 id="五、坑与边界：table-不是银弹"><a href="#五、坑与边界：table-不是银弹" class="headerlink" title="五、坑与边界：table 不是银弹"></a>五、坑与边界：table 不是银弹</h2><p>table 的灵活是有代价的。写 Lua 时这几个坑几乎人人踩过：</p>
+<p><strong>坑 1：数组从 1 开始。</strong> <code>for i = 0, #arr</code> 会漏掉最后一个元素、多访问一个 nil。这是 Lua 最反直觉的地方，也是从其他语言转过来的第一道坎。语言作者的理由是&quot;和数学下标、和 <code>string.sub</code> 的区间表示保持一致&quot;——但习惯 0-based 的人就是会难受。</p>
+<p><strong>坑 2：nil 是&quot;删除&quot;而非&quot;空值&quot;。</strong> 给表的字段赋 <code>nil</code> 等于删掉这个键。这带来一个隐蔽的大坑：<strong>数组中间不能存 nil</strong>——一旦出现&quot;空洞&quot;，<code>#</code> 运算符的结果就变得不确定（它只对&quot;从 1 开始、无空洞&quot;的序列可靠）：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">local</span> a = &#123;<span class="string">&quot;x&quot;</span>, <span class="string">&quot;y&quot;</span>, <span class="string">&quot;z&quot;</span>&#125;</span><br><span class="line">a[<span class="number">2</span>] = <span class="literal">nil</span>            <span class="comment">-- 删掉中间元素 → 数组出现空洞</span></span><br><span class="line"><span class="built_in">print</span>(#a)             <span class="comment">-- 可能输出 1 或 3，行为未定义！</span></span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">3</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>注意：这里打印 3 只是当前实现恰好如此——<strong>规范上 <code>#</code> 对带空洞的数组没有保证</strong>。想保留&quot;空洞&quot;必须用占位符（如 <code>false</code> 或自定义的 <code>null</code> 标记），这正是很多 Lua 序列化库要专门处理 <code>null</code> 的原因。</p>
+</blockquote>
+<p><strong>坑 3：变量默认是全局的。</strong> Lua 里不写 <code>local</code> 的变量直接进全局表 <code>_G</code>。文件里忘写一个 <code>local</code>，就可能悄悄污染全局、被其他文件读到——模块化靠的是约定（每个文件最外层 <code>local</code>&#x2F;<code>return</code>）而非语法强制。Lua 5.2+ 提供了 <code>_ENV</code> 缓解，但默认仍是&quot;宽松&quot;的。</p>
+<p><strong>坑 4：表是引用语义。</strong> <code>local b = a</code> 只是复制引用，改 <code>b</code> 就是改 <code>a</code>。想深拷贝得自己写递归（还要处理环和元表），标准库不提供。</p>
+<p><strong>边界：table 万能，但不是为&quot;大&quot;而生。</strong> 静态类型检查、编译期优化、大规模工程的组织能力都不是 Lua 的强项；一旦脚本复杂到一定程度，Lua 的&quot;自由&quot;会变成&quot;失控&quot;。所以工业界的主流用法是：<strong>宿主用 C++&#x2F;Rust 管性能和结构，Lua 只负责薄薄一层易变逻辑</strong>——Redis 的 Lua 脚本限制在几 KB、OpenResty 的 Lua 代码按模块严格分层，都是这个思路。</p>
+<h2 id="六、对比表-🐾-小结"><a href="#六、对比表-🐾-小结" class="headerlink" title="六、对比表 + 🐾 小结"></a>六、对比表 + 🐾 小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Lua table</th>
+<th>Python list&#x2F;dict</th>
+<th>C++ vector&#x2F;map</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>数组与字典</td>
+<td>同一种类型</td>
+<td>list &#x2F; dict 分家</td>
+<td>vector &#x2F; map 分家</td>
+</tr>
+<tr>
+<td>索引起点</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>删元素</td>
+<td>赋 nil（有空洞陷阱）</td>
+<td><code>del</code> &#x2F; <code>pop</code></td>
+<td><code>erase</code>（迭代器失效要小心）</td>
+</tr>
+<tr>
+<td>&quot;魔法方法&quot;</td>
+<td>元表 <code>__index/__add/...</code></td>
+<td><code>__getattr__/__add__/...</code></td>
+<td>运算符重载（编译期绑定）</td>
+</tr>
+<tr>
+<td>继承</td>
+<td>元表链模拟</td>
+<td>class 继承</td>
+<td>class 继承（编译期）</td>
+</tr>
+<tr>
+<td>模块</td>
+<td>一张 return 的表</td>
+<td>import 语句</td>
+<td>头文件&#x2F;命名空间</td>
+</tr>
+<tr>
+<td>定位</td>
+<td>可嵌入脚本</td>
+<td>通用语言</td>
+<td>系统语言</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>设计取向</th>
+<th>Lua</th>
+<th>Python &#x2F; C++</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>机制数量</td>
+<td>极少（一个 table 打天下）</td>
+<td>丰富（list&#x2F;dict&#x2F;class&#x2F;...）</td>
+</tr>
+<tr>
+<td>学习曲线</td>
+<td>语法半天上手，元表要悟</td>
+<td>概念多，但各有明确用途</td>
+</tr>
+<tr>
+<td>适用规模</td>
+<td>小、薄、嵌入宿主</td>
+<td>大到中型独立项目</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：Lua 的全部秘密，就是&quot;<strong>一张表 + 一张元表</strong>&quot;。数组、字典、对象、类、模块全是 table 的不同用法，运算符重载、属性拦截、继承全是 metatable 的不同钩子。它用最少的机制换来了最大的灵活，也因此成了全世界嵌入场景的首选。理解&quot;为什么只需要一种数据结构&quot;，你就理解了 Lua 为什么小、为什么快、为什么被嵌进 Redis、Nginx 和游戏引擎——<strong>它不是功能少，而是把功能都长在了一张表上</strong>。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/lua0101/">https://hespethorn.github.io/posts/lua0101/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%B5%8C%E5%85%A5%E5%BC%8F/">嵌入式</a><a class="post-meta__tags" href="/tags/Lua/">Lua</a><a class="post-meta__tags" href="/tags/%E8%84%9A%E6%9C%AC%E8%AF%AD%E8%A8%80/">脚本语言</a><a class="post-meta__tags" href="/tags/table%E5%85%83%E8%A1%A8/">table元表</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">775</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1045</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0101/" title="Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0102/" title="Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载">Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fable-dropout/" title="闻莺坊的歇弦师">闻莺坊的歇弦师</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20260904/" title="AI 新闻速递（2026-09-04）">AI 新闻速递（2026-09-04）</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0101/" title="Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构">Lua 语言系列：1.1 一表通吃——从 table 到 metatable，一门语言如何只靠一种数据结构</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lua0102/" title="Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载">Lua 语言系列：1.2 metatable 深挖——__index、__newindex 与运算符重载</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
