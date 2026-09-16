@@ -1,0 +1,663 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>缓冲区溢出与安全 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一个&quot;读一行输入再打印出来&quot;的小程序，塞进去 80 个字母就崩了；同一个二进制，换台机器跑同样的输入却没事；某些崩溃信息里赫然写着 *** stack smashing detected ***，而另一些则静悄悄地把控制权交给了别人。这三件事背后是同一个机制：C 语言不为数组访问做任何边界检查，而函数的返回地址就躺在局部数组的高地址侧 —— 于是&quot;写越界&quot;这">
+<meta property="og:type" content="article">
+<meta property="og:title" content="缓冲区溢出与安全">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0103/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一个&quot;读一行输入再打印出来&quot;的小程序，塞进去 80 个字母就崩了；同一个二进制，换台机器跑同样的输入却没事；某些崩溃信息里赫然写着 *** stack smashing detected ***，而另一些则静悄悄地把控制权交给了别人。这三件事背后是同一个机制：C 语言不为数组访问做任何边界检查，而函数的返回地址就躺在局部数组的高地址侧 —— 于是&quot;写越界&quot;这">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-12-15T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.698Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="栈帧">
+<meta property="article:tag" content="缓冲区溢出">
+<meta property="article:tag" content="ROP">
+<meta property="article:tag" content="内存安全">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "缓冲区溢出与安全",
+  "url": "https://hespethorn.github.io/posts/capp0103/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-12-15T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.698Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0103/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '缓冲区溢出与安全',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">缓冲区溢出与安全</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">缓冲区溢出与安全</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>一个&quot;读一行输入再打印出来&quot;的小程序，塞进去 80 个字母就崩了；同一个二进制，换台机器跑同样的输入却没事；某些崩溃信息里赫然写着 <code>*** stack smashing detected ***</code>，而另一些则静悄悄地把控制权交给了别人。这三件事背后是同一个机制：<strong>C 语言不为数组访问做任何边界检查，而函数的返回地址就躺在局部数组的高地址侧 —— 于是&quot;写越界&quot;这件事，在物理上等同于&quot;改写程序接下来要执行哪条指令&quot;。</strong></p>
+<p>这一篇把 CSAPP 3.10 那套攻防逻辑讲透：溢出是怎么发生的、攻击者如何从&quot;改一个地址&quot;升级到&quot;执行自己的代码&quot;、现代编译器和操作系统架了哪三道防线、以及这三道防线各自的缝在哪。</p>
+<h2 id="1-先看清栈帧：返回地址就在缓冲区头顶"><a href="#1-先看清栈帧：返回地址就在缓冲区头顶" class="headerlink" title="1. 先看清栈帧：返回地址就在缓冲区头顶"></a>1. 先看清栈帧：返回地址就在缓冲区头顶</h2><p>函数调用时，x86-64 在栈上给被调函数划一块帧。以 <code>echo()</code> 里有一个 <code>char buf[64]</code> 为例，帧内从高地址到低地址依次是：</p>
+<div align="center">
+<svg viewBox="0 0 680 320" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="320" fill="#fbfbfd"/>
+<text x="340" y="24" text-anchor="middle" font-size="15" font-family="sans-serif" fill="#333">echo() 的栈帧：返回地址就压在 buf 的头顶</text>
+<text x="16" y="48" font-size="11" font-family="sans-serif" fill="#888">高地址 0x7fffffffe1a8</text>
+<rect x="120" y="54" width="300" height="36" rx="5" fill="#fde8e8" stroke="#e5484d"/>
+<text x="270" y="77" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">返回地址（8 字节）</text>
+<rect x="120" y="94" width="300" height="36" rx="5" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="270" y="117" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">被保存的 %rbp（8 字节）</text>
+<rect x="120" y="134" width="300" height="36" rx="5" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="270" y="157" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">canary（开启保护时才有）</text>
+<rect x="120" y="174" width="300" height="72" rx="5" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="270" y="212" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">char buf[64]</text>
+<text x="440" y="77" font-size="12" font-family="sans-serif" fill="#e5484d">← 最终目标：改写它</text>
+<text x="440" y="117" font-size="12" font-family="sans-serif" fill="#e2a03f">← 顺带被踩烂</text>
+<text x="440" y="157" font-size="12" font-family="sans-serif" fill="#30a46c">← 守卫：踩到就 abort</text>
+<text x="440" y="212" font-size="12" font-family="sans-serif" fill="#7f9cf5">← 合法写入区，越界即溢出</text>
+<path d="M104 208 L104 82" stroke="#e5484d" stroke-width="2" stroke-dasharray="6 4" fill="none" marker-end="url(#up1)"/>
+<text x="94" y="150" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#e5484d" transform="rotate(-90 94 150)">越界写入方向</text>
+<defs><marker id="up1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#e5484d"/></marker></defs>
+<text x="16" y="270" font-size="11" font-family="sans-serif" fill="#888">低地址 0x7fffffffe160  ← %rsp</text>
+<text x="16" y="300" font-size="12" font-family="sans-serif" fill="#555">栈向低地址生长；buf 越界写入（往高地址方向）会依次踩到 canary、%rbp、返回地址</text>
+</svg>
+</div>
+
+<p>关键点有两条，缺一不可：</p>
+<ul>
+<li><strong><code>buf[0]</code> 在低地址，<code>buf[63]</code> 在高地址。</strong> 所以&quot;越界写&quot;不是跑到数组前面去，而是<strong>往高地址爬</strong>，正好爬向返回地址。</li>
+<li><strong>返回地址是 <code>call</code> 指令压进去的</strong>，函数末尾的 <code>ret</code> 就是把它弹进 <code>%rip</code>。谁改了它，谁就决定了这个函数返回后 CPU 去哪儿。</li>
+</ul>
+<h2 id="2-复现：把返回地址改成另一个函数"><a href="#2-复现：把返回地址改成另一个函数" class="headerlink" title="2. 复现：把返回地址改成另一个函数"></a>2. 复现：把返回地址改成另一个函数</h2><p>下面这段 C 是最经典的漏洞样本：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* vuln.c */</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">secret</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="built_in">puts</span>(<span class="string">&quot;*** 你拿到了 secret() ***&quot;</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">echo</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">char</span> buf[<span class="number">64</span>];</span><br><span class="line">    gets(buf);                  <span class="comment">/* 灾难：不检查输入长度 */</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;你输入了：%s\n&quot;</span>, buf);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    echo();</span><br><span class="line">    <span class="built_in">puts</span>(<span class="string">&quot;正常返回 main&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">gcc -Og -fno-stack-protector -no-pie vuln.c -o vuln</span><br><span class="line"><span class="comment"># 警告：the `gets&#x27; function is dangerous and should not be used</span></span><br><span class="line"><span class="comment"># —— 这句警告，就是本节的全部主题</span></span><br></pre></td></tr></table></figure>
+
+<p><code>gets</code> 的语义是&quot;一直读到换行符为止&quot;，它完全不知道 <code>buf</code> 有多大。输入 40 个字符没事，输入 80 个 <code>A</code> 加精心构造的 8 个字节，写越界的部分会依次覆盖 canary 槽位、<code>%rbp</code>，最后 8 字节正好落进返回地址。</p>
+<p>本机没有 C 编译器，我用一段 Python 把这块栈帧原样建出来模拟（<strong>这段代码是可以直接跑的</strong>，地址是编的，但偏移、覆盖顺序、小端编码都是真的）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> struct</span><br><span class="line"></span><br><span class="line"><span class="comment"># echo() 的栈帧：buf 在低地址，返回地址在高地址，canary 夹在两者中间</span></span><br><span class="line">CANARY_OFF, RBP_OFF, RET_OFF = <span class="number">64</span>, <span class="number">72</span>, <span class="number">80</span>   <span class="comment"># 相对 buf 起始的字节偏移</span></span><br><span class="line">RET_ADDR  = <span class="number">0x00000000004005b6</span>   <span class="comment"># 正常情况下该回到 main 的那条指令</span></span><br><span class="line">SAVED_RBP = <span class="number">0x00007fffffffe100</span></span><br><span class="line">TARGET    = <span class="number">0x00000000004005a0</span>   <span class="comment"># secret() 的地址</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">frame</span>(<span class="params">canary=<span class="number">0</span></span>):</span><br><span class="line">    f = <span class="built_in">bytearray</span>(<span class="number">88</span>)</span><br><span class="line">    struct.pack_into(<span class="string">&quot;&lt;Q&quot;</span>, f, CANARY_OFF, canary)</span><br><span class="line">    struct.pack_into(<span class="string">&quot;&lt;Q&quot;</span>, f, RBP_OFF, SAVED_RBP)</span><br><span class="line">    struct.pack_into(<span class="string">&quot;&lt;Q&quot;</span>, f, RET_OFF, RET_ADDR)</span><br><span class="line">    <span class="keyword">return</span> f</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">dump</span>(<span class="params">f, tag</span>):</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;[<span class="subst">&#123;tag&#125;</span>]&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  canary     = 0x<span class="subst">&#123;struct.unpack_from(<span class="string">&#x27;&lt;Q&#x27;</span>, f, CANARY_OFF)[<span class="number">0</span>]:016x&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  saved %rbp = 0x<span class="subst">&#123;struct.unpack_from(<span class="string">&#x27;&lt;Q&#x27;</span>, f, RBP_OFF)[<span class="number">0</span>]:016x&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  ret addr   = 0x<span class="subst">&#123;struct.unpack_from(<span class="string">&#x27;&lt;Q&#x27;</span>, f, RET_OFF)[<span class="number">0</span>]:016x&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;=== 场景一：无保护（-fno-stack-protector）===&quot;</span>)</span><br><span class="line">dump(frame(), <span class="string">&quot;进入 echo()，栈帧初始值&quot;</span>)</span><br><span class="line">f = frame()</span><br><span class="line">f[<span class="number">0</span>:<span class="number">88</span>] = <span class="string">b&quot;A&quot;</span> * <span class="number">80</span> + struct.pack(<span class="string">&quot;&lt;Q&quot;</span>, TARGET)</span><br><span class="line">dump(f, <span class="string">&quot;输入 80 个 A + 8 字节 0x4005a0&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;  -&gt; ret 时 rip =&quot;</span>, <span class="built_in">hex</span>(struct.unpack_from(<span class="string">&quot;&lt;Q&quot;</span>, f, RET_OFF)[<span class="number">0</span>]), <span class="string">&quot;，跳进了 secret()&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>()</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;=== 场景二：开启 canary（-fstack-protector-strong）===&quot;</span>)</span><br><span class="line">dump(frame(canary=<span class="number">0x00a3f1d5c7b93e21</span>), <span class="string">&quot;进入 echo()，canary 就位&quot;</span>)</span><br><span class="line">f = frame(canary=<span class="number">0x00a3f1d5c7b93e21</span>)</span><br><span class="line">f[<span class="number">0</span>:<span class="number">72</span>] = <span class="string">b&quot;A&quot;</span> * <span class="number">72</span></span><br><span class="line">dump(f, <span class="string">&quot;输入 72 个 A，刚踩到 canary&quot;</span>)</span><br><span class="line">now = struct.unpack_from(<span class="string">&quot;&lt;Q&quot;</span>, f, CANARY_OFF)[<span class="number">0</span>]</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;  -&gt; canary 已被改成&quot;</span>, <span class="built_in">hex</span>(now), <span class="string">&quot;，返回前校验失败&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;  -&gt; *** stack smashing detected ***: ./vuln terminated&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>真实输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">=== 场景一：无保护（-fno-stack-protector）===</span><br><span class="line">[进入 echo()，栈帧初始值]</span><br><span class="line">  canary     = 0x0000000000000000</span><br><span class="line">  saved %rbp = 0x00007fffffffe100</span><br><span class="line">  ret addr   = 0x00000000004005b6</span><br><span class="line">[输入 80 个 A + 8 字节 0x4005a0]</span><br><span class="line">  canary     = 0x4141414141414141</span><br><span class="line">  saved %rbp = 0x4141414141414141</span><br><span class="line">  ret addr   = 0x00000000004005a0</span><br><span class="line">  -&gt; ret 时 rip = 0x4005a0 ，跳进了 secret()</span><br><span class="line"></span><br><span class="line">=== 场景二：开启 canary（-fstack-protector-strong）===</span><br><span class="line">[进入 echo()，canary 就位]</span><br><span class="line">  canary     = 0x00a3f1d5c7b93e21</span><br><span class="line">  saved %rbp = 0x00007fffffffe100</span><br><span class="line">  ret addr   = 0x00000000004005b6</span><br><span class="line">[输入 72 个 A，刚踩到 canary]</span><br><span class="line">  canary     = 0x4141414141414141</span><br><span class="line">  saved %rbp = 0x00007fffffffe100</span><br><span class="line">  ret addr   = 0x00000000004005b6</span><br><span class="line">  -&gt; canary 已被改成 0x4141414141414141 ，返回前校验失败</span><br><span class="line">  -&gt; *** stack smashing detected ***: ./vuln terminated</span><br></pre></td></tr></table></figure>
+
+<p>注意场景二的最后一行：<strong>返回地址其实还是完好的</strong>，<code>0x4005b6</code> 一个字节都没被碰到 —— 但程序已经 abort 了。这就是 canary 的设计哲学：<strong>不等你碰到要害，碰到守门员就喊停。</strong></p>
+<p>另外注意 <code>%rbp</code> 那一栏变成 <code>0x4141414141414141</code>（<code>A</code> 是 0x41）—— 小端序下，8 个 <code>A</code> 拼起来就是这么个数。做二进制分析时看到满屏 <code>0x41414141</code>，第一反应就该是&quot;有人在灌 <code>A</code>&quot;。</p>
+<h2 id="3-升级：从-改地址-到-执行我的代码"><a href="#3-升级：从-改地址-到-执行我的代码" class="headerlink" title="3. 升级：从&quot;改地址&quot;到&quot;执行我的代码&quot;"></a>3. 升级：从&quot;改地址&quot;到&quot;执行我的代码&quot;</h2><p>改掉返回地址只能跳到<strong>程序里已有的函数</strong>。真正的攻击要更进一步：把机器码本身塞进缓冲区，再让返回地址指回缓冲区。</p>
+<div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="300" fill="#fbfbfd"/>
+<text x="340" y="24" text-anchor="middle" font-size="15" font-family="sans-serif" fill="#333">代码注入：让 ret 跳进缓冲区里的 shellcode</text>
+<text x="30" y="52" font-size="12" font-family="sans-serif" fill="#555">攻击者构造的输入串（低地址 → 高地址）：</text>
+<rect x="30" y="62" width="200" height="40" rx="4" fill="#ede8fb" stroke="#8e6fd8"/>
+<text x="130" y="87" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">NOP 滑板 0x90 × N</text>
+<rect x="230" y="62" width="120" height="40" rx="4" fill="#fde8e8" stroke="#e5484d"/>
+<text x="290" y="87" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">shellcode</text>
+<rect x="350" y="62" width="110" height="40" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="405" y="87" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">填充 A × k</text>
+<rect x="460" y="62" width="190" height="40" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="555" y="87" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">新返回地址 = &amp;buf</text>
+<text x="30" y="140" font-size="12" font-family="sans-serif" fill="#555">写进栈之后：</text>
+<rect x="30" y="152" width="300" height="46" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="180" y="180" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">buf：NOP 滑板 + shellcode</text>
+<rect x="350" y="152" width="110" height="46" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="405" y="180" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">填充</text>
+<rect x="460" y="152" width="190" height="46" rx="4" fill="#fde8e8" stroke="#e5484d"/>
+<text x="555" y="180" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">返回地址 = &amp;buf</text>
+<path d="M555 150 C555 108 250 108 180 146" stroke="#e5484d" stroke-width="2" fill="none" marker-end="url(#up2)"/>
+<text x="368" y="128" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#e5484d">ret 时 %rip 跳回缓冲区</text>
+<defs><marker id="up2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#e5484d"/></marker></defs>
+<text x="16" y="232" font-size="12" font-family="sans-serif" fill="#555">gets 把整串字节原样写进 buf；越过 64 字节后继续往上爬，最后 8 字节落进返回地址槽位</text>
+<text x="16" y="258" font-size="12" font-family="sans-serif" fill="#555">NOP 滑板（0x90）是为了容错：只要落点落在滑板任意位置，都会一路滑到 shellcode</text>
+<text x="16" y="284" font-size="12" font-family="sans-serif" fill="#e5484d">前提：栈页必须可执行（-z execstack）。这正是 NX 位要掐死的那条路。</text>
+</svg>
+</div>
+
+<p>shellcode 通常就几十字节，做的是 <code>execve(&quot;/bin/sh&quot;, NULL, NULL)</code> —— 把当前进程的镜像换成 shell。程序要是 <code>setuid root</code> 或以服务形式在跑，攻击者就拿到了对应的权限。</p>
+<h2 id="4-NX-位之后：ROP（面向返回的编程）"><a href="#4-NX-位之后：ROP（面向返回的编程）" class="headerlink" title="4. NX 位之后：ROP（面向返回的编程）"></a>4. NX 位之后：ROP（面向返回的编程）</h2><p>既然&quot;往栈里塞代码&quot;这条路被堵了，攻击者换个思路：<strong>代码不用我写，程序里本来就有的是。</strong> 只要把已有的指令片段按&quot;片段 + ret&quot;的顺序串起来，就能拼出任意逻辑 —— 这就是 ROP（Return-Oriented Programming）。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"># 从程序自己的代码段里翻出来的 gadget</span><br><span class="line">0x400a13:  pop %rdi ; ret          # 把栈顶值弹进第一个参数寄存器</span><br><span class="line">0x400a11:  pop %rsi ; pop %r15 ; ret</span><br><span class="line">0x400520:  &lt;system@plt&gt;            # 动态库里的现成函数</span><br><span class="line">0x6b4040:  &quot;/bin/sh&quot;               # 数据段里现成的字符串</span><br></pre></td></tr></table></figure>
+
+<p>栈上被串成这样（从低到高）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">&amp;gadget1(0x400a13)  -&gt;  0x6b4040      -&gt;  &amp;gadget2(0x400a11)  -&gt;  0x0  -&gt;  0x0  -&gt;  &amp;system</span><br><span class="line">     pop rdi; ret       &quot;/bin/sh&quot; 地址      pop rsi/r15; ret       argv     envp</span><br></pre></td></tr></table></figure>
+
+<p>执行链条是：<code>ret</code> 弹进 gadget1 → <code>pop %rdi</code> 拿到 <code>&quot;/bin/sh&quot;</code> 地址，紧接着 <code>ret</code> 又弹进 gadget2 → 清掉 <code>%rsi</code> → 再 <code>ret</code> 弹进 <code>system</code>。<strong>全程没有一字节新代码，只用了&quot;控制流&quot;这一种能力。</strong> ROP 说明了攻防里最难受的一点：<strong>可执行性可以禁，可&quot;跳转&quot;是 CPU 的本职工作，禁不掉。</strong></p>
+<h2 id="5-现代系统的三道防线"><a href="#5-现代系统的三道防线" class="headerlink" title="5. 现代系统的三道防线"></a>5. 现代系统的三道防线</h2><div align="center">
+<svg viewBox="0 0 680 292" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="292" fill="#fbfbfd"/>
+<text x="340" y="24" text-anchor="middle" font-size="15" font-family="sans-serif" fill="#333">三道防线：各挡一段，各有各的缝</text>
+<rect x="20" y="44" width="200" height="152" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="120" y="72" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#3b5bdb">① 栈随机化 ASLR</text>
+<text x="36" y="98" font-size="12" font-family="sans-serif" fill="#1f2328">每次启动，栈 / 堆 / 库</text>
+<text x="36" y="116" font-size="12" font-family="sans-serif" fill="#1f2328">的基址都随机偏移。</text>
+<text x="36" y="142" font-size="12" font-family="sans-serif" fill="#30a46c">→ 猜不到 &amp;buf 在哪</text>
+<text x="36" y="172" font-size="12" font-family="sans-serif" fill="#e5484d">绕过：地址泄露、</text>
+<text x="36" y="190" font-size="12" font-family="sans-serif" fill="#e5484d">NOP 滑板、穷举爆破</text>
+<rect x="240" y="44" width="200" height="152" rx="6" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="340" y="72" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#0f7b43">② 栈破坏检测 Canary</text>
+<text x="256" y="98" font-size="12" font-family="sans-serif" fill="#1f2328">返回地址前放随机值，</text>
+<text x="256" y="116" font-size="12" font-family="sans-serif" fill="#1f2328">取自 %fs:0x28。</text>
+<text x="256" y="142" font-size="12" font-family="sans-serif" fill="#30a46c">→ 返回前校验，不符即 abort</text>
+<text x="256" y="172" font-size="12" font-family="sans-serif" fill="#e5484d">绕过：泄露 canary、</text>
+<text x="256" y="190" font-size="12" font-family="sans-serif" fill="#e5484d">改写函数指针 / 堆溢出</text>
+<rect x="460" y="44" width="200" height="152" rx="6" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="560" y="72" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#a35f00">③ 限制可执行区域 NX</text>
+<text x="476" y="98" font-size="12" font-family="sans-serif" fill="#1f2328">栈 / 堆 / 数据页标记为</text>
+<text x="476" y="116" font-size="12" font-family="sans-serif" fill="#1f2328">不可执行（W^X）。</text>
+<text x="476" y="142" font-size="12" font-family="sans-serif" fill="#30a46c">→ 注入的 shellcode 跑不起来</text>
+<text x="476" y="172" font-size="12" font-family="sans-serif" fill="#e5484d">绕过：ROP、</text>
+<text x="476" y="190" font-size="12" font-family="sans-serif" fill="#e5484d">ret2libc、JOP</text>
+<text x="16" y="228" font-size="12" font-family="sans-serif" fill="#555">现代默认配置 = 三者全开（-pie + -fstack-protector-strong + 栈默认 NX），攻击成本被抬到很高</text>
+<text x="16" y="256" font-size="12" font-family="sans-serif" fill="#e5484d">但没有一条是根治 —— C 不做边界检查这一事实没变，只要有一处越界写，漏洞就还在那里</text>
+<text x="16" y="282" font-size="12" font-family="sans-serif" fill="#888">代价：canary 每次调用多一次读 + 校验；ASLR 让调试时地址每次都变（可用 setarch -R 临时关掉）</text>
+</svg>
+</div>
+
+<p>这三招有个共同特征值得记住：<strong>它们都不是让溢出不发生，而是让溢出发生后&quot;不好利用&quot;。</strong> 溢出本身依然发生了，<code>buf</code> 后面的内存依然被写坏了，只是攻击者更难把它变成一次稳定可控的利用。这也是为什么&quot;开了 canary 就不会被打&quot;是错觉 —— 它是概率与成本的博弈，不是正确性保证。</p>
+<h2 id="6-正确的写法：C-C-Java-对照"><a href="#6-正确的写法：C-C-Java-对照" class="headerlink" title="6. 正确的写法：C &#x2F; C++ &#x2F; Java 对照"></a>6. 正确的写法：C &#x2F; C++ &#x2F; Java 对照</h2><p><strong>C：用带长度限制的接口，并且永远自己算长度。</strong></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">echo_safe</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    <span class="type">char</span> buf[<span class="number">64</span>];</span><br><span class="line">    <span class="keyword">if</span> (fgets(buf, <span class="keyword">sizeof</span> buf, <span class="built_in">stdin</span>) == <span class="literal">NULL</span>) <span class="keyword">return</span>;   <span class="comment">// 最多读 sizeof buf - 1 个</span></span><br><span class="line">    buf[<span class="built_in">strcspn</span>(buf, <span class="string">&quot;\n&quot;</span>)] = <span class="string">&#x27;\0&#x27;</span>;                      <span class="comment">// 去掉 fgets 保留的换行</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;你输入了：%s\n&quot;</span>, buf);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>strncpy</code> 不是好选择：目标空间被填满时它<strong>不补 <code>\0</code></strong>，反而制造出另一个 bug。要拼接就用 <code>snprintf</code>，它保证结尾有 <code>\0</code>，返回值还能告诉你&quot;如果空间够，本来要写多少字节&quot;：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> n = <span class="built_in">snprintf</span>(buf, <span class="keyword">sizeof</span> buf, <span class="string">&quot;%s&quot;</span>, input);</span><br><span class="line"><span class="keyword">if</span> (n &lt; <span class="number">0</span> || (<span class="type">size_t</span>)n &gt;= <span class="keyword">sizeof</span> buf) &#123;</span><br><span class="line">    <span class="comment">/* 被截断了，走错误处理而不是假装没事 */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>C++：把长度和指针绑在一起。</strong></p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;span&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;algorithm&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// std::span 自带长度，调用方无法只传一个裸指针进来</span></span><br><span class="line"><span class="function"><span class="type">size_t</span> <span class="title">safe_copy</span><span class="params">(std::span&lt;<span class="type">char</span>&gt; dst, std::string_view src)</span> </span>&#123;</span><br><span class="line">    <span class="type">size_t</span> n = std::<span class="built_in">min</span>(dst.<span class="built_in">size</span>(), src.<span class="built_in">size</span>());</span><br><span class="line">    std::<span class="built_in">copy_n</span>(src.<span class="built_in">begin</span>(), n, dst.<span class="built_in">begin</span>());</span><br><span class="line">    <span class="keyword">return</span> n;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">echo_cpp</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::string line;</span><br><span class="line">    std::<span class="built_in">getline</span>(std::cin, line);   <span class="comment">// 自动扩容，不会越界</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>std::span&lt;T&gt;</code> 的意义在于<strong>让&quot;缓冲区 + 它的长度&quot;成为一个整体类型</strong>，从 API 签名上就堵死&quot;只给指针不给长度&quot;的老毛病。</p>
+<p><strong>Java：语言层面根本不给这个机会。</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">byte</span>[] buf = <span class="keyword">new</span> <span class="title class_">byte</span>[<span class="number">64</span>];</span><br><span class="line"><span class="type">int</span> <span class="variable">n</span> <span class="operator">=</span> System.in.read(buf, <span class="number">0</span>, buf.length);   <span class="comment">// 返回实际读取的字节数</span></span><br><span class="line"><span class="keyword">if</span> (n &gt; <span class="number">0</span>) &#123;</span><br><span class="line">    System.out.println(<span class="keyword">new</span> <span class="title class_">String</span>(buf, <span class="number">0</span>, n, StandardCharsets.UTF_8));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>JVM 对每次数组访问做边界检查，越界就是 <code>ArrayIndexOutOfBoundsException</code> —— <strong>一个异常，而不是一段被改写的执行流。</strong> Rust 走的是另一条路：编译期借用检查 + 切片自带长度，越界在编译期或 panic 时被拦下，同样不存在&quot;静默写坏栈&quot;。</p>
+<h2 id="7-三道防线对照"><a href="#7-三道防线对照" class="headerlink" title="7. 三道防线对照"></a>7. 三道防线对照</h2><table>
+<thead>
+<tr>
+<th>防线</th>
+<th>挡住的是什么</th>
+<th>生效时机</th>
+<th>开销</th>
+<th>绕过方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>栈随机化 ASLR</td>
+<td>攻击者无法预知 <code>&amp;buf</code> &#x2F; 库函数地址</td>
+<td>进程启动时</td>
+<td>几乎为零</td>
+<td>地址泄露、NOP 滑板、穷举</td>
+</tr>
+<tr>
+<td>栈破坏检测 Canary</td>
+<td>覆盖返回地址前就被发现</td>
+<td>函数返回前</td>
+<td>每次调用一次读 + 比较</td>
+<td>泄露 canary、改函数指针、堆溢出</td>
+</tr>
+<tr>
+<td>限制可执行区域 NX</td>
+<td>注入的 shellcode 无法被执行</td>
+<td>页表属性，硬件强制</td>
+<td>几乎为零</td>
+<td>ROP、ret2libc、JOP</td>
+</tr>
+<tr>
+<td>控制流完整性 CFI</td>
+<td>非法跳转目标（含 ROP 链）</td>
+<td>每次间接跳转</td>
+<td>数个百分点</td>
+<td>仍可绕过，且需编译器全程序支持</td>
+</tr>
+</tbody></table>
+<p>再看语言层面的差距：</p>
+<table>
+<thead>
+<tr>
+<th>语言</th>
+<th>越界写的后果</th>
+<th>能否改写返回地址</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>C</td>
+<td>未定义行为，静默写坏相邻内存</td>
+<td><strong>能</strong> —— 本文全部内容</td>
+</tr>
+<tr>
+<td>C++（<code>std::span</code> &#x2F; <code>std::string</code>）</td>
+<td>边界检查或长度随对象携带</td>
+<td>不能（前提是别退化成裸指针）</td>
+</tr>
+<tr>
+<td>Java &#x2F; C#</td>
+<td>抛 <code>ArrayIndexOutOfBoundsException</code></td>
+<td>不能</td>
+</tr>
+<tr>
+<td>Rust</td>
+<td>编译期借用检查，或运行时 panic</td>
+<td>不能</td>
+</tr>
+</tbody></table>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ol>
+<li><strong>溢出的本质是&quot;写越界 &#x3D; 改写控制流&quot;</strong>：C 不检查边界，而返回地址恰好位于缓冲区的高地址侧，两个事实叠加就成了漏洞。</li>
+<li><strong>攻击分两代</strong>：第一代直接改返回地址跳到已有函数；栈不可执行之后进化为 ROP —— 不注入代码，只用 <code>ret</code> 把程序里现成的指令片段串成想要的逻辑。</li>
+<li><strong>现代三道防线（ASLR + Canary + NX）提高的是攻击成本，不是消灭漏洞。</strong> 溢出照样发生，内存照样被写坏。</li>
+<li><strong>真正根治要靠类型和边界</strong>：<code>fgets</code>&#x2F;<code>snprintf</code> + 显式长度、<code>std::span</code> 把长度绑进类型、Java&#x2F;Rust 的边界检查。</li>
+<li><strong>实践口诀</strong>：凡是 <code>strcpy</code> &#x2F; <code>strcat</code> &#x2F; <code>sprintf</code> &#x2F; <code>gets</code>，一律替换成带长度的版本；凡是 <code>memcpy</code>，先问一句&quot;这个长度是从哪来的，会不会超过目标&quot;。</li>
+</ol>
+<p>下一篇进入<strong>链接（Linking）</strong> —— 符号解析、重定位、静态库与动态链接，看看多个 <code>.o</code> 是怎么被拼成一个进程的。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0103/">https://hespethorn.github.io/posts/capp0103/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%A0%88%E5%B8%A7/">栈帧</a><a class="post-meta__tags" href="/tags/%E7%BC%93%E5%86%B2%E5%8C%BA%E6%BA%A2%E5%87%BA/">缓冲区溢出</a><a class="post-meta__tags" href="/tags/ROP/">ROP</a><a class="post-meta__tags" href="/tags/%E5%86%85%E5%AD%98%E5%AE%89%E5%85%A8/">内存安全</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

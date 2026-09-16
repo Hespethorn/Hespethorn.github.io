@@ -1,0 +1,625 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>最小权限原则：安全的第一道闸 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="三个一眼就该报警的现象：  容器默认以 root 跑，挂载着宿主机目录，还带着 CAP_SYS_ADMIN； 一个&quot;只负责查订单&quot;的服务，它的数据库账号有 ALL PRIVILEGES ON *.*； 运维的 sudoers 里写着 ops ALL&#x3D;(ALL) ALL——看起来是配置了权限系统，实际上等于没有。  它们背后是安全领域里少数&quot;不用花钱、不用加机器、不用改">
+<meta property="og:type" content="article">
+<meta property="og:title" content="最小权限原则：安全的第一道闸">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-least-privilege/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="三个一眼就该报警的现象：  容器默认以 root 跑，挂载着宿主机目录，还带着 CAP_SYS_ADMIN； 一个&quot;只负责查订单&quot;的服务，它的数据库账号有 ALL PRIVILEGES ON *.*； 运维的 sudoers 里写着 ops ALL&#x3D;(ALL) ALL——看起来是配置了权限系统，实际上等于没有。  它们背后是安全领域里少数&quot;不用花钱、不用加机器、不用改">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-13T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.699Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="安全">
+<meta property="article:tag" content="权限设计">
+<meta property="article:tag" content="运维">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "最小权限原则：安全的第一道闸",
+  "url": "https://hespethorn.github.io/posts/princ-least-privilege/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-13T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.699Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-least-privilege/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '最小权限原则：安全的第一道闸',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">最小权限原则：安全的第一道闸</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">最小权限原则：安全的第一道闸</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>三个一眼就该报警的现象：</p>
+<ul>
+<li>容器默认以 <strong>root</strong> 跑，挂载着宿主机目录，还带着 <code>CAP_SYS_ADMIN</code>；</li>
+<li>一个&quot;只负责查订单&quot;的服务，它的数据库账号有 <strong><code>ALL PRIVILEGES ON *.*</code></strong>；</li>
+<li>运维的 <code>sudoers</code> 里写着 <code>ops ALL=(ALL) ALL</code>——<strong>看起来是配置了权限系统，实际上等于没有</strong>。</li>
+</ul>
+<p>它们背后是安全领域里少数&quot;不用花钱、不用加机器、不用改架构&quot;就能大幅降低损失的原则：<strong>最小权限（Principle of Least Privilege）</strong>。它最值钱的地方在于——它防的不只是攻击者，更是<strong>任何单一环节的错误</strong>。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>1975 年，Jerome Saltzer 与 Michael Schroeder 在 <em>Proceedings of the IEEE</em> 上发表 <strong>《The Protection of Information in Computer Systems》</strong>——安全工程史上被引用最多的论文之一。论文提出了 8 条保护机制设计原则，第四条就是 Least privilege，大意是：</p>
+<blockquote>
+<p>每个程序和每个用户，都应当使用<strong>完成工作所必需的最小权限集合</strong>来操作。</p>
+</blockquote>
+<p>这句 50 年前的话，今天的形态只是换了皮肤：</p>
+<ul>
+<li><strong>POSIX capabilities（Linux 2.2 起）</strong>：把 root 的&quot;全能&quot;切成一项项能力（<code>CAP_NET_BIND_SERVICE</code>、<code>CAP_SYS_TIME</code>…），可以让进程<strong>只</strong>获准绑定低位端口。</li>
+<li><strong>SELinux &#x2F; AppArmor</strong>：从&quot;按用户授权&quot;升级到&quot;按程序和标签授权&quot;（强制访问控制 MAC）。</li>
+<li><strong>RBAC &#x2F; ABAC &#x2F; ReBAC</strong>：企业级权限模型（AWS IAM、Kubernetes RBAC、各类关系式授权）。</li>
+<li><strong>OAuth scope</strong>：把令牌的权限收窄到&quot;只能读某人的公开资料&quot;这个级别。</li>
+<li><strong>零信任（Zero Trust）</strong>：2010 年 Forrester 的 John Kindervag 提出 &quot;never trust, always verify&quot;——<strong>授权从&quot;一次性静态配置&quot;变成&quot;每次请求都验证、尽量短期&quot;</strong>。</li>
+<li><strong>Kubernetes 时代</strong>：ServiceAccount + RBAC + <code>automountServiceAccountToken: false</code>，容器侧 <code>--cap-drop=ALL</code>、<code>readOnlyRootFilesystem: true</code>。</li>
+</ul>
+<p>一句话：它是最早被写进论文的安全原则之一，之后几十年的工作，基本都是在<strong>让&quot;最小&quot;这件事更容易做到</strong>。</p>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为它建立在一个不那么舒服的假设上：<strong>每一层都会失守</strong>。</p>
+<p>代码有 bug、依赖有 CVE、配置会写错、人会手滑、内部也有威胁。既然&quot;永不被攻破&quot;无法承诺，那就退一步：<strong>让&quot;被攻破一次的后果&quot;被权限边界钳住。</strong> 这就是<strong>影响半径（blast radius）</strong>。</p>
+<p>三个具体机制：</p>
+<ol>
+<li><strong>限制爆炸半径</strong>。同一个漏洞，在&quot;只读单表&quot;的账号下是数据泄露；在 <code>ALL PRIVILEGES</code> 的账号下是<strong>整库被删、结构被改、顺手读走其他业务的库</strong>。漏洞是一样的，损失差三个数量级。</li>
+<li><strong>权限是横向移动的燃料</strong>。攻击者拿到一台低权机器后，第一件事是找配置文件里的凭证、找宽权限的邻接服务。权限越集中，一条攻击链就能吃下整个环境；权限分散，每一步都要重新找钥匙。</li>
+<li><strong>它让审计成为可能</strong>。权限收紧之后，&quot;谁有权做什么&quot;才是一份可枚举的清单；否则所有操作都&quot;合法&quot;，日志里根本挑不出异常——<strong>没有边界的系统，审计等于零</strong>。</li>
+</ol>
+<p>最容易被忽略的一点：<strong>权限边界防的主要不是攻击者，而是错误</strong>。运维手滑删错库、脚本里把测试环境变量连上了生产、一个迁移命令少写了 <code>WHERE</code>——这些都不是攻击，但后果和攻击一样。最小权限是唯一能替这些&quot;非恶意错误&quot;兜底的设计。</p>
+<p><strong>本质一句话：最小权限 &#x3D; 假设每一层都会失守，于是用权限边界把&quot;失守的代价&quot;钳死；它不信任的是&quot;单点&quot;，不是人。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看同一次漏洞，在不同权限下的分叉：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    R[&quot;一次漏洞被利用&quot;] --&gt; P1[&quot;权限：ALL PRIVILEGES&lt;br/&gt;（服务直连 DBA 账号）&quot;]
+    R --&gt; P2[&quot;权限：只读 orders 表&quot;]
+    P1 --&gt; D1[&quot;影响半径：整个实例&lt;br/&gt;可改结构 / 可删库 / 可读其他业务库&quot;]
+    P2 --&gt; D2[&quot;影响半径：一张表的部分行&lt;br/&gt;只读 · 越权即异常 · 可快速回滚&quot;]</code></pre>
+
+<p>再看最小权限的<strong>闭环</strong>——授权只是第一步，不回收的权限迟早会&quot;爬&quot;回来：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    A[&quot;① 按需提出权限需求&lt;br/&gt;说清动作 + 资源&quot;] --&gt; B[&quot;② 授予最小集合&lt;br/&gt;尽量带时效&quot;]
+    B --&gt; C[&quot;③ 使用并留审计日志&quot;]
+    C --&gt; D[&quot;④ 定期复审 recertify&quot;]
+    D --&gt; E[&quot;⑤ 回收 / 降权&lt;br/&gt;人走了、项目结束了&quot;]
+    E --&gt;|&quot;权限会爬，要主动清&quot;| A</code></pre>
+
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 应用层的权限边界：一个真实可跑的越界实验</strong></p>
+<p>下面的输出是本机实跑（脚本 <code>.workbuddy/least_privilege_demo.py</code>）：一个服务只被允许读 <code>public/</code> 目录，同级放着它本不该碰的文件，试三种输入。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">服务根目录 = public/    同级文件 = internal.txt</span><br><span class="line"></span><br><span class="line">[无校验] 请求 readme.txt             → public data</span><br><span class="line">[无校验] 请求 ../internal.txt        → internal-only: 这里本不该被这个服务读到</span><br><span class="line">[无校验] 请求 C:/Windows/win.ini     → ; for 16-bit app support</span><br><span class="line"></span><br><span class="line">[白名单] 请求 readme.txt             → public data</span><br><span class="line">[白名单] 请求 ../internal.txt        → &lt;PermissionError: 越界访问被拒绝：../internal.txt&gt;</span><br><span class="line">[白名单] 请求 C:/Windows/win.ini     → &lt;PermissionError: 越界访问被拒绝：C:/Windows/win.ini&gt;</span><br></pre></td></tr></table></figure>
+
+<p>怎么读：</p>
+<ul>
+<li><code>../internal.txt</code> 是最经典的路径穿越，<strong>一步跨出服务目录</strong>。</li>
+<li>更狠的是绝对路径：在很多语言里 <code>path.join(base, &quot;C:/Windows/win.ini&quot;)</code> 会被&quot;绝对路径覆盖&quot;直接返回绝对路径，于是服务读到了系统文件——输出里那句 <code>; for 16-bit app support</code> 就是真实 <code>win.ini</code> 的开头。</li>
+<li>白名单版本的做法是：先<strong>规范化真实路径</strong>（解掉 <code>..</code>、软链接），再断言&quot;结果必须落在允许的根目录之内&quot;，越界一律拒绝。</li>
+</ul>
+<p>这就是最小权限在代码里的样子：<strong>服务的权限边界由代码强制，而不是指望输入自觉。</strong> 落地时还有个细节要记住——白名单比较必须用<strong>规范化之后的路径</strong>，否则 <code>realpath</code> 之前判前缀就是自欺欺人。</p>
+<p><strong>2. 操作系统与进程：把 root 的权力切片</strong></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 只给&quot;绑定 80 端口&quot;这一项能力，而不是整个 root</span></span><br><span class="line"><span class="built_in">sudo</span> <span class="built_in">setcap</span> cap_net_bind_service=+ep /usr/sbin/nginx</span><br><span class="line"><span class="built_in">getcap</span> /usr/sbin/nginx            <span class="comment"># → /usr/sbin/nginx cap_net_bind_service=ep</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 容器里同理：默认丢掉全部能力，只加回需要的那一个</span></span><br><span class="line">docker run --user 1000:1000 --read-only \</span><br><span class="line">  --cap-drop=ALL --cap-add=NET_BIND_SERVICE \</span><br><span class="line">  --security-opt no-new-privileges nginx</span><br></pre></td></tr></table></figure>
+
+<p>四个参数各管一件事：<code>--user 1000:1000</code> 避免容器内是 root；<code>--read-only</code> 让根文件系统不可写（写入只走挂载的卷）；<code>--cap-drop=ALL</code> 把 root 的&quot;全能&quot;收回成&quot;按需几项&quot;；<code>no-new-privileges</code> 阻止进程通过 setuid 之类的手段重新提权。<strong>容器隔离 ≠ 权限最小化，两者必须一起用。</strong></p>
+<p><strong>3. 数据库：应用账号不该是 DBA</strong></p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- 反面：一个账号吃下整个实例，还能把权限再发出去</span></span><br><span class="line"><span class="keyword">GRANT</span> <span class="keyword">ALL</span> PRIVILEGES <span class="keyword">ON</span> <span class="operator">*</span>.<span class="operator">*</span> <span class="keyword">TO</span> <span class="string">&#x27;app&#x27;</span>@<span class="string">&#x27;%&#x27;</span> <span class="keyword">WITH</span> <span class="keyword">GRANT</span> OPTION;</span><br><span class="line"></span><br><span class="line"><span class="comment">-- 正面：只给这张表需要的动作，连列都能收</span></span><br><span class="line"><span class="keyword">CREATE</span> <span class="keyword">USER</span> <span class="string">&#x27;app&#x27;</span>@<span class="string">&#x27;10.0.3.%&#x27;</span> IDENTIFIED <span class="keyword">BY</span> <span class="string">&#x27;***&#x27;</span>;</span><br><span class="line"><span class="keyword">GRANT</span> <span class="keyword">SELECT</span>, <span class="keyword">INSERT</span>, <span class="keyword">UPDATE</span> (status) <span class="keyword">ON</span> shop.orders <span class="keyword">TO</span> <span class="string">&#x27;app&#x27;</span>@<span class="string">&#x27;10.0.3.%&#x27;</span>;</span><br></pre></td></tr></table></figure>
+
+<p>三个容易被漏掉的收紧点：<strong>列级授权</strong>（只允许改 <code>status</code>，改不了金额）、<strong>来源 IP 收窄</strong>（<code>10.0.3.%</code> 而不是 <code>%</code>）、<strong>禁止 <code>WITH GRANT OPTION</code></strong>（否则拿到账号的人可以自己发权限，权限体系当场失效）。再加一条硬规矩：<strong>应用账号永远不要有 DDL 权限</strong>——建表改表走迁移工具，用另一套凭证。</p>
+<p><strong>4. 云与凭证：短期、窄权、可撤销</strong></p>
+<ul>
+<li>用 <code>AssumeRole</code> 拿<strong>临时凭证</strong>（几十分钟过期），而不是把长期密钥写进配置文件；</li>
+<li>policy 里 <code>Resource</code> 精确到具体资源的 ARN，而不是 <code>&quot;Resource&quot;: &quot;*&quot;</code>；</li>
+<li>代码平台的<strong>细粒度令牌</strong>只授单个仓库的读写，而不是&quot;账号全权&quot;；</li>
+<li>数据库、缓存、消息中间件尽量<strong>一服务一账号、一环境一套凭证</strong>，而不是全公司共用一套。</li>
+</ul>
+<p><strong>5. Kubernetes：默认权限比你以为的大</strong></p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">automountServiceAccountToken:</span> <span class="literal">false</span>      <span class="comment"># 不把 SA token 自动塞进 Pod</span></span><br><span class="line">  <span class="attr">containers:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">api</span></span><br><span class="line">      <span class="attr">securityContext:</span></span><br><span class="line">        <span class="attr">runAsNonRoot:</span> <span class="literal">true</span></span><br><span class="line">        <span class="attr">readOnlyRootFilesystem:</span> <span class="literal">true</span></span><br><span class="line">        <span class="attr">allowPrivilegeEscalation:</span> <span class="literal">false</span></span><br><span class="line">        <span class="attr">capabilities:</span> &#123; <span class="attr">drop:</span> [<span class="string">&quot;ALL&quot;</span>] &#125;</span><br></pre></td></tr></table></figure>
+
+<p>配套的 RBAC 原则是：只授具体资源名的 <code>get/list</code>，而不是拿 <code>ClusterRole</code> 一把梭；命名空间之间不要共享 ServiceAccount。</p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>过紧的权限会把人逼出&quot;影子权限&quot;</strong>。拿不到正式权限，就会出现复制凭证、共享 root、私搭跳板机——<strong>结果比给权限更危险，因为没人在审计它</strong>。所以必须提供合法的快通道：临时提权（JIT access）、到期自动回收、事后复盘留痕。</li>
+<li><strong>权限会&quot;爬&quot;</strong>。项目结束、职责变更，权限却留在原地（privilege creep）。<strong>没有定期复审，最小权限一年之后就不最小了</strong>——这条对个人同样成立：翻翻你的 API key 列表，多半有一半已经没用了。</li>
+<li><strong>它需要治理成本</strong>。一服务一账号、一环境一密钥，意味着密钥管理、轮换、注入都得有工程支撑；否则大家会用&quot;共用一套&quot;来省钱，安全性反而倒退。</li>
+<li><strong>权限 ≠ 隔离</strong>。容器共享内核，权限收缩挡不住内核漏洞逃逸；最小权限必须与命名空间、沙箱、虚拟机或硬件隔离叠加使用。</li>
+<li><strong>只有权限、没有检测，等于只挡了一半</strong>。还需要审计日志（谁在什么时候用了什么权限）+ 快速吊销（必要时一分钟内让凭证彻底失效）。</li>
+<li><strong>它治的是&quot;影响半径&quot;，不是&quot;漏洞本身&quot;</strong>。注入漏洞、依赖 CVE 的第一下它拦不住；它保证的是<strong>第一下之后不至于全盘皆输</strong>。</li>
+<li><strong>别把它做成&quot;永远拒绝&quot;</strong>。安全的目标是&quot;业务能跑、且损失可控&quot;，不是&quot;谁都别动&quot;。一个让所有人都绕不过去的权限系统，一定会被绕过。</li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>一个账号走天下</th>
+<th>最小权限</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>一次失守的后果</td>
+<td>整个实例 &#x2F; 整个云账号</td>
+<td>单表部分行、单目录、单资源</td>
+</tr>
+<tr>
+<td>横向移动</td>
+<td>一条链吃下全环境</td>
+<td>每一步都要重新找凭证</td>
+</tr>
+<tr>
+<td>审计能力</td>
+<td>所有操作都&quot;合法&quot;，看不出异常</td>
+<td>越权即异常，日志可用</td>
+</tr>
+<tr>
+<td>运维成本</td>
+<td>低（便宜、快、不用想）</td>
+<td>高（账号、密钥、复审都要工程化）</td>
+</tr>
+<tr>
+<td>典型失败模式</td>
+<td>手滑删库、测试连生产、CVE 被放大</td>
+<td>权限过紧 → 影子权限（需要快通道兜底）</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>抓手</th>
+<th>一句话要点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>应用代码</td>
+<td>目录白名单 + 真实路径校验</td>
+<td>边界由代码强制，不靠输入自觉</td>
+</tr>
+<tr>
+<td>OS &#x2F; 进程</td>
+<td>非 root 用户、capabilities、umask</td>
+<td>把 root 切成按需能力</td>
+</tr>
+<tr>
+<td>容器</td>
+<td><code>--user</code>、<code>--read-only</code>、<code>--cap-drop=ALL</code></td>
+<td>隔离 ≠ 权限最小，要一起用</td>
+</tr>
+<tr>
+<td>数据库</td>
+<td>表&#x2F;列级授权 + 来源 IP + 禁 GRANT OPTION</td>
+<td>应用账号不给 DDL</td>
+</tr>
+<tr>
+<td>云 &#x2F; 凭证</td>
+<td>临时凭证、精确 ARN、细粒度令牌</td>
+<td>短期、窄权、可撤销</td>
+</tr>
+<tr>
+<td>Kubernetes</td>
+<td>RBAC 精确到资源名、SA token 不自动挂载</td>
+<td>默认权限往往比你以为的大</td>
+</tr>
+<tr>
+<td>治理</td>
+<td>JIT 提权 + 定期 recertify</td>
+<td>权限会爬，要主动回收</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：最小权限最像安全带——<strong>它不阻止撞车，但它决定撞车之后你还剩多少。</strong> 落地时只需要反复问自己一个问题：<strong>&quot;这个账号 &#x2F; 进程 &#x2F; 令牌，如果今天被完全攻破，最坏能坏到什么程度？&quot;</strong> 如果答案是&quot;全公司&quot;，那就说明这份权限还只是&quot;方便&quot;，不是&quot;设计&quot;。</p>
+<p><strong>相关阅读</strong></p>
+<ul>
+<li>幂等性：让重试变得安全（越权之外的另一种&quot;安全地重复做同一件事&quot;）：<a href="/posts/princ-idempotency/">&#x2F;posts&#x2F;princ-idempotency&#x2F;</a></li>
+<li>背压：慢消费者的保护机制（&quot;宁可断你，也不吃光自己&quot;是同一种自我保护思路）：<a href="/posts/princ-backpressure/">&#x2F;posts&#x2F;princ-backpressure&#x2F;</a></li>
+<li>康威定律：架构复制沟通结构（&quot;谁拥有哪份数据&quot;，本质是权限边界与组织边界的对齐）：<a href="/posts/princ-conway/">&#x2F;posts&#x2F;princ-conway&#x2F;</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-least-privilege/">https://hespethorn.github.io/posts/princ-least-privilege/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E5%AE%89%E5%85%A8/">安全</a><a class="post-meta__tags" href="/tags/%E6%9D%83%E9%99%90%E8%AE%BE%E8%AE%A1/">权限设计</a><a class="post-meta__tags" href="/tags/%E8%BF%90%E7%BB%B4/">运维</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

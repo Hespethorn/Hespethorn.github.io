@@ -1,0 +1,789 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="手里是一台 Windows 开发机，目标是一块 RK3588（aarch64）板子。最省事的想法是&quot;把源码 scp 过去，在板子上 make&quot;，可板子四颗 A76 主频 1.7 GHz，编译一遍要十几分钟，交叉编译依赖还常常装不上；想打 deb 又总觉得&quot;这是 Debian 的东西，得在 Debian 上做&quot;。 其实打 deb 包根本不需要目标机器在场——.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i">
+<meta property="og:url" content="https://hespethorn.github.io/posts/b3e4a71c/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="手里是一台 Windows 开发机，目标是一块 RK3588（aarch64）板子。最省事的想法是&quot;把源码 scp 过去，在板子上 make&quot;，可板子四颗 A76 主频 1.7 GHz，编译一遍要十几分钟，交叉编译依赖还常常装不上；想打 deb 又总觉得&quot;这是 Debian 的东西，得在 Debian 上做&quot;。 其实打 deb 包根本不需要目标机器在场——.">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-13T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.737Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CMake">
+<meta property="article:tag" content="交叉编译">
+<meta property="article:tag" content="deb">
+<meta property="article:tag" content="aarch64">
+<meta property="article:tag" content="WSL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i",
+  "url": "https://hespethorn.github.io/posts/b3e4a71c/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-13T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.737Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/b3e4a71c/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Systems/">Systems</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Systems/Dev-Practice/">Dev-Practice</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>18mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>手里是一台 Windows 开发机，目标是一块 RK3588（aarch64）板子。最省事的想法是&quot;把源码 scp 过去，在板子上 <code>make</code>&quot;，可板子四颗 A76 主频 1.7 GHz，编译一遍要十几分钟，交叉编译依赖还常常装不上；想打 deb 又总觉得&quot;这是 Debian 的东西，得在 Debian 上做&quot;。</p>
+<p>其实<strong>打 deb 包根本不需要目标机器在场</strong>——<code>.deb</code> 的本质是一个 <code>ar</code> 归档，里面塞了三个文件：<code>debian-binary</code>（写死 <code>2.0</code>）、<code>control.tar</code>（元数据）、<code>data.tar</code>（要装进根文件系统的文件）。<strong>它是个打包格式，不是编译产物。</strong> 只要你能产出 aarch64 的二进制、能跑 <code>dpkg-deb</code>，在哪台机器上打都行——Windows 上装个 WSL 就齐活了。</p>
+<p>这一篇全程在 WSL Ubuntu 22.04（x86_64）上实操，产出 <code>cfgd_1.0.0_arm64.deb</code>，用 qemu 在打包机上直接把包里的 arm64 二进制跑起来验证，最后给出板子上的安装与回滚命令。所有命令输出都是本机真跑出来的，不是抄的。</p>
+<h2 id="1-三条路线，先选对"><a href="#1-三条路线，先选对" class="headerlink" title="1. 三条路线，先选对"></a>1. 三条路线，先选对</h2><div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="300" fill="#fbfbfd"/>
+<text x="340" y="22" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">把程序送上 aarch64 板子的三条路</text>
+<rect x="16" y="40" width="200" height="104" rx="6" fill="#fde8e8" stroke="#e5484d"/>
+<text x="116" y="62" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">① 板子原生编译</text>
+<text x="28" y="84" font-size="11.5" font-family="sans-serif" fill="#555">scp 源码 → 板子上 gcc → make</text>
+<text x="28" y="102" font-size="11.5" font-family="sans-serif" fill="#555">✓ 依赖绝对不会错</text>
+<text x="28" y="120" font-size="11.5" font-family="sans-serif" fill="#e5484d">✗ 慢（分钟级），占板子资源</text>
+<text x="28" y="138" font-size="11.5" font-family="sans-serif" fill="#e5484d">✗ 无版本、无卸载、无回滚</text>
+<rect x="240" y="40" width="200" height="104" rx="6" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="340" y="62" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">② WSL 交叉编译 + 打 deb</text>
+<text x="252" y="84" font-size="11.5" font-family="sans-serif" fill="#555">x86 主机 → arm64 二进制 → .deb</text>
+<text x="252" y="102" font-size="11.5" font-family="sans-serif" fill="#30a46c">✓ 秒级构建，可进 CI</text>
+<text x="252" y="120" font-size="11.5" font-family="sans-serif" fill="#30a46c">✓ 有版本/依赖/卸载/回滚</text>
+<text x="252" y="138" font-size="11.5" font-family="sans-serif" fill="#e2a03f">△ 依赖要靠 apt 元数据声明</text>
+<rect x="464" y="40" width="200" height="104" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="564" y="62" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">③ qemu 容器模拟</text>
+<text x="476" y="84" font-size="11.5" font-family="sans-serif" fill="#555">docker buildx / arm64 rootfs</text>
+<text x="476" y="102" font-size="11.5" font-family="sans-serif" fill="#30a46c">✓ 环境最接近真板</text>
+<text x="476" y="120" font-size="11.5" font-family="sans-serif" fill="#e5484d">✗ 慢（指令翻译 5~10 倍）</text>
+<text x="476" y="138" font-size="11.5" font-family="sans-serif" fill="#e5484d">✗ 配置重，不适合日常迭代</text>
+<rect x="16" y="162" width="648" height="58" rx="6" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="30" y="182" font-size="12" font-family="sans-serif" fill="#1f2328">推荐组合：日常迭代走 ②，发布前用 qemu 把包里的二进制跑一遍做冒烟；只有在需要 apt 装一堆 arm64 依赖库时，才临时开 ③ 做完整验证。</text>
+<text x="30" y="204" font-size="12" font-family="sans-serif" fill="#1f2328">关键认知：编译要交叉（需要 arm64 工具链），打包不需要（dpkg-deb 只是归档器，跟架构无关）。</text>
+<rect x="16" y="232" width="648" height="52" rx="6" fill="#f3f0fa" stroke="#8e7cc3"/>
+<text x="30" y="252" font-size="12" font-family="sans-serif" fill="#1f2328">产出物：cfgd_1.0.0_arm64.deb —— 4.4 KB，装完后 /usr/local/bin/cfgd 是一个 ELF aarch64 可执行文件。</text>
+<text x="30" y="274" font-size="12" font-family="sans-serif" fill="#1f2328">实测环境：WSL Ubuntu 22.04.5 LTS（x86_64），gcc 11.4.0，CMake 3.22.1，dpkg-deb 1.21.1。</text>
+</svg>
+</div>
+
+<h2 id="2-环境：只需要两行-apt"><a href="#2-环境：只需要两行-apt" class="headerlink" title="2. 环境：只需要两行 apt"></a>2. 环境：只需要两行 apt</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">sudo</span> apt update</span><br><span class="line">$ <span class="built_in">sudo</span> apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \</span><br><span class="line">                      dpkg-dev binutils-aarch64-linux-gnu file qemu-user-static</span><br></pre></td></tr></table></figure>
+
+<p>装完先确认工具链真的能产出 aarch64：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ aarch64-linux-gnu-gcc -dumpmachine</span><br><span class="line">aarch64-linux-gnu</span><br><span class="line">$ <span class="built_in">uname</span> -m ; dpkg --print-architecture</span><br><span class="line">x86_64</span><br><span class="line">amd64</span><br></pre></td></tr></table></figure>
+
+<p>注意最后两行的落差：<strong>宿主是 amd64，产物是 arm64</strong>——这正是我们后面要用 <code>Architecture: arm64</code> 显式声明的原因，链接器不会替你猜。</p>
+<p>顺手确认交叉 sysroot 里有 libc（后面 qemu 试跑要用）：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">ls</span> /usr/aarch64-linux-gnu/lib/libc.so.6</span><br><span class="line">/usr/aarch64-linux-gnu/lib/libc.so.6</span><br></pre></td></tr></table></figure>
+
+<h2 id="3-交叉编译：先拿到一个-aarch64-二进制"><a href="#3-交叉编译：先拿到一个-aarch64-二进制" class="headerlink" title="3. 交叉编译：先拿到一个 aarch64 二进制"></a>3. 交叉编译：先拿到一个 aarch64 二进制</h2><p>示例程序 <code>cfgd.c</code>——一个读配置文件的迷你服务：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* cfgd.c */</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> CFGD_VERSION <span class="string">&quot;1.0.0&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> DEFAULT_CONF <span class="string">&quot;/etc/cfgd/cfgd.conf&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">int</span> argc, <span class="type">char</span> **argv)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">if</span> (argc &gt; <span class="number">1</span> &amp;&amp; <span class="built_in">strcmp</span>(argv[<span class="number">1</span>], <span class="string">&quot;--version&quot;</span>) == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;cfgd %s (%s)\n&quot;</span>, CFGD_VERSION,</span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> __aarch64__</span></span><br><span class="line">               <span class="string">&quot;aarch64&quot;</span></span><br><span class="line"><span class="meta">#<span class="keyword">else</span></span></span><br><span class="line">               <span class="string">&quot;x86-64&quot;</span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">        );</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *path = (argc &gt; <span class="number">1</span>) ? argv[<span class="number">1</span>] : DEFAULT_CONF;</span><br><span class="line">    FILE *fp = fopen(path, <span class="string">&quot;r&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (!fp) &#123; <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;cfgd: cannot open %s\n&quot;</span>, path); <span class="keyword">return</span> <span class="number">1</span>; &#125;</span><br><span class="line"></span><br><span class="line">    <span class="type">char</span> line[<span class="number">256</span>]; <span class="type">int</span> n = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">while</span> (fgets(line, <span class="keyword">sizeof</span>(line), fp)) &#123;</span><br><span class="line">        <span class="type">char</span> *eq = <span class="built_in">strchr</span>(line, <span class="string">&#x27;=&#x27;</span>);</span><br><span class="line">        <span class="keyword">if</span> (!eq || line[<span class="number">0</span>] == <span class="string">&#x27;#&#x27;</span>) <span class="keyword">continue</span>;</span><br><span class="line">        *eq = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">        <span class="type">char</span> *val = eq + <span class="number">1</span>;</span><br><span class="line">        val[<span class="built_in">strcspn</span>(val, <span class="string">&quot;\r\n&quot;</span>)] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;  %-16s = %s\n&quot;</span>, line, val);</span><br><span class="line">        n++;</span><br><span class="line">    &#125;</span><br><span class="line">    fclose(fp);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;cfgd: %d keys loaded from %s\n&quot;</span>, n, path);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>两个方向各编一次，对比输出：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">$ aarch64-linux-gnu-gcc -O2 -Wall -o cfgd-arm64 src/cfgd.c</span><br><span class="line">$ file cfgd-arm64</span><br><span class="line">cfgd-arm64: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV),</span><br><span class="line">dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, ...</span><br><span class="line"></span><br><span class="line">$ gcc -O2 -o cfgd-x86 src/cfgd.c</span><br><span class="line">$ file cfgd-x86</span><br><span class="line">cfgd-x86: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV),</span><br><span class="line">dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, ...</span><br></pre></td></tr></table></figure>
+
+<p><strong><code>file</code> 这一行是整条流水线的第一道闸门</strong>：<code>ARM aarch64</code> 说明交叉成功。要是这里写着 <code>x86-64</code>，后面打成 deb 也白搭——包会在板子上装成功、然后一运行就 <code>Exec format error</code>。</p>
+<h3 id="用-qemu-在打包机上直接跑-arm64-二进制"><a href="#用-qemu-在打包机上直接跑-arm64-二进制" class="headerlink" title="用 qemu 在打包机上直接跑 arm64 二进制"></a>用 qemu 在打包机上直接跑 arm64 二进制</h3><p>这一步是我强烈建议加进流程的：<strong>不必等到上板子才知道能不能跑。</strong></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ qemu-aarch64-static -L /usr/aarch64-linux-gnu ./cfgd-arm64 --version</span><br><span class="line">cfgd 1.0.0 (aarch64)</span><br><span class="line"></span><br><span class="line">$ qemu-aarch64-static -L /usr/aarch64-linux-gnu ./cfgd-arm64 src/cfgd.conf</span><br><span class="line">  listen_port      =  8379</span><br><span class="line">  snapshot_path    =  /var/lib/cfgd/snapshot.json</span><br><span class="line">  log_level        =  info</span><br><span class="line">cfgd: 3 keys loaded from src/cfgd.conf</span><br></pre></td></tr></table></figure>
+
+<p><code>-L</code> 指定 arm64 的 sysroot，让动态加载器能找到 aarch64 的 libc。有了它，你可以把&quot;冒烟测试&quot;放在 CI 里，而不是放在板子上。</p>
+<h2 id="4-deb-解剖：三层结构"><a href="#4-deb-解剖：三层结构" class="headerlink" title="4. deb 解剖：三层结构"></a>4. deb 解剖：三层结构</h2><div align="center">
+<svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="340" fill="#fbfbfd"/>
+<text x="340" y="20" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">.deb = ar 归档，里面三个成员</text>
+<rect x="240" y="34" width="200" height="34" rx="5" fill="#e6e6ef" stroke="#8e8ea0"/>
+<text x="340" y="56" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">cfgd_1.0.0_arm64.deb</text>
+<path d="M340 70 L340 84 L150 84 L150 100" stroke="#888" stroke-width="1.6" fill="none" marker-end="url(#d1)"/>
+<path d="M340 70 L340 84 L340 100" stroke="#888" stroke-width="1.6" fill="none" marker-end="url(#d1)"/>
+<path d="M340 70 L340 84 L530 84 L530 100" stroke="#888" stroke-width="1.6" fill="none" marker-end="url(#d1)"/>
+<rect x="40" y="102" width="220" height="30" rx="4" fill="#f3f0fa" stroke="#8e7cc3"/>
+<text x="150" y="122" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">debian-binary   "2.0"</text>
+<rect x="280" y="102" width="220" height="30" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="390" y="122" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">control.tar.zst</text>
+<rect x="520" y="102" width="120" height="30" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="580" y="122" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">data.tar.zst</text>
+<rect x="280" y="138" width="220" height="150" rx="4" fill="#fffaf0" stroke="#e2a03f"/>
+<text x="390" y="156" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#a06a10">元数据（装之前读）</text>
+<text x="292" y="176" font-size="11.5" font-family="monospace" fill="#1f2328">control   Package/Version/</text>
+<text x="292" y="192" font-size="11.5" font-family="monospace" fill="#e5484d">          Architecture: arm64</text>
+<text x="292" y="208" font-size="11.5" font-family="monospace" fill="#1f2328">          Depends/Maintainer</text>
+<text x="292" y="226" font-size="11.5" font-family="monospace" fill="#1f2328">md5sums   文件校验和</text>
+<text x="292" y="244" font-size="11.5" font-family="monospace" fill="#1f2328">conffiles 升级时不覆盖的配置</text>
+<text x="292" y="262" font-size="11.5" font-family="monospace" fill="#1f2328">postinst  安装后脚本</text>
+<text x="292" y="278" font-size="11.5" font-family="monospace" fill="#1f2328">prerm     卸载前脚本</text>
+<rect x="520" y="138" width="120" height="150" rx="4" fill="#f4f8ff" stroke="#7f9cf5"/>
+<text x="580" y="156" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#3b5bdb">安装内容</text>
+<text x="530" y="178" font-size="11" font-family="monospace" fill="#1f2328">usr/local/bin/</text>
+<text x="530" y="194" font-size="11" font-family="monospace" fill="#1f2328">etc/cfgd/</text>
+<text x="530" y="210" font-size="11" font-family="monospace" fill="#1f2328">lib/systemd/</text>
+<text x="530" y="226" font-size="11" font-family="monospace" fill="#1f2328">usr/share/doc/</text>
+<text x="530" y="252" font-size="11" font-family="sans-serif" fill="#555">路径是相对根</text>
+<text x="530" y="268" font-size="11" font-family="sans-serif" fill="#555">的，不带前导</text>
+<text x="530" y="278" font-size="11" font-family="sans-serif" fill="#555">斜杠前缀 /</text>
+<rect x="40" y="138" width="220" height="150" rx="4" fill="#f7f5fb" stroke="#8e7cc3"/>
+<text x="150" y="158" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#6b4fa0">格式版本号</text>
+<text x="150" y="180" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#555">从 1990 年代起</text>
+<text x="150" y="198" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#555">就一直是 2.0</text>
+<text x="150" y="222" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#555">压缩格式取决于</text>
+<text x="150" y="238" text-anchor="middle" font-size="11.5" font-family="sans-serif" fill="#555">dpkg 版本：</text>
+<text x="150" y="256" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#1f2328">Ubuntu 22.04 → zst</text>
+<text x="150" y="274" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#1f2328">Ubuntu 18.04 → xz</text>
+<rect x="40" y="300" width="600" height="30" rx="4" fill="#fde8e8" stroke="#e5484d"/>
+<text x="54" y="319" font-size="11.5" font-family="sans-serif" fill="#1f2328">注意：data.tar 里的路径写成 usr/local/bin/...，展开后就是 /usr/local/bin/... —— 千万别写成 /usr/local（会变成 /usr/usr/local）。</text>
+<defs><marker id="d1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#888"/></marker></defs>
+</svg>
+</div>
+
+<p><code>control</code> 是唯一必填的元数据文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">Package: cfgd</span><br><span class="line">Version: 1.0.0</span><br><span class="line">Section: utils</span><br><span class="line">Priority: optional</span><br><span class="line">Architecture: arm64</span><br><span class="line">Depends: libc6 (&gt;= 2.34)</span><br><span class="line">Maintainer: Hespethorn &lt;hespethorn@example.com&gt;</span><br><span class="line">Description: Tiny config service (arm64 build)</span><br><span class="line"> cfgd reads /etc/cfgd/cfgd.conf and prints the parsed key/value pairs.</span><br><span class="line"> .</span><br><span class="line"> This package is cross-built with aarch64-linux-gnu-gcc on Windows/WSL</span><br><span class="line"> and is meant to be installed on aarch64 boards such as Rockchip RK3588.</span><br></pre></td></tr></table></figure>
+
+<p>几个字段的讲究：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>值</th>
+<th>说错会怎样</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Architecture</code></td>
+<td><code>arm64</code></td>
+<td>写 <code>amd64</code> 板子直接拒装；写 <code>all</code> 只适用于纯脚本&#x2F;数据</td>
+</tr>
+<tr>
+<td><code>Version</code></td>
+<td><code>1.0.0</code> 或 <code>1.0.0-1</code></td>
+<td>后半段 <code>-1</code> 是 Debian 修订号，同版本改打包方式时要涨</td>
+</tr>
+<tr>
+<td><code>Depends</code></td>
+<td><code>libc6 (&gt;= 2.34)</code></td>
+<td>交叉编译时 dpkg 不会自动分析，得自己按目标 rootfs 的 glibc 版本写</td>
+</tr>
+<tr>
+<td><code>Description</code></td>
+<td>首行摘要 + 缩进行</td>
+<td>缩进行必须以<strong>一个空格</strong>起头；空行写 <code>.</code> + 空格</td>
+</tr>
+</tbody></table>
+<p>维护者脚本的调用时机（脚本放在 <code>DEBIAN/</code> 下，<strong>权限必须是 0755</strong>）：</p>
+<table>
+<thead>
+<tr>
+<th>脚本</th>
+<th>时机</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>preinst</code></td>
+<td>解包前</td>
+<td>停止旧服务、创建用户</td>
+</tr>
+<tr>
+<td><code>postinst</code></td>
+<td>解包后</td>
+<td><code>systemctl daemon-reload</code>、enable 服务</td>
+</tr>
+<tr>
+<td><code>prerm</code></td>
+<td>删文件前</td>
+<td>停服务</td>
+</tr>
+<tr>
+<td><code>postrm</code></td>
+<td>删文件后</td>
+<td>清理运行时目录</td>
+</tr>
+</tbody></table>
+<h2 id="5-手工打包：dpkg-deb-build"><a href="#5-手工打包：dpkg-deb-build" class="headerlink" title="5. 手工打包：dpkg-deb --build"></a>5. 手工打包：dpkg-deb --build</h2><p>先把&quot;要装进根文件系统的东西&quot;摆成一棵树：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">pkgroot/</span><br><span class="line">├── DEBIAN/</span><br><span class="line">│   ├── control</span><br><span class="line">│   ├── conffiles</span><br><span class="line">│   ├── postinst          <span class="comment"># 0755</span></span><br><span class="line">│   └── prerm             <span class="comment"># 0755</span></span><br><span class="line">├── etc/cfgd/cfgd.conf</span><br><span class="line">├── lib/systemd/system/cfgd.service</span><br><span class="line">└── usr/local/bin/cfgd    <span class="comment"># 交叉编译出来的 arm64 二进制</span></span><br></pre></td></tr></table></figure>
+
+<p><code>postinst</code> 示例（创建系统用户、注册 systemd 服务）：</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#!/bin/sh</span></span><br><span class="line"><span class="built_in">set</span> -e</span><br><span class="line"></span><br><span class="line"><span class="keyword">case</span> <span class="string">&quot;<span class="variable">$1</span>&quot;</span> <span class="keyword">in</span></span><br><span class="line">    configure)</span><br><span class="line">        <span class="keyword">if</span> ! <span class="built_in">id</span> -u cfgd &gt;/dev/null 2&gt;&amp;1; <span class="keyword">then</span></span><br><span class="line">            adduser --system --group --no-create-home --quiet cfgd</span><br><span class="line">        <span class="keyword">fi</span></span><br><span class="line">        install -d -o cfgd -g cfgd /var/lib/cfgd</span><br><span class="line">        <span class="keyword">if</span> [ -d /run/systemd/system ]; <span class="keyword">then</span></span><br><span class="line">            systemctl daemon-reload || <span class="literal">true</span></span><br><span class="line">            systemctl <span class="built_in">enable</span> --now cfgd.service || <span class="literal">true</span></span><br><span class="line">        <span class="keyword">fi</span></span><br><span class="line">        ;;</span><br><span class="line">    abort-upgrade|abort-remove|abort-deconfigure)</span><br><span class="line">        ;;</span><br><span class="line">    *)</span><br><span class="line">        <span class="built_in">echo</span> <span class="string">&quot;postinst called with unknown argument &#x27;<span class="variable">$1</span>&#x27;&quot;</span> &gt;&amp;2</span><br><span class="line">        <span class="built_in">exit</span> 1</span><br><span class="line">        ;;</span><br><span class="line"><span class="keyword">esac</span></span><br><span class="line"></span><br><span class="line"><span class="comment">#DEBHELPER#</span></span><br><span class="line"><span class="built_in">exit</span> 0</span><br></pre></td></tr></table></figure>
+
+<p>然后一行打包：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ dpkg-deb --build --root-owner-group pkgroot cfgd_1.0.0_arm64.deb</span><br><span class="line">dpkg-deb: building package <span class="string">&#x27;cfgd&#x27;</span> <span class="keyword">in</span> <span class="string">&#x27;cfgd_1.0.0_arm64.deb&#x27;</span>.</span><br><span class="line">$ <span class="built_in">ls</span> -l cfgd_1.0.0_arm64.deb</span><br><span class="line">-rw-r--r-- 1 hespethorn hespethorn 4400 Sep 14 13:44 cfgd_1.0.0_arm64.deb</span><br></pre></td></tr></table></figure>
+
+<p><code>--root-owner-group</code> 是必加的：不加的话包内文件属主会变成你自己的账户。实测对比：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ dpkg-deb --build pkgroot /tmp/noroot.deb          <span class="comment"># 故意不加该参数</span></span><br><span class="line">$ dpkg-deb -c /tmp/noroot.deb | grep bin/cfgd</span><br><span class="line">-rwxr-xr-x hespethorn/hespethorn 13424 ... ./usr/local/bin/cfgd</span><br><span class="line">                    ^^^^^^^^^^^^^^^^^^^ 应该是 root/root</span><br></pre></td></tr></table></figure>
+
+<p>验收三连：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">$ ar t cfgd_1.0.0_arm64.deb</span><br><span class="line">debian-binary</span><br><span class="line">control.tar.zst</span><br><span class="line">data.tar.zst</span><br><span class="line"></span><br><span class="line">$ dpkg-deb -I cfgd_1.0.0_arm64.deb</span><br><span class="line"> new Debian package, version 2.0.</span><br><span class="line"> size 4400 bytes: control archive=799 bytes.</span><br><span class="line">      20 bytes,     1 lines      conffiles</span><br><span class="line">     421 bytes,    12 lines      control</span><br><span class="line">     566 bytes,    24 lines   *  postinst             <span class="comment">#!/bin/sh</span></span><br><span class="line">     376 bytes,    20 lines   *  prerm                <span class="comment">#!/bin/sh</span></span><br><span class="line"> Package: cfgd</span><br><span class="line"> Version: 1.0.0</span><br><span class="line"> Architecture: arm64</span><br><span class="line"> Depends: libc6 (&gt;= 2.34)</span><br><span class="line"> ...</span><br><span class="line"></span><br><span class="line">$ dpkg-deb -c cfgd_1.0.0_arm64.deb</span><br><span class="line">drwxr-xr-x root/root         0 ... ./etc/cfgd/</span><br><span class="line">-rwxr-xr-x root/root       108 ... ./etc/cfgd/cfgd.conf</span><br><span class="line">drwxr-xr-x root/root         0 ... ./lib/systemd/system/</span><br><span class="line">-rwxr-xr-x root/root       197 ... ./lib/systemd/system/cfgd.service</span><br><span class="line">-rwxr-xr-x root/root     13424 ... ./usr/local/bin/cfgd</span><br></pre></td></tr></table></figure>
+
+<h2 id="6-五个必踩的坑（全部本机实测）"><a href="#6-五个必踩的坑（全部本机实测）" class="headerlink" title="6. 五个必踩的坑（全部本机实测）"></a>6. 五个必踩的坑（全部本机实测）</h2><h3 id="坑-1：在-mnt-c-下准备包树-——-dpkg-deb-直接拒绝"><a href="#坑-1：在-mnt-c-下准备包树-——-dpkg-deb-直接拒绝" class="headerlink" title="坑 1：在 /mnt/c 下准备包树 —— dpkg-deb 直接拒绝"></a>坑 1：在 <code>/mnt/c</code> 下准备包树 —— dpkg-deb 直接拒绝</h3><p>这是 Windows 场景独有的坑。<code>/mnt/c</code> 是 drvfs，<strong>没有 Unix 权限位</strong>，所有文件一律 0777：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ find /mnt/c/.../winfs -<span class="built_in">printf</span> <span class="string">&quot;%M %u:%g %p\n&quot;</span></span><br><span class="line">-rwxrwxrwx hespethorn:hespethorn .../winfs/DEBIAN/control</span><br><span class="line">-rwxrwxrwx hespethorn:hespethorn .../winfs/usr/local/bin/cfgd</span><br><span class="line">drwxrwxrwx hespethorn:hespethorn .../winfs/DEBIAN</span><br><span class="line"></span><br><span class="line">$ dpkg-deb --build --root-owner-group /mnt/c/.../winfs /tmp/winfs.deb</span><br><span class="line">dpkg-deb: error: control directory has bad permissions 777 (must be &gt;=0755 and &lt;=0775)</span><br></pre></td></tr></table></figure>
+
+<p><strong>结论：包树必须在 WSL 的 ext4 分区里搭（<code>~/</code>、<code>/tmp</code> 都行），绝不能放在 <code>/mnt/c</code>、<code>/mnt/d</code>。</strong> 可以源码放 Windows 侧（用 VS Code 编辑方便），构建脚本负责 <code>cp -r</code> 到 <code>~/</code> 再 <code>chmod</code>——但<strong>这一步必须做</strong>。</p>
+<h3 id="坑-2：CRLF-换行-——-脚本变成-bin-sh-M"><a href="#坑-2：CRLF-换行-——-脚本变成-bin-sh-M" class="headerlink" title="坑 2：CRLF 换行 —— 脚本变成 /bin/sh^M"></a>坑 2：CRLF 换行 —— 脚本变成 <code>/bin/sh^M</code></h3><p>Windows 编辑器保存的 <code>postinst</code>，行尾是 <code>\r\n</code>。在 Linux 上执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ ./postinst configure</span><br><span class="line">bash: ./postinst: /bin/sh^M: bad interpreter: No such file or directory</span><br><span class="line"></span><br><span class="line">$ sh ./postinst configure</span><br><span class="line">postinst: 4: Syntax error: word unexpected (expecting <span class="string">&quot;in&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>\r</code> 混进了 <code>case ... in</code>，连语法检查 <code>sh -n</code> 都可能放它过关（实测 <code>sh -n</code> 返回 0），<strong>只有真跑才炸</strong>。三道防线：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ① 编辑器/仓库层面：给 Git 配置自动转换</span></span><br><span class="line">git config core.autocrlf input</span><br><span class="line"></span><br><span class="line"><span class="comment"># ② 构建脚本里兜底清洗</span></span><br><span class="line">sed -i <span class="string">&#x27;s/\r$//&#x27;</span> pkgroot/DEBIAN/*</span><br><span class="line"></span><br><span class="line"><span class="comment"># ③ CI 里加断言，有问题直接失败</span></span><br><span class="line">file pkgroot/DEBIAN/postinst | grep -q CRLF &amp;&amp; &#123; <span class="built_in">echo</span> <span class="string">&quot;CRLF detected&quot;</span>; <span class="built_in">exit</span> 1; &#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="坑-3：Architecture-写成-amd64"><a href="#坑-3：Architecture-写成-amd64" class="headerlink" title="坑 3：Architecture 写成 amd64"></a>坑 3：<code>Architecture</code> 写成 amd64</h3><p>忘了改这一行，包能打出来、能 scp 到板子，但装的时候：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ dpkg -i cfgd_1.0.0_arm64.deb</span><br><span class="line">dpkg: error processing archive cfgd_1.0.0_arm64.deb (--install):</span><br><span class="line"> package architecture (arm64) does not match system (amd64)</span><br></pre></td></tr></table></figure>
+
+<p>上面这段是我在 amd64 的 WSL 上装 arm64 包时的真实报错——<strong>反过来看，它恰好证明我们的 <code>Architecture: arm64</code> 是对的</strong>：同一条命令，在 arm64 板子上就会顺顺利利地装进去。</p>
+<h3 id="坑-4：依赖声明靠猜"><a href="#坑-4：依赖声明靠猜" class="headerlink" title="坑 4：依赖声明靠猜"></a>坑 4：依赖声明靠猜</h3><p>交叉编译环境下 <code>dpkg-shlibdeps</code> 无从分析 arm64 二进制（它需要目标架构的库文件与符号表）。要么老老实实手写 <code>Depends</code>，要么先把 arm64 库挂进来：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">sudo</span> dpkg --add-architecture arm64</span><br><span class="line">$ <span class="built_in">sudo</span> apt update</span><br><span class="line">$ <span class="built_in">sudo</span> apt install -y libc6:arm64 libstdc++6:arm64</span><br><span class="line">$ dpkg-shlibdeps -e ./usr/local/bin/cfgd ...   <span class="comment"># 这时才能自动分析</span></span><br></pre></td></tr></table></figure>
+
+<p>更省事的做法：打完包用 <code>apt install ./xxx.deb</code>（而不是 <code>dpkg -i</code>），让 apt 自己去补依赖。</p>
+<h3 id="坑-5：postinst-里无脑调-systemctl"><a href="#坑-5：postinst-里无脑调-systemctl" class="headerlink" title="坑 5：postinst 里无脑调 systemctl"></a>坑 5：postinst 里无脑调 systemctl</h3><p>在 chroot、容器、CI 里做包测试时，<code>systemctl</code> 一定失败。标准写法是先探测：</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> [ -d /run/systemd/system ]; <span class="keyword">then</span>      <span class="comment"># 只有真 systemd 在跑才执行</span></span><br><span class="line">    systemctl daemon-reload || <span class="literal">true</span></span><br><span class="line">    systemctl <span class="built_in">enable</span> --now cfgd.service || <span class="literal">true</span></span><br><span class="line"><span class="keyword">fi</span></span><br></pre></td></tr></table></figure>
+
+<p>注意每个 <code>systemctl</code> 后面的 <code>|| true</code>——<strong>维护者脚本非 0 退出会导致整个包进入 <code>half-configured</code> 状态</strong>，比服务没起来更难收拾。</p>
+<h2 id="7-工程化：CMake-CPack-一条命令出包"><a href="#7-工程化：CMake-CPack-一条命令出包" class="headerlink" title="7. 工程化：CMake + CPack 一条命令出包"></a>7. 工程化：CMake + CPack 一条命令出包</h2><p>手工摆树适合一次性打包，长期维护还是交给 CPack。先写工具链文件：</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># toolchain-aarch64.cmake</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSTEM_NAME Linux)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_SYSTEM_PROCESSOR aarch64)</span><br><span class="line"></span><br><span class="line"><span class="keyword">set</span>(TRIPLE aarch64-linux-gnu)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_C_COMPILER   /usr/bin/<span class="variable">$&#123;TRIPLE&#125;</span>-gcc)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_CXX_COMPILER /usr/bin/<span class="variable">$&#123;TRIPLE&#125;</span>-g++)</span><br><span class="line"></span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH /usr/<span class="variable">$&#123;TRIPLE&#125;</span>)</span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)   <span class="comment"># 程序用宿主的</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)    <span class="comment"># 库只找目标架构的</span></span><br><span class="line"><span class="keyword">set</span>(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)</span><br></pre></td></tr></table></figure>
+
+<p><code>CMakeLists.txt</code> 里的打包段：</p>
+<figure class="highlight cmake"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">set</span>(CPACK_GENERATOR <span class="string">&quot;DEB&quot;</span>)</span><br><span class="line"><span class="keyword">set</span>(CPACK_PACKAGE_NAME <span class="string">&quot;cfgd&quot;</span>)</span><br><span class="line"><span class="keyword">set</span>(CPACK_PACKAGE_CONTACT <span class="string">&quot;Hespethorn &lt;hespethorn@example.com&gt;&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 不加这行，CPack 会自作主张加 /usr 前缀，包里出现 ./usr/usr/local/bin</span></span><br><span class="line"><span class="keyword">set</span>(CPACK_PACKAGING_INSTALL_PREFIX <span class="string">&quot;/&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">set</span>(CPACK_DEBIAN_PACKAGE_ARCHITECTURE <span class="string">&quot;arm64&quot;</span>)   <span class="comment"># &lt;-- 整件事的核心</span></span><br><span class="line"><span class="keyword">set</span>(CPACK_DEBIAN_FILE_NAME <span class="string">&quot;DEB-DEFAULT&quot;</span>)        <span class="comment"># cfgd_1.0.0_arm64.deb</span></span><br><span class="line"><span class="keyword">set</span>(CPACK_DEBIAN_PACKAGE_DEPENDS <span class="string">&quot;libc6 (&gt;= 2.34)&quot;</span>)</span><br><span class="line"><span class="keyword">set</span>(CPACK_DEBIAN_PACKAGE_SHLIBDEPS <span class="keyword">OFF</span>)          <span class="comment"># 交叉编译时必须关</span></span><br><span class="line"><span class="keyword">set</span>(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA</span><br><span class="line">    <span class="string">&quot;$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/debian/postinst;\</span></span><br><span class="line"><span class="string">$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/debian/prerm;\</span></span><br><span class="line"><span class="string">$&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/debian/conffiles&quot;</span>)</span><br><span class="line"><span class="keyword">include</span>(CPack)</span><br></pre></td></tr></table></figure>
+
+<p>跑起来：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ cmake ../src -DCMAKE_TOOLCHAIN_FILE=../src/toolchain-aarch64.cmake</span><br><span class="line">-- Configuring <span class="keyword">done</span></span><br><span class="line">-- Generating <span class="keyword">done</span></span><br><span class="line">$ make</span><br><span class="line">[100%] Built target cfgd</span><br><span class="line">$ cpack -G DEB</span><br><span class="line">CPack: Create package using DEB</span><br><span class="line">CPack: - package: /home/hespethorn/deb-demo/build/cfgd_1.0.0_arm64.deb generated.</span><br></pre></td></tr></table></figure>
+
+<p><strong>两个 CPack 专属坑，我都踩到了：</strong></p>
+<p><strong>坑 A：<code>/usr/usr/local/bin</code>。</strong> CPack 的默认 <code>CPACK_PACKAGING_INSTALL_PREFIX</code> 是 <code>/usr</code>，而 <code>install(DESTINATION usr/local/bin)</code> 是相对路径，两者叠起来就成双前缀。实测第一次打出来的包：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ dpkg-deb -c cfgd_1.0.0_arm64.deb</span><br><span class="line">-rw-r--r-- root/root   108 ... ./usr/etc/cfgd/cfgd.conf</span><br><span class="line">-rwxr-xr-x root/root 13392 ... ./usr/usr/local/bin/cfgd     &lt;-- 错了！</span><br></pre></td></tr></table></figure>
+
+<p>加上 <code>set(CPACK_PACKAGING_INSTALL_PREFIX &quot;/&quot;)</code> 后恢复正确：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">-rw-r--r-- root/root   108 ... ./etc/cfgd/cfgd.conf</span><br><span class="line">drwxr-xr-x root/root     0 ... ./lib/systemd/system/</span><br><span class="line">-rwxr-xr-x root/root 13392 ... ./usr/local/bin/cfgd          &lt;-- 对了</span><br></pre></td></tr></table></figure>
+
+<p><strong>坑 B：<code>CPACK_DEBIAN_PACKAGE_CONFFILES</code> 不生效。</strong> 在 CMake 3.22 上设了这个变量，<code>conffiles</code> 依然没进包（<code>dpkg-deb -I</code> 里根本没这一项）。正确做法是<strong>把 <code>conffiles</code> 文件塞进 <code>CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA</code> 列表</strong>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ dpkg-deb -I cfgd_1.0.0_arm64.deb | <span class="built_in">head</span> -8</span><br><span class="line"> new Debian package, version 2.0.</span><br><span class="line"> size 4624 bytes: control archive=840 bytes.</span><br><span class="line">      20 bytes,     1 lines      conffiles        &lt;-- 进来了</span><br><span class="line">     255 bytes,    10 lines      control</span><br><span class="line">     172 bytes,     3 lines      md5sums</span><br><span class="line">     566 bytes,    24 lines   *  postinst             <span class="comment">#!/bin/sh</span></span><br><span class="line">     376 bytes,    20 lines   *  prerm                <span class="comment">#!/bin/sh</span></span><br></pre></td></tr></table></figure>
+
+<p>最后，从包里把二进制解出来再跑一遍——<strong>验证的是最终的交付物，不是编译目录里的临时文件</strong>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">rm</span> -rf /tmp/x &amp;&amp; <span class="built_in">mkdir</span> /tmp/x &amp;&amp; dpkg-deb -x cfgd_1.0.0_arm64.deb /tmp/x</span><br><span class="line">$ qemu-aarch64-static -L /usr/aarch64-linux-gnu /tmp/x/usr/local/bin/cfgd --version</span><br><span class="line">cfgd 1.0.0 (aarch64)</span><br></pre></td></tr></table></figure>
+
+<div align="center">
+<svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="250" fill="#fbfbfd"/>
+<text x="340" y="20" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">完整流水线：每一步都有可自动化的检查点</text>
+<rect x="14" y="40" width="118" height="46" rx="5" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="73" y="60" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">源码（Windows）</text>
+<text x="73" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#555">D:\...\src</text>
+<path d="M136 63 L164 63" stroke="#888" stroke-width="1.8" marker-end="url(#e1)"/>
+<rect x="168" y="40" width="118" height="46" rx="5" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="227" y="60" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">cp 到 ext4</text>
+<text x="227" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#555">~/deb-demo</text>
+<path d="M290 63 L318 63" stroke="#888" stroke-width="1.8" marker-end="url(#e1)"/>
+<rect x="322" y="40" width="118" height="46" rx="5" fill="#f3f0fa" stroke="#8e7cc3"/>
+<text x="381" y="60" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">交叉编译</text>
+<text x="381" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#555">aarch64-gcc</text>
+<path d="M444 63 L472 63" stroke="#888" stroke-width="1.8" marker-end="url(#e1)"/>
+<rect x="476" y="40" width="104" height="46" rx="5" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="528" y="60" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">cpack -G DEB</text>
+<text x="528" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#555">_arm64.deb</text>
+<path d="M584 63 L612 63" stroke="#888" stroke-width="1.8" marker-end="url(#e1)"/>
+<rect x="616" y="40" width="50" height="46" rx="5" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="641" y="60" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">板子</text>
+<text x="641" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#555">RK3588</text>
+<rect x="14" y="104" width="652" height="34" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="28" y="125" font-size="11.5" font-family="sans-serif" fill="#1f2328">检查点 1：file 输出必须是 "ARM aarch64"  ·  检查点 2：file 不得含 CRLF  ·  检查点 3：dpkg-deb -I 里 Architecture: arm64</text>
+<rect x="14" y="144" width="652" height="34" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="28" y="165" font-size="11.5" font-family="sans-serif" fill="#1f2328">检查点 4：dpkg-deb -c 里没有 ./usr/usr 双前缀  ·  检查点 5：qemu-aarch64-static 能从包里解出的二进制跑通</text>
+<rect x="14" y="184" width="316" height="50" rx="5" fill="#fde8e8" stroke="#e5484d"/>
+<text x="28" y="203" font-size="11.5" font-family="sans-serif" fill="#1f2328">红线：包树不能放 /mnt/c（权限 777 直接失败）</text>
+<text x="28" y="222" font-size="11.5" font-family="sans-serif" fill="#1f2328">红线：脚本必须 0755，且必须是 LF 换行</text>
+<rect x="350" y="184" width="316" height="50" rx="5" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="364" y="203" font-size="11.5" font-family="sans-serif" fill="#1f2328">交付：scp 到板子后用 apt install ./x.deb（apt 会补依赖，</text>
+<text x="364" y="222" font-size="11.5" font-family="sans-serif" fill="#1f2328">dpkg -i 不会）· 回滚用 apt remove / purge</text>
+<defs><marker id="e1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#888"/></marker></defs>
+</svg>
+</div>
+
+<h2 id="8-到板子上：安装、验证、回滚"><a href="#8-到板子上：安装、验证、回滚" class="headerlink" title="8. 到板子上：安装、验证、回滚"></a>8. 到板子上：安装、验证、回滚</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1) 传过去</span></span><br><span class="line">$ scp cfgd_1.0.0_arm64.deb user@rk3588:/tmp/</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2) 先确认板子确实是 arm64</span></span><br><span class="line">$ ssh user@rk3588 <span class="string">&#x27;dpkg --print-architecture; uname -m&#x27;</span></span><br><span class="line">arm64</span><br><span class="line">aarch64</span><br><span class="line"></span><br><span class="line"><span class="comment"># 3) 安装 —— 用 apt 而不是 dpkg，apt 会自动补依赖</span></span><br><span class="line">$ ssh user@rk3588 <span class="string">&#x27;sudo apt install -y /tmp/cfgd_1.0.0_arm64.deb&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>验证：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">$ ssh user@rk3588 <span class="string">&#x27;dpkg -l cfgd&#x27;</span></span><br><span class="line">ii  cfgd   1.0.0   arm64   Tiny config service (arm64 build)</span><br><span class="line"></span><br><span class="line">$ ssh user@rk3588 <span class="string">&#x27;dpkg -L cfgd&#x27;</span></span><br><span class="line">/usr/local/bin/cfgd</span><br><span class="line">/etc/cfgd/cfgd.conf</span><br><span class="line">/lib/systemd/system/cfgd.service</span><br><span class="line"></span><br><span class="line">$ ssh user@rk3588 <span class="string">&#x27;cfgd --version&#x27;</span></span><br><span class="line">cfgd 1.0.0 (aarch64)</span><br><span class="line"></span><br><span class="line">$ ssh user@rk3588 <span class="string">&#x27;systemctl status cfgd --no-pager | head -5&#x27;</span></span><br><span class="line">● cfgd.service - Tiny config service (cfgd)</span><br><span class="line">     Loaded: loaded (/lib/systemd/system/cfgd.service; enabled)</span><br><span class="line">     Active: active (running)</span><br></pre></td></tr></table></figure>
+
+<p>回滚与清理：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">sudo</span> apt remove cfgd      <span class="comment"># 删二进制，保留 /etc 下的配置</span></span><br><span class="line">$ <span class="built_in">sudo</span> apt purge cfgd       <span class="comment"># 连配置一起删</span></span><br><span class="line">$ dpkg -s cfgd              <span class="comment"># 确认状态（purge 后应为 &quot;not-installed&quot;）</span></span><br></pre></td></tr></table></figure>
+
+<p>要是出现 <code>Exec format error</code>，别怀疑 deb 打包——<strong>回去看第 3 节那个 <code>file</code> 检查点</strong>，99% 是误把 x86-64 二进制打进了 arm64 包（包照样能装成功，只是跑不起来）。</p>
+<h2 id="9-三种打包方式对照"><a href="#9-三种打包方式对照" class="headerlink" title="9. 三种打包方式对照"></a>9. 三种打包方式对照</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th><code>dpkg-deb --build</code></th>
+<th>CMake + CPack</th>
+<th><code>dpkg-buildpackage</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>上手成本</td>
+<td>最低，一条命令</td>
+<td>中，要写 toolchain + CPack 段</td>
+<td>最高，要 <code>debian/</code> 全套</td>
+</tr>
+<tr>
+<td>适合场景</td>
+<td>一次性交付、救急</td>
+<td><strong>日常迭代 &#x2F; CI（推荐）</strong></td>
+<td>进 Debian&#x2F;Ubuntu 官方源</td>
+</tr>
+<tr>
+<td>架构控制</td>
+<td>control 里手写</td>
+<td><code>CPACK_DEBIAN_PACKAGE_ARCHITECTURE</code></td>
+<td><code>debian/control</code> + 构建机架构</td>
+</tr>
+<tr>
+<td>依赖分析</td>
+<td>手写</td>
+<td>手动或 shlibdeps</td>
+<td>自动（本机架构）</td>
+</tr>
+<tr>
+<td>源码包</td>
+<td>无</td>
+<td>有（<code>cpack -G TGZ</code>）</td>
+<td>有（<code>.dsc</code> + <code>.orig.tar</code>）</td>
+</tr>
+<tr>
+<td>交叉编译友好度</td>
+<td>好（跟架构无关）</td>
+<td>好（显式声明即可）</td>
+<td>差（默认假定本机架构）</td>
+</tr>
+<tr>
+<td>常见翻车点</td>
+<td>&#x2F;mnt&#x2F;c 权限、CRLF</td>
+<td><code>/usr/usr</code> 双前缀、conffiles 失效</td>
+<td>需要目标架构的构建依赖</td>
+</tr>
+</tbody></table>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ol>
+<li><strong>deb 是归档格式不是编译产物</strong>，所以&quot;在 Windows 上打 arm64 包&quot;这件事只需 WSL + 交叉工具链 + <code>dpkg-deb</code>，跟目标机器在不在场无关。<ol start="2">
+<li><strong>两条独立的正确性</strong>：二进制要 <code>file</code> 确认是 <code>ARM aarch64</code>；元数据要 <code>Architecture: arm64</code>。少任何一条，都会以不同方式翻车（前者是 <code>Exec format                                                                                                                                     error</code>，后者是 <code>does not match system</code>）。</li>
+</ol>
+</li>
+<li><strong>包树必须在 WSL 的 ext4 分区里</strong>，<code>/mnt/c</code> 下权限全 0777，<code>dpkg-deb</code> 会直接报 <code>control directory has bad permissions 777</code>。</li>
+<li><strong>脚本要 0755 + LF</strong>。CRLF 会让 <code>postinst</code> 变成 <code>/bin/sh^M: bad interpreter</code>，而 <code>sh -n</code> 语法检查还抓不到它。</li>
+<li><strong>CPack 的两个坑</strong>：必须设 <code>CPACK_PACKAGING_INSTALL_PREFIX &quot;/&quot;</code> 否则出现 <code>/usr/usr/local/bin</code>；<code>conffiles</code> 要走 <code>CONTROL_EXTRA</code> 而不是 <code>CPACK_DEBIAN_PACKAGE_CONFFILES</code>。</li>
+<li><strong>交叉编译要关 <code>SHLIBDEPS</code></strong>，依赖手写或从 arm64 rootfs 分析。</li>
+<li><strong>用 qemu-user-static 在打包机上跑一遍包里的二进制</strong>——把&quot;能不能跑&quot;这个问题从&quot;上板子之后&quot;提前到&quot;出包之后&quot;，省掉一轮 scp。</li>
+<li><strong>装包用 <code>apt install ./x.deb</code> 而不是 <code>dpkg -i</code></strong>，前者会自动补依赖；回滚用 <code>apt remove</code> &#x2F; <code>purge</code>。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/b3e4a71c/">https://hespethorn.github.io/posts/b3e4a71c/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CMake/">CMake</a><a class="post-meta__tags" href="/tags/%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91/">交叉编译</a><a class="post-meta__tags" href="/tags/deb/">deb</a><a class="post-meta__tags" href="/tags/aarch64/">aarch64</a><a class="post-meta__tags" href="/tags/WSL/">WSL</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fcebd492/" title="《Personal Development for Smart People》学习笔记">《Personal Development for Smart People》学习笔记</a><time datetime="2022-12-18T16:00:00.000Z" title="Created 2022-12-19 00:00:00">2022-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="Created 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/81ad67c7/" title="单元测试在软件工程中的核心价值">单元测试在软件工程中的核心价值</a><time datetime="2025-04-06T16:00:00.000Z" title="Created 2025-04-07 00:00:00">2025-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/86d86550/" title="读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划">读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划</a><time datetime="2026-05-22T16:00:00.000Z" title="Created 2026-05-23 00:00:00">2026-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bf9549bc/" title="后端开发除了增删改查还有什么？从日常问题到工程思路">后端开发除了增删改查还有什么？从日常问题到工程思路</a><time datetime="2026-08-23T16:00:00.000Z" title="Created 2026-08-24 00:00:00">2026-08-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/hybrid-arch-core-native-edge-dynamic/" title="混合架构：核心原生+边缘动态的双引擎架构之道">混合架构：核心原生+边缘动态的双引擎架构之道</a><time datetime="2026-05-02T16:00:00.000Z" title="Created 2026-05-03 00:00:00">2026-05-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/57868517/" title="警惕 “虚假精通”，守住技术人的核心竞争力">警惕 “虚假精通”，守住技术人的核心竞争力</a><time datetime="2025-08-26T16:00:00.000Z" title="Created 2025-08-27 00:00:00">2025-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="Created 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-04T16:00:00.000Z" title="Created 2026-05-05 00:00:00">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-03T16:00:00.000Z" title="Created 2026-05-04 00:00:00">2026-05-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="Created 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fce0fcae/" title="通用代码审查清单整理">通用代码审查清单整理</a><time datetime="2025-05-22T16:00:00.000Z" title="Created 2025-05-23 00:00:00">2025-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d12eb845/" title="相机 RGA 硬件加速实战：把图像预处理从 CPU 搬到 2D 加速单元">相机 RGA 硬件加速实战：把图像预处理从 CPU 搬到 2D 加速单元</a><time datetime="2026-08-13T16:00:00.000Z" title="Created 2026-08-14 00:00:00">2026-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b3e4a71c/" title="在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i">在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1db0a89f/" title="主题修改记录">主题修改记录</a><time datetime="2022-01-31T16:00:00.000Z" title="Created 2022-02-01 00:00:00">2022-02-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f0b1bd1f/" title="CUDA编程模型深度解析——从线程层次到性能优化实战">CUDA编程模型深度解析——从线程层次到性能优化实战</a><time datetime="2026-08-11T16:00:00.000Z" title="Created 2026-08-12 00:00:00">2026-08-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f9d777ad/" title="Hello World 系统化学习之旅">Hello World 系统化学习之旅</a><time datetime="2022-01-03T16:00:00.000Z" title="Created 2022-01-04 00:00:00">2022-01-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-05T16:00:00.000Z" title="Created 2026-05-06 00:00:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bf01d313/" title="SAX vs. DOM：流式处理与树状模型">SAX vs. DOM：流式处理与树状模型</a><time datetime="2024-09-23T16:00:00.000Z" title="Created 2024-09-24 00:00:00">2024-09-24</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

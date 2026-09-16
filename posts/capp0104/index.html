@@ -1,0 +1,801 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>链接（Linking） | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="两个 .c 文件，一个定义 int sum(int)，另一个 extern 声明它，各自编译都过，最后 gcc main.o sum.o 才变成一个能跑的进程。可如果你把这两个 .o 的顺序换成 gcc sum.o main.o 之外再加个静态库，就可能蹦出一句 undefined reference to &#39;addvec&#39;——而那个符号明明就在你传给链接器的 .a 里。链接器不是">
+<meta property="og:type" content="article">
+<meta property="og:title" content="链接（Linking）">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0104/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="两个 .c 文件，一个定义 int sum(int)，另一个 extern 声明它，各自编译都过，最后 gcc main.o sum.o 才变成一个能跑的进程。可如果你把这两个 .o 的顺序换成 gcc sum.o main.o 之外再加个静态库，就可能蹦出一句 undefined reference to &#39;addvec&#39;——而那个符号明明就在你传给链接器的 .a 里。链接器不是">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-12-18T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.698Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="ELF">
+<meta property="article:tag" content="符号解析">
+<meta property="article:tag" content="重定位">
+<meta property="article:tag" content="动态链接">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "链接（Linking）",
+  "url": "https://hespethorn.github.io/posts/capp0104/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-12-18T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.698Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0104/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '链接（Linking）',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">链接（Linking）</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">链接（Linking）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>13mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>两个 <code>.c</code> 文件，一个定义 <code>int sum(int)</code>，另一个 <code>extern</code> 声明它，各自编译都过，最后 <code>gcc main.o sum.o</code> 才变成一个能跑的进程。可如果你把这两个 <code>.o</code> 的顺序换成 <code>gcc sum.o main.o</code> 之外再加个静态库，就可能蹦出一句 <code>undefined reference to &#39;addvec&#39;</code>——而那个符号明明就在你传给链接器的 <code>.a</code> 里。<strong>链接器不是&quot;把一堆字节拼起来&quot;，它是一道有状态的扫描过程：先收集符号，再决定谁被留下，最后才把地址填进指令里。</strong></p>
+<p>这一篇把 CSAPP 第 7 章讲透：编译系统四步、ELF 目标文件的内部结构、强&#x2F;弱符号的三条规则、静态库为什么对命令行顺序敏感、重定位那条 PC 相对公式怎么手算、以及动态链接里 GOT&#x2F;PLT 是怎么做到&quot;第一次慢、以后直接跳&quot;的。</p>
+<h2 id="1-从-hello-c-到-a-out：四步走"><a href="#1-从-hello-c-到-a-out：四步走" class="headerlink" title="1. 从 hello.c 到 a.out：四步走"></a>1. 从 hello.c 到 a.out：四步走</h2><div align="center">
+<svg viewBox="0 0 680 190" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="190" fill="#fbfbfd"/>
+<rect x="16" y="52" width="128" height="52" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="80" y="74" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">预处理器 cpp</text>
+<text x="80" y="92" text-anchor="middle" font-size="12" font-family="monospace" fill="#555">hello.c → hello.i</text>
+<rect x="180" y="52" width="128" height="52" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="244" y="74" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">编译器 cc1</text>
+<text x="244" y="92" text-anchor="middle" font-size="12" font-family="monospace" fill="#555">hello.i → hello.s</text>
+<rect x="344" y="52" width="128" height="52" rx="6" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="408" y="74" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">汇编器 as</text>
+<text x="408" y="92" text-anchor="middle" font-size="12" font-family="monospace" fill="#555">hello.s → hello.o</text>
+<rect x="508" y="52" width="156" height="52" rx="6" fill="#fde8e8" stroke="#e5484d"/>
+<text x="586" y="74" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">链接器 ld</text>
+<text x="586" y="92" text-anchor="middle" font-size="12" font-family="monospace" fill="#555">*.o + *.so → hello</text>
+<path d="M148 78 L176 78" stroke="#888" stroke-width="2" marker-end="url(#a1)"/>
+<path d="M312 78 L340 78" stroke="#888" stroke-width="2" marker-end="url(#a1)"/>
+<path d="M476 78 L504 78" stroke="#888" stroke-width="2" marker-end="url(#a1)"/>
+<defs><marker id="a1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#888"/></marker></defs>
+<text x="340" y="28" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">编译系统四步：只有最后一步才涉及「多个文件」</text>
+<rect x="16" y="128" width="648" height="44" rx="5" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="28" y="146" font-size="12" font-family="sans-serif" fill="#1f2328">前三步每个 .c 各干各的，彼此互不知情 —— 这就是「跨文件引用」必须留给链接器解决的原因。</text>
+<text x="28" y="164" font-size="12" font-family="sans-serif" fill="#1f2328">hello.i 是 ASCII 中间文件，hello.s 是汇编，hello.o 是可重定位目标文件，hello 才是可执行目标文件。</text>
+</svg>
+</div>
+
+<p>直接观察每一步的产物：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -E hello.c -o hello.i    <span class="comment"># 展开 #include / #define，仍是 C 文本</span></span><br><span class="line">$ gcc -S hello.i -o hello.s    <span class="comment"># 生成 x86-64 汇编</span></span><br><span class="line">$ gcc -c hello.s -o hello.o    <span class="comment"># 生成 ELF 可重定位目标文件</span></span><br><span class="line">$ gcc hello.o -o hello         <span class="comment"># 链接：补上 printf、_start 等</span></span><br><span class="line">$ file hello.o hello</span><br><span class="line">hello.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped</span><br><span class="line">hello:   ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, ...</span><br></pre></td></tr></table></figure>
+
+<p>注意 <code>file</code> 给的两个词：<strong>relocatable</strong> 和 <strong>executable</strong>。这是链接器出场前后最本质的区别——前者还带着&quot;我不知道别人在哪&quot;的欠条，后者所有欠条都兑付了。</p>
+<h2 id="2-ELF-可重定位目标文件长什么样"><a href="#2-ELF-可重定位目标文件长什么样" class="headerlink" title="2. ELF 可重定位目标文件长什么样"></a>2. ELF 可重定位目标文件长什么样</h2><div align="center">
+<svg viewBox="0 0 680 360" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="360" fill="#fbfbfd"/>
+<text x="340" y="22" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">ELF 可重定位目标文件（.o）的内部结构</text>
+<rect x="200" y="34" width="280" height="30" rx="4" fill="#e6e6ef" stroke="#8e8ea0"/>
+<text x="340" y="54" text-anchor="middle" font-size="13" font-family="sans-serif" fill="#1f2328">ELF 头（魔数、类型、节头表位置）</text>
+<rect x="200" y="66" width="280" height="30" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="340" y="86" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.text　已编译的机器代码</text>
+<rect x="200" y="98" width="280" height="30" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="340" y="118" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.rodata　只读数据（字符串、跳转表）</text>
+<rect x="200" y="130" width="280" height="30" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="340" y="150" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.data　已初始化的全局 / 静态变量</text>
+<rect x="200" y="162" width="280" height="30" rx="4" fill="#f3ece6" stroke="#b08968"/>
+<text x="340" y="182" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.bss　未初始化的全局 / 静态变量</text>
+<rect x="200" y="194" width="280" height="30" rx="4" fill="#fde8e8" stroke="#e5484d"/>
+<text x="340" y="214" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.symtab　符号表（定义 / 引用的符号）</text>
+<rect x="200" y="226" width="280" height="30" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="340" y="246" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.rel.text　.text 中待重定位的位置</text>
+<rect x="200" y="258" width="280" height="30" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="340" y="278" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.rel.data　.data 中待重定位的指针</text>
+<rect x="200" y="290" width="280" height="30" rx="4" fill="#f1f0f4" stroke="#b6b3c4"/>
+<text x="340" y="310" text-anchor="middle" font-size="13" font-family="monospace" fill="#1f2328">.debug / .line / .strtab / 节头表</text>
+<text x="492" y="86" font-size="11" font-family="sans-serif" fill="#7f9cf5">代码</text>
+<text x="492" y="150" font-size="11" font-family="sans-serif" fill="#30a46c">占磁盘</text>
+<text x="492" y="182" font-size="11" font-family="sans-serif" fill="#b08968">不占磁盘，只占位</text>
+<text x="492" y="214" font-size="11" font-family="sans-serif" fill="#e5484d">链接器的账本</text>
+<text x="492" y="246" font-size="11" font-family="sans-serif" fill="#e2a03f">欠条清单</text>
+<text x="28" y="330" font-size="12" font-family="sans-serif" fill="#555">.bss 在文件中只记录「要留多大地方」，真正占内存是加载时的事 —— 全是零，没必要存。</text>
+<text x="28" y="350" font-size="12" font-family="sans-serif" fill="#555">局部变量不进 .symtab：它们在运行时栈上，链接器根本不需要知道。</text>
+</svg>
+</div>
+
+<h2 id="3-符号、强符号与弱符号"><a href="#3-符号、强符号与弱符号" class="headerlink" title="3. 符号、强符号与弱符号"></a>3. 符号、强符号与弱符号</h2><p>链接器的账本上记三类符号：</p>
+<ul>
+<li><strong>全局符号</strong>：本模块定义的、非 <code>static</code> 的函数和全局变量。</li>
+<li><strong>外部符号</strong>：本模块引用、但由别的模块定义的（<code>extern</code>）。</li>
+<li><strong>局部符号</strong>：带 <code>static</code> 的函数和变量——<strong>本模块内部可见，链接器不会拿它去跟别处匹配</strong>。</li>
+</ul>
+<p>强弱之分是 GNU 工具链最反直觉的地方：</p>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>强弱</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>函数名</td>
+<td>强</td>
+</tr>
+<tr>
+<td>已初始化的全局变量</td>
+<td>强</td>
+</tr>
+<tr>
+<td>未初始化的全局变量</td>
+<td>弱</td>
+</tr>
+</tbody></table>
+<p>三条裁决规则：</p>
+<ol>
+<li><strong>不允许多个同名强符号</strong>，否则 <code>multiple definition</code>。</li>
+<li><strong>一个强符号 + 若干弱符号</strong> → 选强符号（此时弱定义被静默丢弃）。</li>
+<li><strong>全是弱符号</strong> → 任选一个（链接器挑它先看到的那个）。</li>
+</ol>
+<p>规则 2 是真正吃人的那条：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* main.c */</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="type">int</span> y = <span class="number">15212</span>;</span><br><span class="line"><span class="type">int</span> x = <span class="number">15213</span>;              <span class="comment">/* 强符号：已初始化的 int */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">f</span><span class="params">(<span class="type">void</span>)</span>;</span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    f();</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;x = 0x%x  y = 0x%x\n&quot;</span>, x, y);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/* f.c */</span></span><br><span class="line"><span class="type">double</span> x;                   <span class="comment">/* 弱符号：未初始化，被当成 8 字节 */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">f</span><span class="params">(<span class="type">void</span>)</span> &#123; x = <span class="number">-0.0</span>; &#125;  <span class="comment">/* 写 8 个字节，直接踩到 y */</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -fcommon -o demo main.c f.c</span><br><span class="line">$ ./demo</span><br><span class="line">x = 0x0  y = 0x80000000</span><br></pre></td></tr></table></figure>
+
+<p><code>f()</code> 只想写一个 <code>double</code>，但因为规则 2 选中了 main.c 里那个 4 字节的 <code>int x</code>，这 8 字节的写入有一半落到了相邻的 <code>y</code> 上——<strong>类型不匹配的定义，在没有报错的情况下改写了另一个变量。</strong> 所以 GCC 从 10 起把默认改成 <code>-fno-common</code>，让弱符号也不再静默合并：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -o demo main.c f.c          <span class="comment"># GCC 10+ 默认 -fno-common</span></span><br><span class="line">/usr/bin/ld: f.o:(.bss+0x0): multiple definition of `x<span class="string">&#x27;; main.o:(.data+0x0): first defined here</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>一句话：别在头文件里放 <code>int foo;</code> 这种试探性定义，要么 <code>extern</code> 声明，要么老老实实在一个 .c 里定义一次。</strong></p>
+<h2 id="4-静态库：为什么链接器对命令行顺序敏感"><a href="#4-静态库：为什么链接器对命令行顺序敏感" class="headerlink" title="4. 静态库：为什么链接器对命令行顺序敏感"></a>4. 静态库：为什么链接器对命令行顺序敏感</h2><p>链接器维护三个集合，按顺序扫命令行：</p>
+<ul>
+<li><strong>E</strong>：已经决定要合并进去的可重定位目标文件。</li>
+<li><strong>U</strong>：引用了但还没找到定义的符号。</li>
+<li><strong>D</strong>：已经找到定义的符号。</li>
+</ul>
+<p>算法是这样的：碰到 <code>.o</code> 就无条件塞进 E；碰到 <code>.a</code>（静态库，其实就是一包 <code>.o</code>）<strong>只把能消掉当前 U 中符号的成员拽进 E</strong>，其余成员直接丢弃；扫完一遍若 U 还有残留，就报错。</p>
+<div align="center">
+<svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="300" fill="#fbfbfd"/>
+<text x="340" y="22" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">静态库解析：同一个库，放在前面还是后面，结果完全不同</text>
+<text x="30" y="52" font-size="13" font-family="sans-serif" fill="#30a46c">正确顺序：gcc -static -o p main.o libvector.a</text>
+<rect x="30" y="62" width="140" height="40" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="100" y="80" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">main.o 进 E</text>
+<text x="100" y="95" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">U = {addvec}</text>
+<path d="M174 82 L206 82" stroke="#888" stroke-width="2" marker-end="url(#b1)"/>
+<rect x="210" y="62" width="160" height="40" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="290" y="80" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">扫 libvector.a</text>
+<text x="290" y="95" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">addvec.o 命中 → 进 E</text>
+<path d="M374 82 L406 82" stroke="#888" stroke-width="2" marker-end="url(#b1)"/>
+<rect x="410" y="62" width="180" height="40" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="500" y="80" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">U 清空 → 链接成功</text>
+<text x="500" y="95" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">multvec.o 被丢弃（没用到）</text>
+<text x="30" y="152" font-size="13" font-family="sans-serif" fill="#e5484d">错误顺序：gcc -static -o p libvector.a main.o</text>
+<rect x="30" y="162" width="160" height="40" rx="4" fill="#fde8e8" stroke="#e5484d"/>
+<text x="110" y="180" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">扫 libvector.a</text>
+<text x="110" y="195" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">U 是空的 → 全部丢弃</text>
+<path d="M194 182 L226 182" stroke="#888" stroke-width="2" marker-end="url(#b1)"/>
+<rect x="230" y="162" width="140" height="40" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="300" y="180" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">main.o 进 E</text>
+<text x="300" y="195" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">U = {addvec}</text>
+<path d="M374 182 L406 182" stroke="#888" stroke-width="2" marker-end="url(#b1)"/>
+<rect x="410" y="162" width="200" height="40" rx="4" fill="#fde8e8" stroke="#e5484d"/>
+<text x="510" y="180" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">U 非空，后面没人了</text>
+<text x="510" y="195" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">undefined reference to addvec</text>
+<defs><marker id="b1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#888"/></marker></defs>
+<rect x="30" y="226" width="620" height="56" rx="5" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="42" y="246" font-size="12" font-family="sans-serif" fill="#1f2328">链接器只扫一遍、不回头 —— 库被掠过时 U 里还没那个符号，这个成员就永远失去机会了。</text>
+<text x="42" y="266" font-size="12" font-family="sans-serif" fill="#1f2328">口诀：把 .o 放前面，库放后面；库之间若互相依赖，要么重复列出，要么用 --start-group / --end-group 包起来。</text>
+</svg>
+</div>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -c main2.c</span><br><span class="line">$ gcc -static -o p2 main2.o libvector.a     <span class="comment"># 库在后面：OK</span></span><br><span class="line">$ gcc -static -o p2 libvector.a main2.o     <span class="comment"># 库在前面：</span></span><br><span class="line">/usr/bin/ld: main2.o: <span class="keyword">in</span> <span class="keyword">function</span> `main<span class="string">&#x27;:</span></span><br><span class="line"><span class="string">main2.c:(.text+0x1a): undefined reference to `addvec&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="5-重定位：那条-PC-相对公式到底在算什么"><a href="#5-重定位：那条-PC-相对公式到底在算什么" class="headerlink" title="5. 重定位：那条 PC 相对公式到底在算什么"></a>5. 重定位：那条 PC 相对公式到底在算什么</h2><p>符号解析只解决&quot;谁对上谁&quot;，真正把地址写进指令是第二步——<strong>重定位</strong>。分两小步：先把所有同名节合并、给每个节和每个符号指派运行时地址；再遍历 <code>.rel.text</code>，按条目把引用处改写。</p>
+<p>x86-64 的重定位条目（RELA）长这样：<code>(offset, symbol, type, addend)</code>。看一个真实例子：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ objdump -dx main.o</span><br><span class="line">...</span><br><span class="line">  1a:   e8 00 00 00 00          call   1f &lt;main+0x1f&gt;</span><br><span class="line">        1b: R_X86_64_PLT32      sum-0x4</span><br></pre></td></tr></table></figure>
+
+<p><code>e8</code> 是 <code>call</code> 的操作码，后面 4 字节全是 0——<strong>汇编器不知道 <code>sum</code> 在哪，只能先填 0 并记一张欠条</strong>：&quot;在 <code>.text</code> 偏移 0x1b 处，请填入 <code>sum</code> 的 PC 相对地址，addend 为 -4&quot;。</p>
+<p><code>R_X86_64_PC32</code>（以及现代 GCC 产出的 <code>R_X86_64_PLT32</code>）的换算公式是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">refaddr = ADDR(s) + r.offset</span><br><span class="line">*refptr = (unsigned)(ADDR(r.symbol) + r.addend - refaddr)</span><br></pre></td></tr></table></figure>
+
+<div align="center">
+<svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="260" fill="#fbfbfd"/>
+<text x="340" y="22" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">PC 相对重定位：call 指令里的 4 字节是怎么填出来的</text>
+<text x="30" y="52" font-size="12" font-family="sans-serif" fill="#555">链接后 .text 起始地址 ADDR(.text) = 0x4004d0</text>
+<rect x="30" y="62" width="620" height="34" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="42" y="84" font-size="12" font-family="monospace" fill="#1f2328">0x4004ea:  e8  [ ? ? ? ? ]       call sum</text>
+<text x="360" y="84" font-size="12" font-family="monospace" fill="#e5484d">↑ 待填：偏移 0x1a 处的 4 字节</text>
+<text x="30" y="112" font-size="12" font-family="sans-serif" fill="#555">下一条指令地址（%rip 在取指后的值）refaddr + 4 = 0x4004ee</text>
+<rect x="30" y="122" width="620" height="34" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="42" y="144" font-size="12" font-family="monospace" fill="#1f2328">ADDR(sum) = 0x4004f8     addend = -4     refaddr = 0x4004ea</text>
+<rect x="30" y="164" width="620" height="40" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="42" y="189" font-size="13" font-family="monospace" fill="#1f2328">填入值 = 0x4004f8 + (-4) - 0x4004ea = 0x0000000a</text>
+<text x="30" y="224" font-size="12" font-family="sans-serif" fill="#555">CPU 执行时：目标 = %rip(0x4004ee) + 0xa = 0x4004f8 ✓ —— addend 的 -4 正是在抵消 %rip 已经走过了 4 字节。</text>
+<text x="30" y="246" font-size="12" font-family="sans-serif" fill="#555">绝对寻址 R_X86_64_32 就简单得多：直接把 ADDR(symbol) + addend 写进去，常用于 .data 里的指针初值。</text>
+</svg>
+</div>
+
+<p>对照 <code>R_X86_64_PLT32</code>：现代 GCC 即使调用最终会落在可执行文件内部，也倾向于走 PLT，这样在链接期用 <code>-shared</code> 或介入 <code>LD_PRELOAD</code> 时还能改写去向——<strong>多一层间接，换一份灵活。</strong></p>
+<h2 id="6-动态链接与延迟绑定：GOT-PLT"><a href="#6-动态链接与延迟绑定：GOT-PLT" class="headerlink" title="6. 动态链接与延迟绑定：GOT &#x2F; PLT"></a>6. 动态链接与延迟绑定：GOT &#x2F; PLT</h2><p>静态链接有两个大毛病：每个进程都各自带一份 libc 代码，<strong>磁盘和内存都浪费</strong>；库一升级就得重新链接。共享库（<code>.so</code>）的解法是：<strong>一份代码在内存里只留一份，被所有进程共享</strong>——前提是这段代码必须是<strong>位置无关代码（PIC）</strong>，能加载到任意地址。</p>
+<p>PIC 的两个关键技巧：</p>
+<ul>
+<li><strong>数据引用</strong>：不管代码被加载在哪，代码与它自己的 <code>.data</code> 之间的距离是链接时已知的，所以用 PC 相对寻址先找到 <strong>GOT（全局偏移表，位于 .data 区）</strong>，再从 GOT 里取出真正的绝对地址。</li>
+<li><strong>函数调用</strong>：<strong>PLT（过程链接表，位于 .text 区）</strong> + 延迟绑定。第一次调用才解析，之后直接跳。</li>
+</ul>
+<div align="center">
+<svg viewBox="0 0 680 330" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="330" fill="#fbfbfd"/>
+<text x="340" y="22" text-anchor="middle" font-size="14" font-family="sans-serif" fill="#333">延迟绑定：第一次走 PLT 兜一圈，之后 GOT 直接命中</text>
+<rect x="24" y="40" width="180" height="26" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="114" y="58" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">调用点（.text，PIC）</text>
+<rect x="24" y="78" width="180" height="30" rx="4" fill="#e8f0fe" stroke="#7f9cf5"/>
+<text x="114" y="97" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">call  addvec@PLT</text>
+<rect x="256" y="40" width="180" height="26" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="346" y="58" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">PLT[n]（.text）</text>
+<rect x="256" y="78" width="180" height="30" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="346" y="97" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">jmp *GOT[n+3]</text>
+<rect x="256" y="112" width="180" height="30" rx="4" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="346" y="131" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">push $id; jmp PLT[0]</text>
+<rect x="488" y="40" width="168" height="26" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="572" y="58" text-anchor="middle" font-size="12" font-family="sans-serif" fill="#1f2328">GOT[n+3]（.data，可写）</text>
+<rect x="488" y="78" width="168" height="30" rx="4" fill="#f1f0f4" stroke="#b6b3c4"/>
+<text x="572" y="97" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">初值 = PLT[n] 下一行</text>
+<rect x="488" y="112" width="168" height="30" rx="4" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="572" y="131" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">解析后 = 真实地址</text>
+<path d="M208 93 L252 93" stroke="#888" stroke-width="2" marker-end="url(#c1)"/>
+<path d="M440 93 L484 93" stroke="#888" stroke-width="2" marker-end="url(#c1)"/>
+<path d="M484 88 L440 125" stroke="#e5484d" stroke-width="2" stroke-dasharray="5 4" fill="none" marker-end="url(#c2)"/>
+<text x="452" y="156" font-size="11" font-family="sans-serif" fill="#e5484d">首次：跳回 PLT 下一条</text>
+<rect x="256" y="170" width="180" height="30" rx="4" fill="#f1f0f4" stroke="#b6b3c4"/>
+<text x="346" y="189" text-anchor="middle" font-size="12" font-family="monospace" fill="#1f2328">PLT[0] → _dl_runtime_resolve</text>
+<path d="M436 185 L484 185" stroke="#888" stroke-width="2" marker-end="url(#c1)"/>
+<text x="492" y="183" font-size="11" font-family="sans-serif" fill="#555">查符号表，回填</text>
+<rect x="24" y="222" width="632" height="42" rx="5" fill="#e6f6ea" stroke="#30a46c"/>
+<text x="36" y="241" font-size="12" font-family="sans-serif" fill="#1f2328">第二次调用：jmp *GOT[n+3] 一步跳到真实函数，PLT 之后的部分再也不会执行。</text>
+<text x="36" y="259" font-size="12" font-family="sans-serif" fill="#1f2328">GOT 在 .data 里（可写），PLT 在 .text 里（可执行、可共享）—— 代码不变，只改数据，进程间才能共享同一份 .so。</text>
+<rect x="24" y="272" width="632" height="42" rx="5" fill="#fff4d6" stroke="#e2a03f"/>
+<text x="36" y="291" font-size="12" font-family="sans-serif" fill="#1f2328">安全代价：GOT 可写 = 攻击面。RELRO（-Wl,-z,relro,-z,now）在启动后把 GOT 设为只读，代价是放弃延迟绑定。</text>
+<text x="36" y="309" font-size="12" font-family="sans-serif" fill="#1f2328">这也正是 LD_PRELOAD 能生效的位置：预加载的库先被搜索，符号解析时抢先命中。</text>
+<defs>
+<marker id="c1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#888"/></marker>
+<marker id="c2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#e5484d"/></marker>
+</defs>
+</svg>
+</div>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ ldd hello</span><br><span class="line">        linux-vdso.so.1 (0x00007ffd3a1f0000)</span><br><span class="line">        libc.so.6 =&gt; /lib/x86_64-linux-gnu/libc.so.6 (0x00007f2a5c200000)</span><br><span class="line">        /lib64/ld-linux-x86-64.so.2 (0x00007f2a5c400000)</span><br></pre></td></tr></table></figure>
+
+<h2 id="7-运行时打桩：用动态链接器-拦截-库函数"><a href="#7-运行时打桩：用动态链接器-拦截-库函数" class="headerlink" title="7. 运行时打桩：用动态链接器&quot;拦截&quot;库函数"></a>7. 运行时打桩：用动态链接器&quot;拦截&quot;库函数</h2><p>上面那套机制能被反向利用——不改动目标程序，就替换掉它对某个库函数的调用：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* mymalloc.c */</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> _GNU_SOURCE</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dlfcn.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> *<span class="title function_">malloc</span><span class="params">(<span class="type">size_t</span> size)</span> &#123;</span><br><span class="line">    <span class="type">static</span> <span class="type">void</span> *(*real_malloc)(<span class="type">size_t</span>) = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">if</span> (!real_malloc)</span><br><span class="line">        real_malloc = dlsym(RTLD_NEXT, <span class="string">&quot;malloc&quot;</span>);   <span class="comment">/* 找到&quot;下一个&quot;真正的 malloc */</span></span><br><span class="line">    <span class="type">void</span> *p = real_malloc(size);</span><br><span class="line">    <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;malloc(%zu) = %p\n&quot;</span>, size, p);</span><br><span class="line">    <span class="keyword">return</span> p;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -shared -fPIC -o mymalloc.so mymalloc.c -ldl</span><br><span class="line">$ LD_PRELOAD=./mymalloc.so ./hello</span><br><span class="line">malloc(1024) = 0x55f1a3c2b2a0</span><br><span class="line">Hello, world</span><br></pre></td></tr></table></figure>
+
+<p>Python 走的是同一条路子，只是把&quot;链接&quot;推迟到运行时显式调用：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> ctypes, os</span><br><span class="line">libc = ctypes.CDLL(<span class="string">&quot;libc.so.6&quot;</span>)</span><br><span class="line">libc.atoi.restype = ctypes.c_int</span><br><span class="line">libc.atoi.argtypes = [ctypes.c_char_p]</span><br><span class="line"><span class="built_in">print</span>(libc.atoi(<span class="string">b&quot;15213&quot;</span>))          <span class="comment"># 15213</span></span><br><span class="line"><span class="built_in">print</span>(libc.getpid() == os.getpid()) <span class="comment"># True</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>C 的链接期把符号翻译成地址，Python 的 ctypes 在运行时做同一件事</strong>——区别只在于：前者失败时是 <code>undefined reference</code>（链接都过不了），后者失败时是 <code>AttributeError: undefined symbol</code>（程序已经跑起来了才炸）。</p>
+<h2 id="8-C-与-Java：名字改编，和另一种-链接"><a href="#8-C-与-Java：名字改编，和另一种-链接" class="headerlink" title="8. C++ 与 Java：名字改编，和另一种&quot;链接&quot;"></a>8. C++ 与 Java：名字改编，和另一种&quot;链接&quot;</h2><p><strong>C++ 多了名字改编（name mangling）。</strong> 重载让&quot;函数名&quot;不足以定位符号，编译器把名字空间、类名、参数类型都编进去：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cat</span> f.cc</span><br><span class="line">int f(int); int f(double);           // 两个同名函数</span><br><span class="line">$ g++ -c f.cc &amp;&amp; nm f.o</span><br><span class="line">0000000000000000 T _Z1fi          <span class="comment"># f(int)</span></span><br><span class="line">0000000000000010 T _Z1fd          <span class="comment"># f(double)</span></span><br></pre></td></tr></table></figure>
+
+<p>要让 C++ 给 C 用，就得 <code>extern &quot;C&quot;</code> 关掉改编：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function"><span class="type">int</span> <span class="title">f</span><span class="params">(<span class="type">int</span>)</span></span>;   <span class="comment">// 符号就是朴素的 f，C 代码能链接上</span></span><br></pre></td></tr></table></figure>
+
+<p><code>nm</code> 输出的字母也值得记：<code>T</code> &#x3D; 在本节定义（.text）、<code>U</code> &#x3D; 未定义（外部引用）、<code>D</code>&#x2F;<code>B</code> &#x3D; 在 .data&#x2F;.bss 定义、<code>t</code>&#x2F;<code>d</code> 小写 &#x3D; 局部（<code>static</code>）。</p>
+<p><strong>Java 把链接搬进了 JVM。</strong> 类加载的五个阶段正是链接器的翻版：</p>
+<table>
+<thead>
+<tr>
+<th>JVM 阶段</th>
+<th>做的事</th>
+<th>C 链接器对应物</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>加载 Loading</td>
+<td>读字节码，生成 Class 对象</td>
+<td>读 .o &#x2F; .so</td>
+</tr>
+<tr>
+<td>验证 Verification</td>
+<td>校验字节码安全性</td>
+<td>（C 没有，这是漏洞的根源）</td>
+</tr>
+<tr>
+<td>准备 Preparation</td>
+<td>为静态字段分配内存并置零</td>
+<td>.bss &#x2F; .data 分派</td>
+</tr>
+<tr>
+<td>解析 Resolution</td>
+<td>常量池符号引用 → 直接引用</td>
+<td>符号解析 + 重定位</td>
+</tr>
+<tr>
+<td>初始化 Initialization</td>
+<td>执行 <code>&lt;clinit&gt;</code></td>
+<td>（C 无对应，靠 <code>__attribute__((constructor))</code>）</td>
+</tr>
+</tbody></table>
+<p>而且 JVM 的解析默认是<strong>懒的</strong>——直到第一次真正用到某个类&#x2F;方法才解析，跟 PLT 延迟绑定是同一个思路。失败形态也一一对应：<code>NoClassDefFoundError</code> ≈ <code>undefined reference</code>，<code>NoSuchMethodError</code> ≈ &quot;库版本不对，符号签名对不上了&quot;（也就是 C 世界里那个经典的 <code>symbol lookup error: version &#39;GLIBC_2.34&#39; not found</code>）。</p>
+<h2 id="9-对照表：三种链接形态"><a href="#9-对照表：三种链接形态" class="headerlink" title="9. 对照表：三种链接形态"></a>9. 对照表：三种链接形态</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>静态链接</th>
+<th>动态链接（共享库）</th>
+<th>运行时加载（dlopen）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>发生时机</td>
+<td>构建期</td>
+<td>程序启动 &#x2F; 首次调用</td>
+<td>程序自己决定</td>
+</tr>
+<tr>
+<td>产物</td>
+<td>单个自包含可执行文件</td>
+<td>可执行文件 + 若干 .so</td>
+<td>可执行文件 + 按需 .so</td>
+</tr>
+<tr>
+<td>磁盘占用</td>
+<td>大，每个程序一份 libc</td>
+<td>小，全系统一份</td>
+<td>最小，用不上的不加载</td>
+</tr>
+<tr>
+<td>内存占用</td>
+<td>每进程一份代码副本</td>
+<td>代码页跨进程共享</td>
+<td>同动态链接</td>
+</tr>
+<tr>
+<td>启动速度</td>
+<td>快（无解析开销）</td>
+<td>略慢（符号解析）</td>
+<td>首次 <code>dlopen</code> 慢</td>
+</tr>
+<tr>
+<td>库升级</td>
+<td>必须重新链接</td>
+<td>替换 .so 即刻生效</td>
+<td>替换 .so 即刻生效</td>
+</tr>
+<tr>
+<td>典型失败</td>
+<td><code>undefined reference</code></td>
+<td><code>error while loading shared libraries</code></td>
+<td><code>dlopen: cannot open shared object file</code></td>
+</tr>
+<tr>
+<td>可移植性</td>
+<td>强（拷过去就能跑）</td>
+<td>弱（依赖目标机有对应 .so）</td>
+<td>弱，且路径要自己管</td>
+</tr>
+</tbody></table>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ol>
+<li><strong>链接器的工作是&quot;收集符号 → 决定保留谁 → 把地址填进指令&quot;</strong>，这三步对应符号解析、静态库扫描、重定位。</li>
+<li><strong><code>.o</code> 是可重定位的欠条，<code>.so</code>&#x2F;可执行文件是兑付后的成品</strong>；<code>.bss</code> 不占磁盘只占内存，<code>.rel.text</code> 记录着所有待填地址的位置。</li>
+<li><strong>强&#x2F;弱符号规则里，规则 2 最危险</strong>：一个强定义 + 一个类型不同的弱定义，链接器一声不吭地选了强的，于是 8 字节的写入踩坏了 4 字节的变量。别在头文件里放试探性定义。</li>
+<li><strong>静态库对命令行顺序敏感</strong>，因为链接器只扫一遍、不回头；<code>.o</code> 放前面，库放后面，互相依赖时用 <code>--start-group</code>。</li>
+<li><strong>PC 相对重定位的公式是 <code>ADDR(sym) + addend - refaddr</code></strong>，那个 <code>-4</code> 是在抵消 <code>%rip</code> 已经自增的 4 字节。</li>
+<li><strong>动态链接靠 GOT（可写数据）+ PLT（共享代码）实现延迟绑定</strong>：第一次兜一圈回填，之后一步到位；代价是 GOT 可写带来的攻击面，用 RELRO 可以关掉。</li>
+<li><strong><code>LD_PRELOAD</code> &#x2F; <code>--wrap</code> &#x2F; 自定义头文件是三层打桩手段</strong>，不改源码就能拦截库函数——调试内存问题的利器。</li>
+</ol>
+<p>下一篇进入<strong>处理器架构与流水线</strong>，看看一条指令从取指到写回，硬件内部到底走了几步。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0104/">https://hespethorn.github.io/posts/capp0104/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/ELF/">ELF</a><a class="post-meta__tags" href="/tags/%E7%AC%A6%E5%8F%B7%E8%A7%A3%E6%9E%90/">符号解析</a><a class="post-meta__tags" href="/tags/%E9%87%8D%E5%AE%9A%E4%BD%8D/">重定位</a><a class="post-meta__tags" href="/tags/%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5/">动态链接</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

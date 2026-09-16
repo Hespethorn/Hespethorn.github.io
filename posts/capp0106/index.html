@@ -1,0 +1,652 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>存储器层次与 Cache | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="引子：CPU 跑得飞快，内存却拖了后腿上一篇我们聊了处理器怎么靠流水线把 IPC 怼上去。但有个尴尬的事实：CPU 算得再快，数据要是还在慢吞吞的内存里，它也只能干等。 现代 CPU 一个时钟周期能执行好几条指令，而从主存（DRAM）取一个字，动辄要几百个周期。这个时间差就是「存储器墙」。CSAPP 第 6 章给出的解法是存储器层次结构（memory hierarchy）——用一层层更小更快、也更">
+<meta property="og:type" content="article">
+<meta property="og:title" content="存储器层次与 Cache">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0106/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="引子：CPU 跑得飞快，内存却拖了后腿上一篇我们聊了处理器怎么靠流水线把 IPC 怼上去。但有个尴尬的事实：CPU 算得再快，数据要是还在慢吞吞的内存里，它也只能干等。 现代 CPU 一个时钟周期能执行好几条指令，而从主存（DRAM）取一个字，动辄要几百个周期。这个时间差就是「存储器墙」。CSAPP 第 6 章给出的解法是存储器层次结构（memory hierarchy）——用一层层更小更快、也更">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-12-25T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.698Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="局部性">
+<meta property="article:tag" content="存储器层次">
+<meta property="article:tag" content="Cache">
+<meta property="article:tag" content="CSAPP">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "存储器层次与 Cache",
+  "url": "https://hespethorn.github.io/posts/capp0106/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-12-25T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.698Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0106/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '存储器层次与 Cache',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">存储器层次与 Cache</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">存储器层次与 Cache</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="引子：CPU-跑得飞快，内存却拖了后腿"><a href="#引子：CPU-跑得飞快，内存却拖了后腿" class="headerlink" title="引子：CPU 跑得飞快，内存却拖了后腿"></a>引子：CPU 跑得飞快，内存却拖了后腿</h2><p>上一篇我们聊了处理器怎么靠流水线把 IPC 怼上去。但有个尴尬的事实：CPU 算得再快，数据要是还在慢吞吞的内存里，它也只能干等。</p>
+<p>现代 CPU 一个时钟周期能执行好几条指令，而从主存（DRAM）取一个字，动辄要几百个周期。这个时间差就是「存储器墙」。CSAPP 第 6 章给出的解法是<strong>存储器层次结构（memory hierarchy）</strong>——用一层层更小更快、也更贵的存储，把慢存储的延迟「藏」起来。而其中最关键的一层，就是 <strong>Cache</strong>。</p>
+<blockquote>
+<p>本质一句话：<strong>Cache 之所以能加速，靠的不是魔法，而是「程序大多在反复访问同一小块数据」这个事实——局部性原理。</strong></p>
+</blockquote>
+<p>本文从存储技术讲起，落到 Cache 的地址划分、映射方式、缺失类型和写策略，把第 6 章的骨架讲透。</p>
+<hr>
+<h2 id="1-为什么要分层：一个金字塔"><a href="#1-为什么要分层：一个金字塔" class="headerlink" title="1. 为什么要分层：一个金字塔"></a>1. 为什么要分层：一个金字塔</h2><p>存储器的核心矛盾是：<strong>快的东西贵且小，大的东西便宜但慢</strong>。于是系统设计者把它们叠成金字塔——越往上越快越贵越小，越往下越慢越便宜越大。</p>
+<pre><code class="highlight mermaid">graph TD
+    L0[&quot;寄存器&lt;br/&gt;&amp;lt;1ns · 几百字节&quot;]
+    L1[&quot;L1 Cache&lt;br/&gt;~1ns · 几十 KB&quot;]
+    L2[&quot;L2 Cache&lt;br/&gt;~3ns · 几百 KB&quot;]
+    L3[&quot;L3 Cache&lt;br/&gt;~10ns · 几 MB&quot;]
+    MM[&quot;主存 DRAM&lt;br/&gt;~100ns · 几 GB&quot;]
+    SD[&quot;本地磁盘 SSD/HDD&lt;br/&gt;~10ms · 几 TB&quot;]
+    subgraph 速度递减_容量递增
+        L0 --- L1 --- L2 --- L3 --- MM --- SD
+    end</code></pre>
+
+<p>每一层都把自己下面那层的「热门数据」缓存上来。CPU 要数据时，先问 L1，没有问 L2，再没有问 L3、主存……逐层下探。只要<strong>绝大多数访问都命中在高层</strong>，整体感觉就像只用最快那层一样。</p>
+<hr>
+<h2 id="2-三种存储技术：SRAM-DRAM-磁盘"><a href="#2-三种存储技术：SRAM-DRAM-磁盘" class="headerlink" title="2. 三种存储技术：SRAM &#x2F; DRAM &#x2F; 磁盘"></a>2. 三种存储技术：SRAM &#x2F; DRAM &#x2F; 磁盘</h2><p>Cache 和寄存器用 <strong>SRAM</strong>（静态随机存取存储器），主存用 <strong>DRAM</strong>（动态），磁盘是磁&#x2F;闪存。它们的物理差异决定了成本和速度：</p>
+<table>
+<thead>
+<tr>
+<th>技术</th>
+<th>存储单元</th>
+<th>是否需要刷新</th>
+<th>每比特成本</th>
+<th>典型访问时间</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>SRAM</td>
+<td>6 个晶体管锁存</td>
+<td>否</td>
+<td>高</td>
+<td>~1ns</td>
+<td>寄存器、L1–L3 Cache</td>
+</tr>
+<tr>
+<td>DRAM</td>
+<td>1 个晶体管 + 1 电容</td>
+<td>是（漏电）</td>
+<td>中</td>
+<td>~100ns</td>
+<td>主存</td>
+</tr>
+<tr>
+<td>磁盘&#x2F;SSD</td>
+<td>磁畴 &#x2F; 浮栅</td>
+<td>否</td>
+<td>低</td>
+<td>~10ms &#x2F; ~100μs</td>
+<td>持久化存储</td>
+</tr>
+</tbody></table>
+<p>SRAM 靠双稳态电路「记住」比特，不需要刷新，所以快但占面积、贵；DRAM 用电容存电荷，电容会漏电，得周期性「刷新」，慢一截但密度高。这就是为什么 Cache 用 SRAM 而主存用 DRAM。</p>
+<hr>
+<h2 id="3-一切的基石：局部性原理"><a href="#3-一切的基石：局部性原理" class="headerlink" title="3. 一切的基石：局部性原理"></a>3. 一切的基石：局部性原理</h2><p>Cache 能成立，前提是程序存在<strong>局部性（locality）</strong>：</p>
+<ul>
+<li><strong>时间局部性</strong>：刚访问过的东西，很可能马上再用（循环变量、函数栈帧）。</li>
+<li><strong>空间局部性</strong>：访问某个地址时，它附近的地址也大概率会被访问（数组遍历、指令顺序执行）。</li>
+</ul>
+<p>下面用一段 Python 模拟 C 的「扁平数组」行主序 vs 列主序求和，直观看局部性的威力（行主序连续访问相邻元素，列主序每次跨 <code>N</code> 个元素跳着访问，把 Cache 行浪费光）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time, random</span><br><span class="line">N = <span class="number">2000</span></span><br><span class="line">M = [random.random() <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(N * N)]   <span class="comment"># 扁平一维数组，模拟 C 的连续内存</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sum_row_major</span>(<span class="params">M, N</span>):</span><br><span class="line">    s = <span class="number">0.0</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(N):</span><br><span class="line">        <span class="keyword">for</span> j <span class="keyword">in</span> <span class="built_in">range</span>(N):</span><br><span class="line">            s += M[i * N + j]      <span class="comment"># 连续访问，空间局部性好</span></span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sum_col_major</span>(<span class="params">M, N</span>):</span><br><span class="line">    s = <span class="number">0.0</span></span><br><span class="line">    <span class="keyword">for</span> j <span class="keyword">in</span> <span class="built_in">range</span>(N):</span><br><span class="line">        <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(N):</span><br><span class="line">            s += M[i * N + j]      <span class="comment"># 大步长跳跃，缓存行几乎每次只用一个元素</span></span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line">t0 = time.perf_counter(); sum_row_major(M, N); t1 = time.perf_counter()</span><br><span class="line">t2 = time.perf_counter(); sum_col_major(M, N); t3 = time.perf_counter()</span><br><span class="line">row_t, col_t = t1 - t0, t3 - t2</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;row-major: %.4f s&quot;</span> % row_t)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;col-major: %.4f s&quot;</span> % col_t)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;col/row 耗时比 = %.2f x&quot;</span> % (col_t / row_t))</span><br></pre></td></tr></table></figure>
+
+<p>输出（本机实测）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">row-major: 0.1296 s</span><br><span class="line">col-major: 0.3357 s</span><br><span class="line">col/row 耗时比 = 2.59 x</span><br></pre></td></tr></table></figure>
+
+<p>同一个数组、同样多的加法，只是遍历顺序不同，列主序就慢了 <strong>2.5 倍</strong>。这就是空间局部性被糟蹋的后果。写 C&#x2F;C++ 时 <code>for i for j</code> 把最内层循环放在列上，是性能基本盘。</p>
+<hr>
+<h2 id="4-Cache-怎么工作：把地址切成三块"><a href="#4-Cache-怎么工作：把地址切成三块" class="headerlink" title="4. Cache 怎么工作：把地址切成三块"></a>4. Cache 怎么工作：把地址切成三块</h2><p>Cache 把主存按「块（block &#x2F; line）」为单位搬运，典型块大小 64 字节。对于一个 <code>m</code> 位的内存地址，Cache 把它切成三段：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>块偏移 offset</td>
+<td>块内字节位置</td>
+<td>在 64B 块里定位具体字节，占 <code>log2(64)=6</code> 位</td>
+</tr>
+<tr>
+<td>组索引 index</td>
+<td>该地址该去哪个组</td>
+<td>直接定位 Cache 组，避免全表扫描</td>
+</tr>
+<tr>
+<td>标记 tag</td>
+<td>组内到底放的是哪一块</td>
+<td>比对确认是不是想要的那个块</td>
+</tr>
+</tbody></table>
+<pre><code class="highlight mermaid">graph LR
+    A[&quot;m 位内存地址&quot;] --&gt; B[&quot;tag 标记&quot;]
+    A --&gt; C[&quot;index 组索引&quot;]
+    A --&gt; D[&quot;offset 块内偏移&quot;]
+    C --&gt; E[&quot;定位到某个 Cache 组&quot;]
+    B --&gt; F[&quot;与该组有效行的 tag 比对&quot;]
+    F --&gt;|匹配且有效| G[&quot;命中：按 offset 取数&quot;]
+    F --&gt;|不匹配| H[&quot;缺失：下探下层并填块&quot;]</code></pre>
+
+<p><strong>命中（hit）</strong>：tag 对上了，直接从 Cache 取数，几十个周期省下。<br><strong>缺失（miss）</strong>：tag 对不上或组为空，得去下层取块（可能先驱逐一个旧块），再返回数据。</p>
+<hr>
+<h2 id="5-三种映射方式：放哪儿的取舍"><a href="#5-三种映射方式：放哪儿的取舍" class="headerlink" title="5. 三种映射方式：放哪儿的取舍"></a>5. 三种映射方式：放哪儿的取舍</h2><p>一个新块该放进 Cache 的哪个位置？这是映射策略要回答的：</p>
+<pre><code class="highlight mermaid">graph TD
+    DM[&quot;直接映射&lt;br/&gt;Direct-Mapped&lt;br/&gt;块只能去固定槽&lt;br/&gt;硬件简单·易冲突&quot;]
+    SA[&quot;组相联&lt;br/&gt;Set-Associative&lt;br/&gt;块去固定组·组内任选&lt;br/&gt;折中·主流&quot;]
+    FA[&quot;全相联&lt;br/&gt;Fully-Associative&lt;br/&gt;块去任意位置&lt;br/&gt;最灵活·查找最贵&quot;]
+    DM --- SA --- FA</code></pre>
+
+<ul>
+<li><strong>直接映射</strong>：<code>组索引 = 地址 mod 组数</code>，每个块只有一个归宿。硬件最简单，但不同地址若映射到同一槽会<strong>互相驱逐</strong>（冲突缺失，见第 6 节 B 序列）。</li>
+<li><strong>组相联（如 8-way）</strong>：把 Cache 分成若干组，组内多个槽，块先按 index 选组，再在组内任选空槽。是灵活性与成本的折中，现代 CPU 的 L1&#x2F;L2 几乎都用这个。</li>
+<li><strong>全相联</strong>：块可去任意位置，命中率最高，但每次都要比对所有 tag，硬件代价爆炸，一般只用在 TLB 或小容量场景。</li>
+</ul>
+<hr>
+<h2 id="6-缺失的三种原因（附迷你-Cache-模拟器）"><a href="#6-缺失的三种原因（附迷你-Cache-模拟器）" class="headerlink" title="6. 缺失的三种原因（附迷你 Cache 模拟器）"></a>6. 缺失的三种原因（附迷你 Cache 模拟器）</h2><p>不是所有缺失都一样，教材把缺失分成三类：</p>
+<ul>
+<li><strong>冷缺失（cold &#x2F; compulsory）</strong>：第一次访问某块，必然 miss，谁也躲不掉。</li>
+<li><strong>容量缺失（capacity）</strong>：Cache 太小，装不下工作集，有用的块被挤出去又得取回来。</li>
+<li><strong>冲突缺失（conflict）</strong>：直接映射下，多个常用块抢同一个槽，反复互相驱逐——即使 Cache 还有大量空位也会 miss。</li>
+</ul>
+<p>下面写个极简直接映射模拟器，跑两组访问序列，把「局部性好」和「冲突颠簸」的差距拉满：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">CACHE_SLOTS = <span class="number">4</span>  <span class="comment"># 4 个直接映射槽</span></span><br><span class="line">cache = &#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">run</span>(<span class="params">seq</span>):</span><br><span class="line">    cache.clear()</span><br><span class="line">    hits = misses = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> a <span class="keyword">in</span> seq:</span><br><span class="line">        slot = a % CACHE_SLOTS</span><br><span class="line">        <span class="keyword">if</span> slot <span class="keyword">in</span> cache <span class="keyword">and</span> cache[slot] == a:</span><br><span class="line">            r = <span class="string">&quot;hit&quot;</span>; hits += <span class="number">1</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            cache[slot] = a</span><br><span class="line">            r = <span class="string">&quot;miss&quot;</span>; misses += <span class="number">1</span></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;addr=%2d -&gt; %s&quot;</span> % (a, r))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;  命中率 = %.0f%% (%d hit / %d miss)\n&quot;</span> % (<span class="number">100</span>*hits/(hits+misses), hits, misses))</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;-- 序列 A：良好时间局部性 --&quot;</span>)</span><br><span class="line">run([<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">3</span>, <span class="number">0</span>])</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;-- 序列 B：冲突颠簸（0 与 4 同槽） --&quot;</span>)</span><br><span class="line">run([<span class="number">0</span>, <span class="number">4</span>, <span class="number">0</span>, <span class="number">4</span>, <span class="number">1</span>, <span class="number">5</span>, <span class="number">1</span>, <span class="number">5</span>, <span class="number">0</span>, <span class="number">4</span>])</span><br></pre></td></tr></table></figure>
+
+<p>输出（本机实测）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">-- 序列 A：良好时间局部性 --</span><br><span class="line">addr= 0 -&gt; miss</span><br><span class="line">addr= 0 -&gt; hit</span><br><span class="line">addr= 0 -&gt; hit</span><br><span class="line">addr= 1 -&gt; miss</span><br><span class="line">addr= 1 -&gt; hit</span><br><span class="line">addr= 2 -&gt; miss</span><br><span class="line">addr= 2 -&gt; hit</span><br><span class="line">addr= 3 -&gt; miss</span><br><span class="line">addr= 3 -&gt; hit</span><br><span class="line">addr= 0 -&gt; hit</span><br><span class="line">  命中率 = 60% (6 hit / 4 miss)</span><br><span class="line"></span><br><span class="line">-- 序列 B：冲突颠簸（0 与 4 同槽） --</span><br><span class="line">addr= 0 -&gt; miss</span><br><span class="line">addr= 4 -&gt; miss</span><br><span class="line">addr= 0 -&gt; miss</span><br><span class="line">addr= 4 -&gt; miss</span><br><span class="line">addr= 1 -&gt; miss</span><br><span class="line">addr= 5 -&gt; miss</span><br><span class="line">addr= 1 -&gt; miss</span><br><span class="line">addr= 5 -&gt; miss</span><br><span class="line">addr= 0 -&gt; miss</span><br><span class="line">addr= 4 -&gt; miss</span><br><span class="line">  命中率 = 0% (0 hit / 10 miss)</span><br></pre></td></tr></table></figure>
+
+<p>序列 A 反复访问同一块，命中率 60%；序列 B 里 <code>0</code> 和 <code>4</code> 都模 4 余 0、抢同一个槽，每次都把对方踢出去，于是 <strong>100% 缺失</strong>——明明 4 个槽里只住了 2 个地址，却全程 miss。这正是冲突缺失的教科书现场，也是为什么现代 Cache 普遍改组相联。</p>
+<hr>
+<h2 id="7-写策略：改了数据怎么办"><a href="#7-写策略：改了数据怎么办" class="headerlink" title="7. 写策略：改了数据怎么办"></a>7. 写策略：改了数据怎么办</h2><p>读好办，写就麻烦了：Cache 里的副本和主存不一致，何时同步回去？</p>
+<pre><code class="highlight mermaid">graph TD
+    W[&quot;处理器写 Cache&quot;] --&gt; Q&#123;&quot;写命中?&quot;&#125;
+    Q --&gt;|是| P&#123;&quot;策略&quot;&#125;
+    P --&gt;|直写 Write-Through| WT[&quot;同时写 Cache 和主存&lt;br/&gt;简单·但每次写都占总线&quot;]
+    P --&gt;|写回 Write-Back| WB[&quot;只改 Cache·标脏位&lt;br/&gt;被驱逐时才写回主存&lt;br/&gt;省带宽·需维护脏位&quot;]
+    Q --&gt;|否| A&#123;&quot;写分配?&quot;&#125;
+    A --&gt;|写分配| WA[&quot;先把缺失块取进 Cache&lt;br/&gt;再按上面策略写&quot;]
+    A --&gt;|写不分配| WNA[&quot;直接写下层&lt;br/&gt;不载入 Cache&quot;]</code></pre>
+
+<ul>
+<li><strong>直写（write-through）</strong>：写 Cache 的同时写主存，永远一致，但每次写都占内存总线，带宽压力大。</li>
+<li><strong>写回（write-back）</strong>：只改 Cache，给块打一个「脏（dirty）」标记，等这个块要被驱逐时才写回主存。省了大量总线流量，是主流方案，代价是要跟踪脏位。</li>
+<li><strong>写分配 &#x2F; 写不分配</strong>：缺失时是否先把块载入 Cache。通常写回配写分配、直写配写不分配，但这不是硬绑定。</li>
+</ul>
+<hr>
+<h2 id="🐾-小结"><a href="#🐾-小结" class="headerlink" title="🐾 小结"></a>🐾 小结</h2><ul>
+<li>存储器墙靠<strong>层次结构</strong>缓解：快而贵的小存储缓存慢而便宜的大存储。</li>
+<li>层次能生效的根基是<strong>局部性</strong>（时间 + 空间），第 3 节的行&#x2F;列主序 2.5 倍差距就是证据。</li>
+<li>Cache 把地址拆成 <strong>tag &#x2F; index &#x2F; offset</strong> 三段来定位；命中省几百周期，缺失下探。</li>
+<li>映射方式在「硬件成本 ↔ 冲突率」之间权衡，现代多用<strong>组相联</strong>。</li>
+<li>缺失分<strong>冷 &#x2F; 容量 &#x2F; 冲突</strong>三类，其中冲突缺失纯属映射策略的锅，可用组相联消解。</li>
+<li>写有两对选择：<strong>直写 vs 写回</strong>、<strong>写分配 vs 写不分配</strong>，主流是「写回 + 写分配」。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>直接映射</th>
+<th>组相联</th>
+<th>全相联</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>块的去处</td>
+<td>唯一固定槽</td>
+<td>固定组内任选</td>
+<td>任意位置</td>
+</tr>
+<tr>
+<td>冲突缺失</td>
+<td>高</td>
+<td>中</td>
+<td>低</td>
+</tr>
+<tr>
+<td>查找硬件</td>
+<td>最便宜</td>
+<td>适中</td>
+<td>最贵</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>简单_cache</td>
+<td>L1&#x2F;L2&#x2F;L3</td>
+<td>TLB</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>下一篇进入 <strong>《虚拟内存》</strong>——把「地址空间」这件事，从 Cache 的物理块，拉到进程视角的虚拟地址，看分页、TLB 和缺页怎么把内存用出花来。</p>
+</blockquote>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0106/">https://hespethorn.github.io/posts/capp0106/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%B1%80%E9%83%A8%E6%80%A7/">局部性</a><a class="post-meta__tags" href="/tags/%E5%AD%98%E5%82%A8%E5%99%A8%E5%B1%82%E6%AC%A1/">存储器层次</a><a class="post-meta__tags" href="/tags/Cache/">Cache</a><a class="post-meta__tags" href="/tags/CSAPP/">CSAPP</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

@@ -1,0 +1,731 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>处理器架构与流水线 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="上一章我们看 gcc -Og -S 的输出，一条 C 语句常变成三五行汇编。但如果你以为 CPU 是&quot;执行完一条再取一条&quot;，那所有性能直觉都会跑偏：现代处理器在同一时刻手里至少攥着五条指令。 最典型的一幕是这样两行： 12mrmovq 8(%rsp), %rax     # 从内存读一个值addq   %rax, %rbx        # 立刻用它  第二条在&quot;执行">
+<meta property="og:type" content="article">
+<meta property="og:title" content="处理器架构与流水线">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0105/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="上一章我们看 gcc -Og -S 的输出，一条 C 语句常变成三五行汇编。但如果你以为 CPU 是&quot;执行完一条再取一条&quot;，那所有性能直觉都会跑偏：现代处理器在同一时刻手里至少攥着五条指令。 最典型的一幕是这样两行： 12mrmovq 8(%rsp), %rax     # 从内存读一个值addq   %rax, %rbx        # 立刻用它  第二条在&quot;执行">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-12-22T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.698Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="流水线">
+<meta property="article:tag" content="Y86-64">
+<meta property="article:tag" content="数据冒险">
+<meta property="article:tag" content="HCL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "处理器架构与流水线",
+  "url": "https://hespethorn.github.io/posts/capp0105/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-12-22T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.698Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0105/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '处理器架构与流水线',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">处理器架构与流水线</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">处理器架构与流水线</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">5.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>23mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>上一章我们看 <code>gcc -Og -S</code> 的输出，一条 C 语句常变成三五行汇编。但如果你以为 CPU 是&quot;执行完一条再取一条&quot;，那所有性能直觉都会跑偏：现代处理器在同一时刻手里至少攥着五条指令。</p>
+<p>最典型的一幕是这样两行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">mrmovq 8(%rsp), %rax     # 从内存读一个值</span><br><span class="line">addq   %rax, %rbx        # 立刻用它</span><br></pre></td></tr></table></figure>
+
+<p>第二条在&quot;执行&quot;阶段就要用 <code>%rax</code>，可第一条的结果还卡在&quot;访存&quot;阶段。按最朴素的算法，CPU 得干等两拍；实际只停了一拍。<strong>这一章要拆的就是这个窟窿是怎么被填上的</strong>——顺带回答另一个问题：为什么整个流水线里最贵的指令是 <code>jne</code>。</p>
+<h2 id="1-ISA-是合同，微架构是实现"><a href="#1-ISA-是合同，微架构是实现" class="headerlink" title="1. ISA 是合同，微架构是实现"></a>1. ISA 是合同，微架构是实现</h2><p>先把两个容易混的词分清：</p>
+<ul>
+<li><strong>ISA（指令集架构）</strong>：程序员看到的一切——有哪些指令、有哪些寄存器、内存怎么寻址、异常怎么触发。它是硬软件之间的<strong>合同</strong>。</li>
+<li><strong>微架构</strong>：这份合同的一种实现。同样的 x86-64 合同，Intel 用乱序超标量实现，AMD 用另一套，结果都能跑同一个二进制。</li>
+</ul>
+<p>CSAPP 为了讲清微架构，自己造了一个教学 ISA —— <strong>Y86-64</strong>。它砍掉了 x86 里所有&quot;历史包袱&quot;（变长指令的极端情况、段寄存器、复杂的寻址模式），只留下讲流水线必需的部分。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph CPU[&quot;CPU：程序员可见状态&quot;]
+        PC[&quot;PC&lt;br/&gt;下一条指令的地址&quot;]
+        RF[&quot;寄存器文件（15 个）&lt;br/&gt;%rax %rcx %rdx %rbx&lt;br/&gt;%rsp %rbp %rsi %rdi&lt;br/&gt;%r8 … %r14&quot;]
+        CC[&quot;条件码&lt;br/&gt;ZF  SF  OF&quot;]
+        ST[&quot;Stat&lt;br/&gt;AOK / HLT / ADR / INS&quot;]
+    end
+    MEM[(&quot;内存&lt;br/&gt;指令 · 数据 · 栈&quot;)]
+    PC --&gt;|&quot;取指：按 icode 读若干字节&quot;| MEM
+    RF --&gt;|&quot;load：从内存读到寄存器&quot;| MEM
+    MEM --&gt;|&quot;store：寄存器写回内存&quot;| RF
+    ST -.-&gt;|&quot;异常状态，决定是否继续&quot;| PC</code></pre>
+
+<p>这张图就是全部&quot;可见状态&quot;。<strong>没画出来的东西——流水线寄存器、旁路网络、预测器——都是微架构的自由发挥空间</strong>，合同里一个字都没提。</p>
+<h2 id="2-Y86-64：一个-够用就好-的教学-ISA"><a href="#2-Y86-64：一个-够用就好-的教学-ISA" class="headerlink" title="2. Y86-64：一个&quot;够用就好&quot;的教学 ISA"></a>2. Y86-64：一个&quot;够用就好&quot;的教学 ISA</h2><p>指令不多，十四类，足以覆盖算术、访存、跳转、过程调用：</p>
+<table>
+<thead>
+<tr>
+<th>icode</th>
+<th>指令</th>
+<th>说明</th>
+<th>长度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0x0</td>
+<td><code>halt</code></td>
+<td>停机</td>
+<td>1</td>
+</tr>
+<tr>
+<td>0x1</td>
+<td><code>nop</code></td>
+<td>空操作</td>
+<td>1</td>
+</tr>
+<tr>
+<td>0x2</td>
+<td><code>rrmovq</code>（ifun&#x3D;0）&#x2F; <code>cmovXX</code>（ifun&#x3D;1～6）</td>
+<td>寄存器间传送</td>
+<td>2</td>
+</tr>
+<tr>
+<td>0x3</td>
+<td><code>irmovq</code></td>
+<td>立即数 → 寄存器</td>
+<td>10</td>
+</tr>
+<tr>
+<td>0x4 &#x2F; 0x5</td>
+<td><code>rmmovq</code> &#x2F; <code>mrmovq</code></td>
+<td>寄存器 ↔ 内存</td>
+<td>10</td>
+</tr>
+<tr>
+<td>0x6</td>
+<td><code>OPq</code></td>
+<td><code>addq</code> <code>subq</code> <code>andq</code> <code>xorq</code></td>
+<td>2</td>
+</tr>
+<tr>
+<td>0x7</td>
+<td><code>jXX</code></td>
+<td><code>jmp</code> <code>je</code> <code>jne</code> <code>jl</code> <code>jge</code> …</td>
+<td>9</td>
+</tr>
+<tr>
+<td>0x8</td>
+<td><code>call</code></td>
+<td>调用</td>
+<td>9</td>
+</tr>
+<tr>
+<td>0x9</td>
+<td><code>ret</code>（ifun&#x3D;0）</td>
+<td>返回</td>
+<td>1</td>
+</tr>
+<tr>
+<td>0xA &#x2F; 0xB</td>
+<td><code>pushq</code> &#x2F; <code>popq</code></td>
+<td>压栈 &#x2F; 出栈</td>
+<td>2</td>
+</tr>
+</tbody></table>
+<p>编码规则只有一句话：<strong>第 1 字节的高 4 位是 icode，低 4 位是 ifun；第 2 字节高 4 位是 rA、低 4 位是 rB；需要常数的指令再跟 8 字节小端立即数。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph B[&quot;irmovq $15, %rbx 的 10 个字节&quot;]
+        direction LR
+        B0[&quot;第 1 字节　30&lt;br/&gt;icode=3（irmovq）&lt;br/&gt;ifun=0&quot;]
+        B1[&quot;第 2 字节　f3&lt;br/&gt;rA=F（不用）&lt;br/&gt;rB=3（%rbx）&quot;]
+        B2[&quot;第 3–10 字节&lt;br/&gt;0f 00 00 00 00 00 00 00&lt;br/&gt;立即数 15，小端&quot;]
+    end
+    B0 --- B1 --- B2</code></pre>
+
+<p>把编码规则写成二十行 Python，就能亲手验证教材图 4-2：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line">REG = &#123;n: i <span class="keyword">for</span> i, n <span class="keyword">in</span> <span class="built_in">enumerate</span>(</span><br><span class="line">    <span class="string">&quot;%rax %rcx %rdx %rbx %rsp %rbp %rsi %rdi %r8 %r9 %r10 %r11 %r12 %r13 %r14&quot;</span>.split())&#125;</span><br><span class="line">REG[<span class="string">&quot;F&quot;</span>] = <span class="number">15</span>                                    <span class="comment"># 0xF 表示&quot;没有寄存器&quot;</span></span><br><span class="line">JMP = &#123;<span class="string">&quot;jmp&quot;</span>: <span class="number">0</span>, <span class="string">&quot;jle&quot;</span>: <span class="number">1</span>, <span class="string">&quot;jl&quot;</span>: <span class="number">2</span>, <span class="string">&quot;je&quot;</span>: <span class="number">3</span>, <span class="string">&quot;jne&quot;</span>: <span class="number">4</span>, <span class="string">&quot;jge&quot;</span>: <span class="number">5</span>, <span class="string">&quot;jg&quot;</span>: <span class="number">6</span>&#125;</span><br><span class="line">OP = &#123;<span class="string">&quot;addq&quot;</span>: <span class="number">0</span>, <span class="string">&quot;subq&quot;</span>: <span class="number">1</span>, <span class="string">&quot;andq&quot;</span>: <span class="number">2</span>, <span class="string">&quot;xorq&quot;</span>: <span class="number">3</span>&#125;</span><br><span class="line">CMOV = &#123;<span class="string">&quot;rrmovq&quot;</span>: <span class="number">0</span>, <span class="string">&quot;cmovle&quot;</span>: <span class="number">1</span>, <span class="string">&quot;cmovl&quot;</span>: <span class="number">2</span>, <span class="string">&quot;cmove&quot;</span>: <span class="number">3</span>,</span><br><span class="line">        <span class="string">&quot;cmovne&quot;</span>: <span class="number">4</span>, <span class="string">&quot;cmovge&quot;</span>: <span class="number">5</span>, <span class="string">&quot;cmovg&quot;</span>: <span class="number">6</span>&#125;</span><br><span class="line">LEN = &#123;<span class="number">0x0</span>: <span class="number">1</span>, <span class="number">0x1</span>: <span class="number">1</span>, <span class="number">0x2</span>: <span class="number">2</span>, <span class="number">0x3</span>: <span class="number">10</span>, <span class="number">0x4</span>: <span class="number">10</span>, <span class="number">0x5</span>: <span class="number">10</span>, <span class="number">0x6</span>: <span class="number">2</span>, <span class="number">0x7</span>: <span class="number">9</span>,</span><br><span class="line">       <span class="number">0x8</span>: <span class="number">9</span>, <span class="number">0x9</span>: <span class="number">1</span>, <span class="number">0xA</span>: <span class="number">2</span>, <span class="number">0xB</span>: <span class="number">2</span>&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">icode_of</span>(<span class="params">op</span>):                                <span class="comment"># 助记符 → icode，用来查指令长度</span></span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> (<span class="string">&quot;halt&quot;</span>, <span class="string">&quot;nop&quot;</span>, <span class="string">&quot;ret&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span> &#123;<span class="string">&quot;halt&quot;</span>: <span class="number">0x0</span>, <span class="string">&quot;nop&quot;</span>: <span class="number">0x1</span>, <span class="string">&quot;ret&quot;</span>: <span class="number">0x9</span>&#125;[op]</span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> OP:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0x6</span></span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> CMOV:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0x2</span></span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> JMP:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0x7</span></span><br><span class="line">    <span class="keyword">return</span> &#123;<span class="string">&quot;irmovq&quot;</span>: <span class="number">0x3</span>, <span class="string">&quot;rmmovq&quot;</span>: <span class="number">0x4</span>, <span class="string">&quot;mrmovq&quot;</span>: <span class="number">0x5</span>, <span class="string">&quot;call&quot;</span>: <span class="number">0x8</span>,</span><br><span class="line">            <span class="string">&quot;pushq&quot;</span>: <span class="number">0xA</span>, <span class="string">&quot;popq&quot;</span>: <span class="number">0xB</span>&#125;[op]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">encode</span>(<span class="params">body, labels=<span class="literal">None</span></span>):</span><br><span class="line">    labels = labels <span class="keyword">or</span> &#123;&#125;</span><br><span class="line">    op, *rest = body.replace(<span class="string">&quot;,&quot;</span>, <span class="string">&quot; &quot;</span>).split()</span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> (<span class="string">&quot;halt&quot;</span>, <span class="string">&quot;nop&quot;</span>, <span class="string">&quot;ret&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([&#123;<span class="string">&quot;halt&quot;</span>: <span class="number">0x00</span>, <span class="string">&quot;nop&quot;</span>: <span class="number">0x10</span>, <span class="string">&quot;ret&quot;</span>: <span class="number">0x90</span>&#125;[op]])</span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> OP:                                  <span class="comment"># 2 字节：[6x][rA:rB]</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0x60</span> | OP[op], (REG[rest[<span class="number">0</span>]] &lt;&lt; <span class="number">4</span>) | REG[rest[<span class="number">1</span>]]])</span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> CMOV:                                <span class="comment"># 2 字节：[2x][rA:rB]</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0x20</span> | CMOV[op], (REG[rest[<span class="number">0</span>]] &lt;&lt; <span class="number">4</span>) | REG[rest[<span class="number">1</span>]]])</span><br><span class="line">    <span class="keyword">if</span> op == <span class="string">&quot;irmovq&quot;</span>:                            <span class="comment"># 10 字节：[30][F:rB][8 字节立即数]</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0x30</span>, <span class="number">0xF0</span> | REG[rest[<span class="number">1</span>]]]) + \</span><br><span class="line">            <span class="built_in">int</span>(rest[<span class="number">0</span>][<span class="number">1</span>:]).to_bytes(<span class="number">8</span>, <span class="string">&quot;little&quot;</span>, signed=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> JMP:                                 <span class="comment"># 9 字节：[7x][8 字节绝对地址]</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0x70</span> | JMP[op]]) + labels[rest[<span class="number">0</span>]].to_bytes(<span class="number">8</span>, <span class="string">&quot;little&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> op == <span class="string">&quot;call&quot;</span>:                              <span class="comment"># 9 字节：[80][8 字节绝对地址]</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0x80</span>]) + labels[rest[<span class="number">0</span>]].to_bytes(<span class="number">8</span>, <span class="string">&quot;little&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> op <span class="keyword">in</span> (<span class="string">&quot;pushq&quot;</span>, <span class="string">&quot;popq&quot;</span>):                   <span class="comment"># 2 字节：[Ax/Bx][rA:F]</span></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0xA0</span> <span class="keyword">if</span> op == <span class="string">&quot;pushq&quot;</span> <span class="keyword">else</span> <span class="number">0xB0</span>, (REG[rest[<span class="number">0</span>]] &lt;&lt; <span class="number">4</span>) | <span class="number">15</span>])</span><br><span class="line">    r, m = (rest[<span class="number">1</span>], rest[<span class="number">0</span>]) <span class="keyword">if</span> op == <span class="string">&quot;mrmovq&quot;</span> <span class="keyword">else</span> (rest[<span class="number">0</span>], rest[<span class="number">1</span>])</span><br><span class="line">    off, base = m.split(<span class="string">&quot;(&quot;</span>)                      <span class="comment"># rmmovq/mrmovq：[4x/5x][rA:rB][8 字节偏移]</span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">bytes</span>([<span class="number">0x40</span> <span class="keyword">if</span> op == <span class="string">&quot;rmmovq&quot;</span> <span class="keyword">else</span> <span class="number">0x50</span>,</span><br><span class="line">                  (REG[r] &lt;&lt; <span class="number">4</span>) | REG[base.rstrip(<span class="string">&quot;)&quot;</span>)]]) + \</span><br><span class="line">        <span class="built_in">int</span>(off).to_bytes(<span class="number">8</span>, <span class="string">&quot;little&quot;</span>, signed=<span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> asm <span class="keyword">in</span> (<span class="string">&quot;irmovq $15, %rbx&quot;</span>, <span class="string">&quot;irmovq $-1, %rax&quot;</span>, <span class="string">&quot;addq %rax, %rbx&quot;</span>,</span><br><span class="line">            <span class="string">&quot;mrmovq 8(%rsp), %rdx&quot;</span>, <span class="string">&quot;rmmovq %rdx, 16(%rsp)&quot;</span>, <span class="string">&quot;pushq %rbp&quot;</span>):</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;<span class="subst">&#123;asm:&lt;<span class="number">24</span>&#125;</span><span class="subst">&#123;encode(asm).<span class="built_in">hex</span>(<span class="string">&#x27; &#x27;</span>)&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">irmovq $15, %rbx        30 f3 0f 00 00 00 00 00 00 00</span><br><span class="line">irmovq $-1, %rax        30 f0 ff ff ff ff ff ff ff ff</span><br><span class="line">addq %rax, %rbx         60 03</span><br><span class="line">mrmovq 8(%rsp), %rdx    50 24 08 00 00 00 00 00 00 00</span><br><span class="line">rmmovq %rdx, 16(%rsp)   40 24 10 00 00 00 00 00 00 00</span><br><span class="line">pushq %rbp              a0 5f</span><br></pre></td></tr></table></figure>
+
+<p>注意 <code>irmovq $-1, %rax</code> 那行：机器码里没有&quot;负号&quot;，<code>ff ff ff ff ff ff ff ff</code> 就是 -1 的补码，而小端序让最低位字节排在最前面。<strong>上一章讲的两件事，在这里第一次落到真实字节上。</strong></p>
+<p>再补一个标签扫描，就有了一个迷你汇编器。加上 <code>loop:</code> 标签解析两遍（第一遍记地址，第二遍编码），把求和循环翻出来：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 承接上面的表定义：第一遍定位标签，第二遍编码；SRC 是带 loop: 标签的求和循环</span></span><br><span class="line">addr, labels, parsed = <span class="number">0</span>, &#123;&#125;, []</span><br><span class="line"><span class="keyword">for</span> line <span class="keyword">in</span> SRC.strip(<span class="string">&quot;\n&quot;</span>).splitlines():</span><br><span class="line">    body = line.split(<span class="string">&quot;#&quot;</span>)[<span class="number">0</span>].strip()            <span class="comment"># 去掉行尾注释</span></span><br><span class="line">    <span class="keyword">if</span> <span class="string">&quot;:&quot;</span> <span class="keyword">in</span> body:                              <span class="comment"># 第一遍：记录标签地址</span></span><br><span class="line">        lab, body = body.split(<span class="string">&quot;:&quot;</span>, <span class="number">1</span>)</span><br><span class="line">        labels[lab.strip()] = addr</span><br><span class="line">        body = body.strip()</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> body:</span><br><span class="line">        <span class="keyword">continue</span></span><br><span class="line">    parsed.append((addr, body))</span><br><span class="line">    addr += LEN[icode_of(body.split()[<span class="number">0</span>])]       <span class="comment"># 按 icode 累加指令长度</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;<span class="subst">&#123;<span class="string">&#x27;地址&#x27;</span>:&lt;<span class="number">8</span>&#125;</span><span class="subst">&#123;<span class="string">&#x27;机器码&#x27;</span>:&lt;<span class="number">40</span>&#125;</span>汇编&quot;</span>)</span><br><span class="line"><span class="keyword">for</span> pc, body <span class="keyword">in</span> parsed:                          <span class="comment"># 第二遍：连同标签地址一起编码</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;0x<span class="subst">&#123;pc:03x&#125;</span>  <span class="subst">&#123;encode(body, labels).<span class="built_in">hex</span>(<span class="string">&#x27; &#x27;</span>):&lt;<span class="number">38</span>&#125;</span><span class="subst">&#123;body&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">地址      机器码                                     汇编</span><br><span class="line">0x000  30 f1 05 00 00 00 00 00 00 00         irmovq $5, %rcx</span><br><span class="line">0x00a  30 f3 00 00 00 00 00 00 00 00         irmovq $0, %rbx</span><br><span class="line">0x014  60 13                                 addq   %rcx, %rbx</span><br><span class="line">0x016  30 f2 01 00 00 00 00 00 00 00         irmovq $1, %rdx</span><br><span class="line">0x020  61 21                                 subq   %rdx, %rcx</span><br><span class="line">0x022  74 14 00 00 00 00 00 00 00            jne    loop</span><br><span class="line">0x02b  00                                    halt</span><br></pre></td></tr></table></figure>
+
+<p><code>addq</code> 只占 2 字节，<code>jne</code> 占 9 字节 —— <strong>取指级每次要按 icode 决定读 1、2、9 还是 10 个字节</strong>。这个&quot;变长取指&quot;就是后面流水线里 <code>split</code> 逻辑存在的全部理由。</p>
+<h2 id="3-HCL：用布尔式描述一块电路"><a href="#3-HCL：用布尔式描述一块电路" class="headerlink" title="3. HCL：用布尔式描述一块电路"></a>3. HCL：用布尔式描述一块电路</h2><p>硬件怎么描述？画电路图太啰嗦，写 Verilog 又跑偏了。CSAPP 用 HCL（Hardware Control Language）——<strong>看着像 C 的布尔表达式，其实是组合逻辑的写法</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"># 这条指令合法吗？只有列出的 icode 组合才算合法</span><br><span class="line">bool instr_valid = icode in &#123; IRRMOVQ, IIRMOVQ, IRMMOVQ, IMRMOVQ,</span><br><span class="line">                              IOPQ, IJXX, ICALL, IRET, IPUSHQ, IPOPQ &#125;;</span><br><span class="line"></span><br><span class="line"># 要读寄存器吗？pushq 只读 rA，popq 和 ret 只读 %rsp</span><br><span class="line">bool need_regids = icode in &#123; IRRMOVQ, IOPQ, IPUSHQ, IPOPQ,</span><br><span class="line">                              IIRMOVQ, IRMMOVQ, IMRMOVQ &#125;;</span><br><span class="line">bool need_valC  = icode in &#123; IIRMOVQ, IRMMOVQ, IMRMOVQ, IJXX, ICALL &#125;;</span><br><span class="line"></span><br><span class="line"># ALU 的 A 端输入从哪来（优先级：靠后的分支胜出）</span><br><span class="line">word srcA = [</span><br><span class="line">    icode in &#123; IRRMOVQ, IRMMOVQ, IOPQ, IPUSHQ &#125; : rA;</span><br><span class="line">    icode in &#123; IPOPQ, IRET &#125;                    : RESP;</span><br><span class="line">    1                                           : RNONE;   # 不用</span><br><span class="line">];</span><br></pre></td></tr></table></figure>
+
+<p>三个要点：<code>in &#123;&#125;</code> 是集合成员判断，<strong>综合出来是一堆与门&#x2F;或门</strong>；<code>[ ... ]</code> 是字级多路复用器（MUX），<strong>靠后的分支优先级更高</strong>；<code>1 :</code> 是&quot;其余情况&quot;的默认分支。<strong>HCL 里没有循环、没有变量赋值——因为电路里也没有。</strong></p>
+<h2 id="4-SEQ：一条指令，六个阶段"><a href="#4-SEQ：一条指令，六个阶段" class="headerlink" title="4. SEQ：一条指令，六个阶段"></a>4. SEQ：一条指令，六个阶段</h2><p>最直白的实现叫 SEQ：<strong>一个时钟周期执行完一条指令</strong>，内部拆成六个阶段。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    F[&quot;① 取指 Fetch&lt;br/&gt;按 PC 读最多 10 字节&lt;br/&gt;算出 valP = PC+1/2/9/10&quot;] --&gt; D[&quot;② 译码 Decode&lt;br/&gt;读 rA、rB 两个寄存器&lt;br/&gt;读出 valC 里的立即数&quot;]
+    D --&gt; E[&quot;③ 执行 Execute&lt;br/&gt;ALU 做算术、算访存地址&lt;br/&gt;更新 ZF SF OF&quot;]
+    E --&gt; M[&quot;④ 访存 Memory&lt;br/&gt;读或写内存&quot;]
+    M --&gt; W[&quot;⑤ 写回 Write back&lt;br/&gt;把 valE / valM 写进寄存器文件&quot;]
+    W --&gt; U[&quot;⑥ 更新 PC&lt;br/&gt;valP，或跳转目标&quot;]
+    U -.-&gt;|&quot;下一个时钟周期&quot;| F</code></pre>
+
+<p>SEQ 的关键数字：<strong>时钟周期必须覆盖最慢的那个阶段</strong>。教材里的硬件参数是取指 20ps、译码 12ps、执行 15ps、访存 25ps、写回 15ps（其中还要加上寄存器延迟）——于是取指和访存成了瓶颈。</p>
+<p>结果就是：每次只有一级在干活，另外五级闲着。<strong>一条指令 5 个周期，CPI &#x3D; 5。</strong> 这不比&quot;不做流水线&quot;更糟，但也谈不上快。</p>
+<h2 id="5-流水线：把六段叠起来"><a href="#5-流水线：把六段叠起来" class="headerlink" title="5. 流水线：把六段叠起来"></a>5. 流水线：把六段叠起来</h2><p>流水线的想法朴素到不像话：<strong>既然六个阶段用的是不同硬件，那就让六条指令各占一段，同时开工</strong>。</p>
+<pre><code class="highlight mermaid">gantt
+    title 同样 5 条指令：SEQ 要 25 拍，理想 5 级流水线只要 9 拍
+    dateFormat X
+    axisFormat %s
+    section SEQ 一次一条
+    SEQ-I1 :0, 5
+    SEQ-I2 :5, 10
+    SEQ-I3 :10, 15
+    section PIPE 流水重叠
+    PIPE-I1 :0, 5
+    PIPE-I2 :1, 6
+    PIPE-I3 :2, 7</code></pre>
+
+<p><strong>单条指令的延迟没变，还是 5 拍；变的是吞吐——稳态下每拍流出一条。</strong> 理想加速比是一条很干净的公式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">S = n·k / (k + n - 1)        n 条指令，k 级流水线</span><br></pre></td></tr></table></figure>
+
+<p>拿上面那 5 条有依赖的指令真跑一遍（转发开 &#x2F; 关各一次）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">STAGES = (<span class="string">&quot;F&quot;</span>, <span class="string">&quot;D&quot;</span>, <span class="string">&quot;E&quot;</span>, <span class="string">&quot;M&quot;</span>, <span class="string">&quot;W&quot;</span>)</span><br><span class="line"><span class="comment"># (汇编, 目的寄存器, 源A, 源B, 是否 load)</span></span><br><span class="line">PROG = [(<span class="string">&quot;mrmovq 8(%rsp), %rax&quot;</span>, <span class="string">&quot;rax&quot;</span>, <span class="string">&quot;rsp&quot;</span>, <span class="literal">None</span>,  <span class="literal">True</span>),</span><br><span class="line">        (<span class="string">&quot;addq   %rax, %rbx&quot;</span>,   <span class="string">&quot;rbx&quot;</span>, <span class="string">&quot;rax&quot;</span>, <span class="string">&quot;rbx&quot;</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;xorq   %rbx, %rcx&quot;</span>,   <span class="string">&quot;rcx&quot;</span>, <span class="string">&quot;rbx&quot;</span>, <span class="string">&quot;rcx&quot;</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;rmmovq %rcx, 16(%rsp)&quot;</span>, <span class="literal">None</span>, <span class="string">&quot;rcx&quot;</span>, <span class="string">&quot;rsp&quot;</span>, <span class="literal">False</span>),</span><br><span class="line">        (<span class="string">&quot;subq   %rsi, %rdi&quot;</span>,   <span class="string">&quot;rdi&quot;</span>, <span class="string">&quot;rsi&quot;</span>, <span class="string">&quot;rdi&quot;</span>, <span class="literal">False</span>)]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">min_gap</span>(<span class="params">prod, forward</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;生产者必须比消费者早几个周期开始，值才来得及被读到。&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> forward:</span><br><span class="line">        <span class="keyword">return</span> <span class="number">3</span>                  <span class="comment"># 只能等生产者 W 级写回寄存器文件</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">2</span> <span class="keyword">if</span> prod[<span class="number">4</span>] <span class="keyword">else</span> <span class="number">1</span>    <span class="comment"># 转发：ALU 结果 1 拍可用，load 要等 M 级末尾</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">simulate</span>(<span class="params">prog, forward</span>):</span><br><span class="line">    starts = [<span class="number">1</span>]</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, <span class="built_in">len</span>(prog)):</span><br><span class="line">        need = &#123;r <span class="keyword">for</span> r <span class="keyword">in</span> (prog[i][<span class="number">2</span>], prog[i][<span class="number">3</span>]) <span class="keyword">if</span> r&#125;</span><br><span class="line">        t = starts[-<span class="number">1</span>] + <span class="number">1</span></span><br><span class="line">        <span class="keyword">for</span> j <span class="keyword">in</span> <span class="built_in">range</span>(i):</span><br><span class="line">            <span class="keyword">if</span> need &amp; &#123;r <span class="keyword">for</span> r <span class="keyword">in</span> (prog[j][<span class="number">1</span>],) <span class="keyword">if</span> r&#125;:</span><br><span class="line">                t = <span class="built_in">max</span>(t, starts[j] + min_gap(prog[j], forward))</span><br><span class="line">        starts.append(t)</span><br><span class="line">    <span class="keyword">return</span> starts, starts[-<span class="number">1</span>] + <span class="built_in">len</span>(STAGES) - <span class="number">1</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> fwd <span class="keyword">in</span> (<span class="literal">True</span>, <span class="literal">False</span>):</span><br><span class="line">    starts, total = simulate(PROG, fwd)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;转发 <span class="subst">&#123;<span class="string">&#x27;开&#x27;</span> <span class="keyword">if</span> fwd <span class="keyword">else</span> <span class="string">&#x27;关&#x27;</span>&#125;</span>：总周期 <span class="subst">&#123;total&#125;</span>，&quot;</span></span><br><span class="line">          <span class="string">f&quot;CPI = <span class="subst">&#123;total / <span class="number">5</span>:<span class="number">.2</span>f&#125;</span>，相对 SEQ（25 拍）加速比 = <span class="subst">&#123;<span class="number">25</span> / total:<span class="number">.2</span>f&#125;</span>x&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">转发 开：总周期 10，CPI = 2.00，相对 SEQ（25 拍）加速比 = 2.50x</span><br><span class="line">转发 关：总周期 15，CPI = 3.00，相对 SEQ（25 拍）加速比 = 1.67x</span><br></pre></td></tr></table></figure>
+
+<p>同一段程序，<strong>开转发 10 拍、关转发 15 拍</strong>。差的 5 拍就是&quot;数据相关&quot;的全部代价——下面展开。</p>
+<p>顺便把理想公式也列一下，看看流水线的收益是怎么被&quot;指令数&quot;摊薄的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">     n     SEQ 周期       流水周期      加速比 S</span><br><span class="line">     1          5          5      1.000      ← 就一条指令，流水线毫无用处</span><br><span class="line">     5         25          9      2.778</span><br><span class="line">   100        500        104      4.808</span><br><span class="line">1000000    5000000    1000004      5.000      ← 无限逼近 k=5</span><br></pre></td></tr></table></figure>
+
+<p><strong>流水线只对&quot;指令流&quot;有效。</strong> 一条孤零零的指令，5 级流水线白搭。</p>
+<h2 id="6-三种冒险"><a href="#6-三种冒险" class="headerlink" title="6. 三种冒险"></a>6. 三种冒险</h2><p>重叠执行会撞车，撞的姿势只有三类：</p>
+<pre><code class="highlight mermaid">flowchart TD
+    H[&quot;流水线冒险 Hazard&quot;] --&gt; S[&quot;结构冒险 Structure&lt;br/&gt;硬件资源只有一个&quot;]
+    H --&gt; D[&quot;数据冒险 Data&lt;br/&gt;下一条要用的值还没算出来&quot;]
+    H --&gt; C[&quot;控制冒险 Control&lt;br/&gt;还不知道下一条该取哪&quot;]
+    S --&gt; S1[&quot;例：同一拍既要取指令又要读内存&lt;br/&gt;PIPE 的解法：指令内存与数据内存分开&quot;]
+    D --&gt; D1[&quot;例：addq %rax,%rbx 紧跟 subq %rbx,%rcx&lt;br/&gt;PIPE 的解法：转发 + 少量停顿&quot;]
+    C --&gt; C1[&quot;例：jne 的方向要到 E 级才知道&lt;br/&gt;PIPE 的解法：预测 + 猜错时插气泡&quot;]</code></pre>
+
+<p>结构冒险最好解决——<strong>加硬件</strong>。PIPE 的取指级和数据访存级各用一套内存端口，冲突就消失了。（真实 CPU 里对应的是分离的 L1I &#x2F; L1D。）</p>
+<p>数据冒险和控制冒险没法靠堆硬件消灭，只能靠<strong>转发、停顿、预测</strong>这三招。</p>
+<h2 id="7-数据冒险：转发与停顿"><a href="#7-数据冒险：转发与停顿" class="headerlink" title="7. 数据冒险：转发与停顿"></a>7. 数据冒险：转发与停顿</h2><p>核心洞察是：<strong>值其实早就有了，只是还没写回寄存器文件。</strong> <code>addq %rax, %rbx</code> 在 E 级末尾就算出了 <code>%rbx</code> 的新值，只是要等到 W 级才写回。既然 ALU 的输出线就摆在那里，为什么不让下一条指令直接从线上取值？</p>
+<pre><code class="highlight mermaid">flowchart TD
+    Q&#123;&quot;本条指令的源寄存器&lt;br/&gt;是不是前 1～2 条的目的寄存器？&quot;&#125;
+    Q --&gt;|&quot;不是&quot;| N[&quot;不相关，照常推进&quot;]
+    Q --&gt;|&quot;是，且生产者是 ALU 指令&quot;| F[&quot;转发 forwarding&lt;br/&gt;把生产者 E 级刚算出的 valE&lt;br/&gt;直接接到 ALU 输入端 —— 零停顿&quot;]
+    Q --&gt;|&quot;是，且生产者是 load&quot;| L[&quot;加载/使用冒险&lt;br/&gt;load 的值要到 M 级末尾才有效&lt;br/&gt;只能插 1 个气泡，再走 M→E 转发&quot;]
+    F --&gt; P[&quot;优先级：E 级的值最优先&lt;br/&gt;其次 M 级，最后才是寄存器文件&quot;]
+    L --&gt; P</code></pre>
+
+<p>转发在 HCL 里就是一组多路复用器，把三个候选值按优先级选一个：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">word aluA = [</span><br><span class="line">    icode in &#123; IRRMOVQ, IOPQ &#125; : valA;      # 普通寄存器操作数</span><br><span class="line">    icode in &#123; IIRMOVQ, IRMMOVQ, IMRMOVQ &#125; : valC;   # 立即数</span><br><span class="line">    icode in &#123; ICALL, IPUSHQ &#125; : -8;        # 压栈：%rsp 减 8</span><br><span class="line">    icode in &#123; IRET, IPOPQ &#125;   : 8;         # 出栈：%rsp 加 8</span><br><span class="line">];</span><br><span class="line"></span><br><span class="line"># 转发优先级：先看 E 级（最近算出来的），再看 M 级</span><br><span class="line">word valA_forwarded = [</span><br><span class="line">    dstE == srcA : valE;      # E→E 转发：值就在 ALU 输出线上</span><br><span class="line">    dstM == srcA : valM;      # M→E 转发：load 刚读出来的值</span><br><span class="line">    1            : valA;      # 都没有，老老实实读寄存器文件</span><br><span class="line">];</span><br></pre></td></tr></table></figure>
+
+<p><code>load</code> 为什么特殊？因为它的值<strong>直到 M 级结束才从内存里出来</strong>，转发也追不上。这一拍停顿无法避免，只能插入一个 <code>bubble</code>（气泡，即一条 <code>nop</code>）：</p>
+<ul>
+<li><strong>停顿（stall）</strong>：让 F 级、D 级寄存器<strong>保持原值</strong>，PC 不更新 —— 相当于把当前两条指令&quot;按住&quot;，等一拍。</li>
+<li><strong>气泡（bubble）</strong>：把 D 级寄存器置成 <code>nop</code>，让它流进 E、M、W 级时什么都不做。</li>
+</ul>
+<p>一句话总结：<strong>停顿是&quot;按住上游&quot;，气泡是&quot;给下游塞一个空指令&quot;。</strong> 加载&#x2F;使用冒险同时需要这两个动作，所以代码里那两行 HCL 是成对出现的。</p>
+<h2 id="8-控制冒险：最贵的两拍"><a href="#8-控制冒险：最贵的两拍" class="headerlink" title="8. 控制冒险：最贵的两拍"></a>8. 控制冒险：最贵的两拍</h2><p><code>jne loop</code> 这条指令，方向（跳不跳）要到 <strong>E 级</strong>才算出来，跳转目标地址也要到 E 级才知道。可 F 级不能闲着等——它必须每拍都取一条指令。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    F[&quot;F 级取指&lt;br/&gt;可我该取哪一条？&quot;] --&gt; P&#123;&quot;预测器：&lt;br/&gt;这条指令跳不跳？&quot;&#125;
+    P --&gt;|&quot;猜跳到 X&quot;| A[&quot;按 X 继续取指&quot;]
+    P --&gt;|&quot;猜顺序执行&quot;| B[&quot;按 valP 继续取指&quot;]
+    A --&gt; E&#123;&quot;E 级算出真实方向&quot;&#125;
+    B --&gt; E
+    E --&gt;|&quot;猜对了&quot;| OK[&quot;什么也不用做&lt;br/&gt;性能白赚&quot;]
+    E --&gt;|&quot;猜错了&quot;| BAD[&quot;取消已取入的 2 条指令&lt;br/&gt;插入气泡，代价 2 拍&quot;]</code></pre>
+
+<p>教材里的 PIPE 用最朴素的策略：<strong>跳转一律预测&quot;要跳&quot;</strong>（因为循环回边占绝大多数）。猜错的代价是 2 拍——而 <code>ret</code> 更麻烦，返回地址在内存里，必须等 M 级读出来才知道下一条取哪儿，所以在 <code>ret</code> 之后要停顿到确定为止。</p>
+<p><strong>这就是&quot;分支预测&quot;最初的样子：不是聪明，而是&quot;猜错也要猜&quot;。</strong> 现代 CPU 的预测器已经复杂到能记住几百条历史分支的模式，但本质没变——它们仍然会猜错，只是猜错的概率被压得很低。</p>
+<h2 id="9-离真实-CPU-还有多远"><a href="#9-离真实-CPU-还有多远" class="headerlink" title="9. 离真实 CPU 还有多远"></a>9. 离真实 CPU 还有多远</h2><p>PIPE 是教学模型。真实 CPU 在这条路上又走了三十年：</p>
+<p><strong>① 乱序执行。</strong> PIPE 里必须停顿的地方，真实 CPU 会<strong>把后面的无关指令先调到前面执行</strong>。这需要寄存器重命名（把逻辑寄存器 <code>%rax</code> 映射到几十个物理寄存器上）和重排序缓冲（ROB）来保证&quot;看起来还是按顺序执行&quot;。</p>
+<p>这一招直接解释了 C&#x2F;C++ 里那些让人头大的内存序问题：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 两个线程各自写一个标志位，然后用另一个变量传递数据</span></span><br><span class="line"><span class="comment">// CPU 可能把两个写重排，另一个核看到 flag 却读不到 data</span></span><br><span class="line">std::atomic&lt;<span class="type">int</span>&gt; data&#123;<span class="number">0</span>&#125;;</span><br><span class="line">std::atomic&lt;<span class="type">bool</span>&gt; flag&#123;<span class="literal">false</span>&#125;;</span><br><span class="line">data.<span class="built_in">store</span>(<span class="number">42</span>, std::memory_order_relaxed);</span><br><span class="line">flag.<span class="built_in">store</span>(<span class="literal">true</span>, std::memory_order_release);   <span class="comment">// release：保证前面的写先完成</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 读侧</span></span><br><span class="line"><span class="keyword">while</span> (!flag.<span class="built_in">load</span>(std::memory_order_acquire)) &#123;&#125;   <span class="comment">// acquire：保证后面的读不会提前</span></span><br><span class="line"><span class="built_in">assert</span>(data.<span class="built_in">load</span>(std::memory_order_relaxed) == <span class="number">42</span>); <span class="comment">// 这才成立</span></span><br></pre></td></tr></table></figure>
+
+<p><strong><code>volatile</code> 解决不了这个问题</strong>——它只禁止编译器优化，管不住 CPU 的乱序和 Store Buffer。Java 的 <code>volatile</code> 则是另一回事：JMM 里它带 <code>happens-before</code> 语义，等于替你插了上面那对 release&#x2F;acquire 屏障。</p>
+<p><strong>② 超标量。</strong> 每周期发射 4～8 条指令，所以真实 CPU 的 IPC 常态是 2～4，<strong>CPI 小于 1</strong>——这在 SEQ 的世界里根本无法想象。</p>
+<p><strong>③ 依赖链是新的瓶颈。</strong> 在乱序机器上，串行的累加是最伤的写法：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 每次迭代都依赖上一次的 sum，一条长长的依赖链</span></span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i &lt; n; i++) sum += a[i];</span><br><span class="line"></span><br><span class="line"><span class="comment">// 拆成 4 条独立的链，让流水线有活可干</span></span><br><span class="line"><span class="type">int</span> s0 = <span class="number">0</span>, s1 = <span class="number">0</span>, s2 = <span class="number">0</span>, s3 = <span class="number">0</span>;</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> i = <span class="number">0</span>; i + <span class="number">3</span> &lt; n; i += <span class="number">4</span>) &#123;</span><br><span class="line">    s0 += a[i]; s1 += a[i + <span class="number">1</span>]; s2 += a[i + <span class="number">2</span>]; s3 += a[i + <span class="number">3</span>];</span><br><span class="line">&#125;</span><br><span class="line">sum = s0 + s1 + s2 + s3;</span><br></pre></td></tr></table></figure>
+
+<p>两段代码算的是同一个数，编译到 <code>-O2</code> 后第二段往往更快——因为第一段每条 <code>add</code> 都得等上一条的结果。<strong>GCC 的 <code>-O2</code> 自己就会做这件事</strong>（循环展开 + 多累加器 + 向量化），想看差异就用 <code>gcc -O1 -fno-tree-vectorize</code> 关掉优化再对比，或者 <code>perf stat -e cycles,instructions</code> 数周期。这也是&quot;改写循环比换 CPU 更有效&quot;这句话的出处。</p>
+<p><strong>④ 分支预测错误的代价涨了。</strong> PIPE 猜错罚 2 拍，现代深度流水线要罚 15～20 拍，所以编译器宁可生成无分支代码（<code>cmov</code>）也不愿留一个难预测的 <code>if</code>——上一章讲的 <code>cmov</code>，在这里找到了它的动机。</p>
+<h2 id="10-三档处理器对照"><a href="#10-三档处理器对照" class="headerlink" title="10. 三档处理器对照"></a>10. 三档处理器对照</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>SEQ（单周期）</th>
+<th>PIPE（5 级流水）</th>
+<th>真实超标量 CPU</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>同时执行的指令数</td>
+<td>1</td>
+<td>5（每级 1 条）</td>
+<td>4～8 条发射 + 数百条在飞</td>
+</tr>
+<tr>
+<td>时钟周期由谁决定</td>
+<td>最慢的那一级</td>
+<td>最慢的那一级</td>
+<td>关键路径 + 乱序窗口</td>
+</tr>
+<tr>
+<td>数据相关</td>
+<td>天然无（顺序执行）</td>
+<td>转发 + 1 拍 load-use 停顿</td>
+<td>转发 + 寄存器重命名 + 乱序隐藏</td>
+</tr>
+<tr>
+<td>控制相关</td>
+<td>天然无</td>
+<td>预测 + 猜错罚 2 拍</td>
+<td>深度预测器 + 投机执行，罚 15～20 拍</td>
+</tr>
+<tr>
+<td>CPI</td>
+<td>5</td>
+<td>1.0～1.3</td>
+<td>&lt; 1（IPC 2～4）</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>一个实验课的量</td>
+<td>一个学期的量</td>
+<td>数百人年</td>
+</tr>
+<tr>
+<td>对应现实</td>
+<td>早期简单处理器</td>
+<td>教科书模型</td>
+<td>你手上这台机器</td>
+</tr>
+</tbody></table>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ol>
+<li><strong>ISA 是合同，微架构是实现。</strong> 流水线寄存器、旁路网络、预测器全在合同之外——所以同一份二进制在不同 CPU 上跑出不同速度，是合同的正常发挥空间，不是 Bug。</li>
+<li><strong>Y86-64 的编码规则只有三条</strong>：高 4 位 icode、低 4 位 ifun，第二字节 rA:rB，需要常数的再跟 8 字节小端立即数。<code>jne</code> 占 9 字节、<code>addq</code> 占 2 字节，取指级必须按 icode 决定读几个字节。</li>
+<li><strong>HCL 是组合逻辑的写法</strong>：<code>in &#123;&#125;</code> 是与或门，<code>[ ... ]</code> 是优先级多路复用器，没有循环也没有赋值——电路里本来就没有。</li>
+<li><strong>SEQ 的毛病是&quot;每拍只有一级在忙&quot;</strong>，CPI 固定为 5；流水线不改变单条指令的延迟，只把吞吐提到每拍一条。理想加速比 <code>S = n·k/(k+n-1)</code>——<strong>指令数越少，流水线越没用</strong>。</li>
+<li><strong>三类冒险里，结构冒险靠加硬件解决，数据冒险靠转发</strong>。转发能零停顿地喂饱 ALU，唯独 <code>load</code> 例外：值要等 M 级末尾才出来，只能插一个气泡。</li>
+<li><strong>停顿是&quot;按住上游&quot;，气泡是&quot;向右塞一条 nop&quot;</strong>，加载&#x2F;使用冒险两者都要。</li>
+<li><strong>控制冒险最贵</strong>，所以流水线从第一天起就得&quot;猜&quot;。猜错罚 2 拍（PIPE）到 20 拍（现代 CPU），这就是 <code>cmov</code>、无分支代码、以及现代预测器存在的理由。</li>
+<li><strong>真实 CPU 用乱序、重命名、超标量把 CPI 压到 1 以下</strong>，代价是暴露给程序员的内存序问题——<code>volatile</code> 管不住它，<code>std::atomic</code> 的 release&#x2F;acquire 和 Java 的 <code>happens-before</code> 才是对的语言级工具。</li>
+</ol>
+<p>下一篇进入<strong>存储器层次与 Cache</strong> —— 流水线解决了&quot;谁能同时开工&quot;，接下来要解决的是&quot;数据从哪来才够快&quot;。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0105/">https://hespethorn.github.io/posts/capp0105/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%B5%81%E6%B0%B4%E7%BA%BF/">流水线</a><a class="post-meta__tags" href="/tags/Y86-64/">Y86-64</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E5%86%92%E9%99%A9/">数据冒险</a><a class="post-meta__tags" href="/tags/HCL/">HCL</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

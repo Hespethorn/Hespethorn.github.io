@@ -1,0 +1,743 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流） | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="系列写到第五章「读性能优化」时，项目在 v0.2.0 收官了：代码定格在「直打数据库 + Redis 读缓存」这一档，第六至八章（MQ 削峰 &#x2F; Lua 原子预扣 &#x2F; 防刷限流）不再落地实现。 但设计不该烂尾。这一篇把剩下三章一次性讲完——不贴落地代码，只讲&quot;如果继续做，会怎么做、为什么这么做、预计能拿到什么、会踩哪些坑&quot;。  本篇性质说明：本篇没有配套落地">
+<meta property="og:type" content="article">
+<meta property="og:title" content="秒杀系统高并发优化实战（C++ &#x2F; Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 &#x2F; Lua 预扣 &#x2F; 防刷限流）">
+<meta property="og:url" content="https://hespethorn.github.io/posts/seckcpp0900/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="系列写到第五章「读性能优化」时，项目在 v0.2.0 收官了：代码定格在「直打数据库 + Redis 读缓存」这一档，第六至八章（MQ 削峰 &#x2F; Lua 原子预扣 &#x2F; 防刷限流）不再落地实现。 但设计不该烂尾。这一篇把剩下三章一次性讲完——不贴落地代码，只讲&quot;如果继续做，会怎么做、为什么这么做、预计能拿到什么、会踩哪些坑&quot;。  本篇性质说明：本篇没有配套落地">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-15T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.730Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="C++">
+<meta property="article:tag" content="Lua">
+<meta property="article:tag" content="Seckill">
+<meta property="article:tag" content="Drogon">
+<meta property="article:tag" content="架构规划">
+<meta property="article:tag" content="RabbitMQ">
+<meta property="article:tag" content="限流">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）",
+  "url": "https://hespethorn.github.io/posts/seckcpp0900/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-15T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.730Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/seckcpp0900/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/">Seckill</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Seckill/Cpp/">Cpp</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.8k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>系列写到第五章「读性能优化」时，项目在 <code>v0.2.0</code> 收官了：代码定格在「直打数据库 + Redis 读缓存」这一档，第六至八章（MQ 削峰 &#x2F; Lua 原子预扣 &#x2F; 防刷限流）不再落地实现。</p>
+<p>但设计不该烂尾。这一篇把剩下三章<strong>一次性讲完</strong>——不贴落地代码，只讲&quot;如果继续做，会怎么做、为什么这么做、预计能拿到什么、会踩哪些坑&quot;。</p>
+<blockquote>
+<p><strong>本篇性质说明</strong>：本篇<strong>没有配套落地代码</strong>（仓库止于 <code>v0.2.0</code>，见 <code>docs/PLAN.md</code> ADR-10）。文中所有架构、接口、Key 均沿用前五章既有约定，属<strong>预计方案</strong>；出现的 QPS 数字均为<strong>预期目标</strong>，不是实测值。判断依据只有一条：<strong>它们能不能把已经证明过的方法论继续用下去</strong>。</p>
+</blockquote>
+<h2 id="一、先交代：为什么停在第五章"><a href="#一、先交代：为什么停在第五章" class="headerlink" title="一、先交代：为什么停在第五章"></a>一、先交代：为什么停在第五章</h2><table>
+<thead>
+<tr>
+<th>理由</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>验收指标的性质变了</td>
+<td>项目的核心命题是&quot;QPS 跃迁来自架构决策，而不是换框架或堆中间件&quot;。前五章已经把这件事证明完整：440 QPS → 万级，全部来自<strong>读缓存</strong>这一层架构改动</td>
+</tr>
+<tr>
+<td>取舍密度会被稀释</td>
+<td>前五章每章都有真实两难（超卖怎么防、Redis 同步客户端为什么不能用、缓存失效删 <code>item</code> 还是 <code>all</code>、四项增强为什么默认关）。到了 MQ &#x2F; Lua 阶段，多数决策会退化成&quot;按中间件文档来&quot;</td>
+</tr>
+<tr>
+<td>收尾质量 &gt; 功能数量</td>
+<td>这个仓库要作为&quot;可复习标本 + 拿得出手的开源库&quot;交付。把已完成部分打磨到每篇都能对照真实代码与实测数字，价值高于多两个从没压测过的半成品阶段</td>
+</tr>
+</tbody></table>
+<p><strong>代价也说清楚</strong>：架构演进止步&quot;单体 + 缓存&quot;，&quot;单体 → 微服务&quot;这条线不完整。所以才有这篇——<strong>留档设计，而不是留档代码</strong>。</p>
+<h2 id="二、第六章预计实现：MQ-削峰填谷"><a href="#二、第六章预计实现：MQ-削峰填谷" class="headerlink" title="二、第六章预计实现：MQ 削峰填谷"></a>二、第六章预计实现：MQ 削峰填谷</h2><h3 id="2-1-它要解决的真问题"><a href="#2-1-它要解决的真问题" class="headerlink" title="2.1 它要解决的真问题"></a>2.1 它要解决的真问题</h3><p>第五篇加了读缓存，<strong>读</strong>路径压下去了；但<strong>写</strong>路径没有任何变化：每个下单请求依旧占一条 DB 连接、持 <code>seckill_sku</code> 行锁直到事务提交。100 并发下临界区约 22ms，行锁把写吞吐锁死在几百到几千 QPS。</p>
+<p>瓶颈不在&quot;数据库慢&quot;，而在<strong>请求的瞬时速率直接等于数据库的落库速率</strong>。削峰填谷要做的，就是把这两件事解耦。</p>
+<h3 id="2-2-预计架构"><a href="#2-2-预计架构" class="headerlink" title="2.2 预计架构"></a>2.2 预计架构</h3><pre><code class="highlight mermaid">flowchart LR
+    R[&quot;10 万并发&lt;br/&gt;下单请求&quot;] --&gt; A[&quot;下单接口&lt;br/&gt;只投消息，不落库&quot;]
+    A --&gt; Q[&quot;RabbitMQ 队列&lt;br/&gt;堆积 10 万条&lt;br/&gt;持久化 + prefetch&quot;]
+    Q --&gt; C[&quot;消费者&lt;br/&gt;按 DB 速率落库&quot;]
+
+    A -.-&gt;|&quot;解耦&quot;| G[&quot;接口不再碰 DB&lt;br/&gt;QPS 可达数万&quot;]
+    Q -.-&gt;|&quot;削峰填谷&quot;| H[&quot;峰值 10 万条/秒 → DB 只看到恒定流速&lt;br/&gt;空闲期加速消费，把积压吃回去&quot;]
+    C -.-&gt;|&quot;可靠性底线&quot;| I[&quot;生产者 confirm&lt;br/&gt;消费者手动 ACK&lt;br/&gt;死信队列兜底&quot;]</code></pre>
+
+<h3 id="2-3-预计实现要点"><a href="#2-3-预计实现要点" class="headerlink" title="2.3 预计实现要点"></a>2.3 预计实现要点</h3><ol>
+<li><strong>接口形态</strong>：<code>POST /api/seckill</code> 校验参数后<strong>只投递消息</strong>，立即返回 <code>&#123;&quot;code&quot;:0,&quot;msg&quot;:&quot;QUEUED&quot;,&quot;data&quot;:&#123;&quot;requestId&quot;:&quot;...&quot;&#125;&#125;</code>。响应从&quot;下单结果&quot;变成&quot;受理回执&quot;——这是异步化的必要代价。</li>
+<li><strong>消息体与幂等</strong>：<code>&#123;requestId, userId, skuId, ts&#125;</code>。<code>requestId</code> 用于消费端去重；最终兜底仍是 <code>seckill_order</code> 的 <code>uk_user_sku</code> 唯一键（前五章那套幂等照旧有效）。</li>
+<li><strong>削峰原理</strong>：队列把&quot;瞬时并发&quot;变成&quot;待办清单&quot;。数据库面对的始终是消费者按自己节奏发出的请求，这就是&quot;削峰&quot;；空闲时消费者可以多并发把积压吃回去，这就是&quot;填谷&quot;。</li>
+<li><strong>可靠性三件套</strong>：生产者 <code>confirm</code> 确保消息真进了 broker；消费者<strong>手动 ACK</strong>（落库成功才 ACK，失败进死信）；死信队列 + 定时补偿处理反复失败的消息。</li>
+<li><strong>结果查询</strong>：新增 <code>GET /api/seckill/result/&#123;requestId&#125;</code> 返回 <code>PENDING / SUCCESS / SOLD_OUT / DUPLICATE</code>。前五章的 SSE &#x2F; WebSocket 能力（Drogon 原生支持）可用于主动推送。</li>
+</ol>
+<h3 id="2-4-预计会踩的坑"><a href="#2-4-预计会踩的坑" class="headerlink" title="2.4 预计会踩的坑"></a>2.4 预计会踩的坑</h3><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>现象</th>
+<th>预计解法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>消息丢失</td>
+<td>接口返回&quot;已受理&quot;但订单永不落库</td>
+<td>生产端 confirm + 本地消息表&#x2F;重投；消费端先落库后 ACK</td>
+</tr>
+<tr>
+<td>重复消费</td>
+<td>同一 <code>requestId</code> 落两次库</td>
+<td>消费端幂等（<code>requestId</code> 去重 + <code>uk_user_sku</code> 兜底）</td>
+</tr>
+<tr>
+<td>消费者串行</td>
+<td>队列很长但落库速率上不去</td>
+<td>多消费者线程 &#x2F; 协程 + <code>prefetch</code> 调参</td>
+</tr>
+<tr>
+<td>接口&quot;假成功&quot;</td>
+<td>用户看到受理但实际失败</td>
+<td>结果查询要能如实返回失败原因，而不是永远 PENDING</td>
+</tr>
+</tbody></table>
+<p><strong>预计验收</strong>：下单接口 QPS 数万级；DB 落库速率稳定可控；<strong>0 超卖、0 重复下单</strong>（硬指标不放松）。</p>
+<h2 id="三、第七章预计实现：Redis-Lua-原子预扣"><a href="#三、第七章预计实现：Redis-Lua-原子预扣" class="headerlink" title="三、第七章预计实现：Redis Lua 原子预扣"></a>三、第七章预计实现：Redis Lua 原子预扣</h2><h3 id="3-1-为什么-MQ-之后还有瓶颈"><a href="#3-1-为什么-MQ-之后还有瓶颈" class="headerlink" title="3.1 为什么 MQ 之后还有瓶颈"></a>3.1 为什么 MQ 之后还有瓶颈</h3><p>MQ 削峰解决的是&quot;请求速率 ≠ 落库速率&quot;，但<strong>没解决行锁本身</strong>：消费者再多，只要它们抢的是同一行 <code>seckill_sku</code>，落库仍然是串行的。要再上一个量级，必须让&quot;抢&quot;这件事离开数据库——DB 退化成&quot;最终落账&quot;，不再承担竞争裁决。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    R[&quot;请求&lt;br/&gt;限流后&quot;] --&gt; L[&quot;Redis Lua（原子）&lt;br/&gt;判库存 + 扣减&lt;br/&gt;+ 一人一单&quot;]
+    L --&gt; M[&quot;投递 MQ&lt;br/&gt;扣成功才投&quot;]
+    M --&gt; D[&quot;DB 落账&lt;br/&gt;不再裁决竞争&quot;]
+
+    L -.-&gt;|&quot;扣减失败&lt;br/&gt;无库存 / 已买过&quot;| X[&quot;直接拒绝&lt;br/&gt;连 MQ 都不投&quot;]
+    M -.-&gt;|&quot;投递失败&quot;| Y[&quot;补偿回补库存&lt;br/&gt;回补必须幂等&quot;]
+    L -.-&gt;|&quot;库存预热&quot;| Z[&quot;活动前写入&lt;br/&gt;seckill:sku:v1:stock:&#123;id&#125;&quot;]</code></pre>
+
+<h3 id="3-2-预计实现要点"><a href="#3-2-预计实现要点" class="headerlink" title="3.2 预计实现要点"></a>3.2 预计实现要点</h3><ol>
+<li><strong>库存预热</strong>：活动开始前把 <code>seckill_sku.stock</code> 写入 Redis <code>seckill:sku:v1:stock:&#123;id&#125;</code>（这个 key 在前五章的 <code>CacheKeys.h</code> 里已经预留，当时标注&quot;阶段四 7.2 预留，当前不读写&quot;）。</li>
+<li><strong>Lua 一次裁决三件事</strong>：读库存 → <code>&gt; 0</code> 则扣减 → 同时判&quot;这个 user 是否已买过&quot;。三件事必须在<strong>同一个 Lua 脚本里原子完成</strong>，否则并发下会各自读到旧值。</li>
+<li><strong>一人一单下沉到 Redis</strong>：用 <code>SET</code> 记录 <code>user:sku</code> 已购，Lua 里原子 <code>SADD</code> 判重；DB 的 <code>uk_user_sku</code> 仍是最终一致性的兜底，但不再是第一道防线。</li>
+<li><strong>售罄标记</strong>：库存扣到 0 时写一个标记 key，后续请求<strong>在入口快速失败</strong>，不必再进 Lua 全流程——把&quot;抢不到&quot;的请求成本压到一次 GET。</li>
+<li><strong>回补的幂等</strong>：MQ 投递失败要把 Lua 已扣的库存加回去。回补必须可重入（记录补偿凭证），否则重试会把库存加多，直接导致超卖。</li>
+</ol>
+<h3 id="3-3-预计会踩的坑"><a href="#3-3-预计会踩的坑" class="headerlink" title="3.3 预计会踩的坑"></a>3.3 预计会踩的坑</h3><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Redis 与 MySQL 最终不一致</td>
+<td>预扣成功但落库失败 → 少卖；需对账与补偿</td>
+</tr>
+<tr>
+<td>回补不幂等</td>
+<td>库存越补越多 → <strong>超卖</strong>（最危险）</td>
+</tr>
+<tr>
+<td>Lua 脚本过长</td>
+<td>Redis 单线程被阻塞，整个缓存层抖动</td>
+</tr>
+<tr>
+<td>预热与开抢竞态</td>
+<td>活动已开始但库存还没写完 → 误判售罄</td>
+</tr>
+</tbody></table>
+<p><strong>预计验收</strong>：QPS 从万级跃到数万~十万级；DB 压力从&quot;每单一次写&quot;降为&quot;批量落账&quot;；<strong>0 超卖、0 重复</strong>。</p>
+<h2 id="四、第八章预计实现：防刷、限流与秒杀资格校验"><a href="#四、第八章预计实现：防刷、限流与秒杀资格校验" class="headerlink" title="四、第八章预计实现：防刷、限流与秒杀资格校验"></a>四、第八章预计实现：防刷、限流与秒杀资格校验</h2><p>前两章解决&quot;系统扛不住&quot;，这一章解决&quot;<strong>流量该不该进来</strong>&quot;。三层防线，全部挡在预扣链路之前：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    T[&quot;全部流量&lt;br/&gt;含脚本 / 黄牛&quot;] --&gt; L1[&quot;① 接口限流&lt;br/&gt;用户 / IP 双维度&quot;]
+    L1 --&gt; L2[&quot;② 令牌桶 / 漏桶&lt;br/&gt;平滑放行&quot;]
+    L2 --&gt; L3[&quot;③ 秒杀令牌大闸&lt;br/&gt;按库存发令牌&quot;]
+    L3 --&gt; P[&quot;三层都通过&lt;br/&gt;才进入预扣与落库链路&quot;]
+
+    L3 -.-&gt;|&quot;验收项&quot;| N[&quot;挡掉的是「无效流量」，不是「正常用户」&lt;br/&gt;误伤率本身就是验收项&quot;]</code></pre>
+
+<h3 id="4-1-预计实现要点"><a href="#4-1-预计实现要点" class="headerlink" title="4.1 预计实现要点"></a>4.1 预计实现要点</h3><ol>
+<li><strong>接口限流（固定窗口 &#x2F; 滑动窗口）</strong>：Redis Lua 原子计数，按<strong>用户 + IP 双维度</strong>限频。固定窗口实现最简单但有临界突刺（窗口边界可放行两倍流量）；滑动窗口用 <code>ZSET</code> 记时间戳，精度更高但内存更贵——<strong>这是本章第一个真实取舍</strong>。</li>
+<li><strong>令牌桶 &#x2F; 漏桶</strong>：把&quot;平均速率&quot;与&quot;突发容量&quot;分开控制。自实现后做成路由层中间件，与业务解耦。令牌桶允许突发（桶里存了多少就能一次性放多少），漏桶强制匀速——秒杀场景通常选令牌桶。</li>
+<li><strong>秒杀令牌大闸</strong>：活动开始前按<strong>库存量</strong>发放略多于库存的令牌（多发的余量用于对冲&quot;抢到不付款&quot;），下单必须携带有效令牌。</li>
+<li><strong>一次性令牌</strong>：令牌校验通过即删除（<code>DEL</code> 原子），同一 token 无法重复提交——这比&quot;在业务里判重复&quot;更早、更便宜。</li>
+</ol>
+<h3 id="4-2-预计会踩的坑"><a href="#4-2-预计会踩的坑" class="headerlink" title="4.2 预计会踩的坑"></a>4.2 预计会踩的坑</h3><table>
+<thead>
+<tr>
+<th>坑</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>令牌超发</td>
+<td>请求数超过库存 → 少卖或（若无兜底）超卖</td>
+</tr>
+<tr>
+<td>令牌覆盖</td>
+<td>并发下发时后写覆盖前值 → 有的人拿到无效令牌</td>
+</tr>
+<tr>
+<td>限流误伤</td>
+<td>阈值太紧，正常用户被挡；太松则形同虚设</td>
+</tr>
+<tr>
+<td>固定窗口突刺</td>
+<td>窗口交界处瞬时放行 ≈ 2× 阈值</td>
+</tr>
+<tr>
+<td>并发扣大闸</td>
+<td>大闸余额扣成负数 → 超发令牌</td>
+</tr>
+</tbody></table>
+<p><strong>预计验收</strong>：无效&#x2F;重复流量在进入预扣前被挡下；正常用户可用；大闸发放量与库存关系可对账。</p>
+<h2 id="五、三章的共性：为什么-取舍密度-确实更低"><a href="#五、三章的共性：为什么-取舍密度-确实更低" class="headerlink" title="五、三章的共性：为什么&quot;取舍密度&quot;确实更低"></a>五、三章的共性：为什么&quot;取舍密度&quot;确实更低</h2><p>这不是给偷懒找理由，是实打实的差别。对比一下每章的决策类型：</p>
+<table>
+<thead>
+<tr>
+<th>章</th>
+<th>典型决策</th>
+<th>决策类型</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>二（表设计）</td>
+<td>幂等靠唯一键还是应用层判重</td>
+<td><strong>自主设计</strong>，有真实代价取舍</td>
+</tr>
+<tr>
+<td>三（登录）</td>
+<td>同步 Redis 客户端在 IO 线程里为什么不能用</td>
+<td><strong>踩坑驱动的架构约束</strong></td>
+</tr>
+<tr>
+<td>四（下单）</td>
+<td>乐观锁 &#x2F; 悲观锁 &#x2F; SQL 条件判断</td>
+<td><strong>多方案权衡</strong>，各有适用面</td>
+</tr>
+<tr>
+<td>五（缓存）</td>
+<td>失效删 <code>item</code> 还是 <code>all</code>；四项增强为什么默认关</td>
+<td><strong>新鲜度 ↔ 命中率</strong> 的定量交换</td>
+</tr>
+<tr>
+<td>六（MQ）</td>
+<td>用 RabbitMQ 还是 Kafka</td>
+<td>多为<strong>范式选择</strong>（都成熟，按生态选）</td>
+</tr>
+<tr>
+<td>七（Lua 预扣）</td>
+<td>脚本里先判库存还是先判一人一单</td>
+<td><strong>实现细节</strong>，正确答案基本唯一</td>
+</tr>
+<tr>
+<td>八（限流）</td>
+<td>固定窗口还是滑动窗口</td>
+<td><strong>算法既定</strong>，按精度&#x2F;内存选</td>
+</tr>
+</tbody></table>
+<p>前四章的决策<strong>没有标准答案</strong>，答案取决于你的业务约束；后三章的决策<strong>有标准答案</strong>，更多是&quot;按成熟范式正确实现&quot;。这正是收官的核心理由：<strong>这个项目想练的是前者</strong>。</p>
+<h2 id="六、如果续做：路线与验收标准"><a href="#六、如果续做：路线与验收标准" class="headerlink" title="六、如果续做：路线与验收标准"></a>六、如果续做：路线与验收标准</h2><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>手段</th>
+<th>预期 QPS</th>
+<th>验收硬指标</th>
+<th>压测方法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>三（六章）</td>
+<td>MQ 削峰填谷</td>
+<td>数万</td>
+<td>QPS↑一个量级 · 0 超卖 · 0 重复</td>
+<td>下单接口压测（吞吐）+ 结果查询对账</td>
+</tr>
+<tr>
+<td>四上（七章）</td>
+<td>Lua 原子预扣</td>
+<td>数万~十万</td>
+<td>同上 + Redis 与 DB 对账一致</td>
+<td>压测后比对 Redis 余量 &#x2F; DB 余量 &#x2F; 订单数</td>
+</tr>
+<tr>
+<td>四下（八章）</td>
+<td>限流 + 令牌大闸</td>
+<td>同上</td>
+<td>同上 + 大闸发放量与库存可对账</td>
+<td>混合流量（正常 + 脚本）验证误伤率</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>硬指标全程不变</strong>：QPS 提升一个量级、不超卖、不重复下单。这三条是前五章一路守下来的底线，续做时一条都不能放松。</p>
+</blockquote>
+<h2 id="七、对比表：已实测-vs-预计"><a href="#七、对比表：已实测-vs-预计" class="headerlink" title="七、对比表：已实测 vs 预计"></a>七、对比表：已实测 vs 预计</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>前五章（已交付）</th>
+<th>后三章（本篇预计）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>状态</td>
+<td>✅ 代码落地 + 实测</td>
+<td>⏸ 规划与设计（无代码）</td>
+</tr>
+<tr>
+<td>核心手段</td>
+<td>原子 SQL &#x2F; 应用层闸门 &#x2F; 读缓存</td>
+<td>MQ 削峰 &#x2F; Lua 预扣 &#x2F; 限流令牌</td>
+</tr>
+<tr>
+<td>瓶颈认知</td>
+<td>行锁串行化（读侧已解，写侧未解）</td>
+<td>逐层把裁决从 DB 移出</td>
+</tr>
+<tr>
+<td>数据来源</td>
+<td>官方 JMeter 实测（440 &#x2F; 万级）</td>
+<td><strong>预期目标，未实测</strong></td>
+</tr>
+<tr>
+<td>决策密度</td>
+<td>高（无标准答案的取舍）</td>
+<td>低（按成熟范式实现）</td>
+</tr>
+</tbody></table>
+<h2 id="功能抉择（本篇核心权衡）"><a href="#功能抉择（本篇核心权衡）" class="headerlink" title="功能抉择（本篇核心权衡）"></a>功能抉择（本篇核心权衡）</h2><p><strong>① 为什么&quot;不写&quot;也是一种技术决策？</strong><br>技术项目最容易犯的错是&quot;因为路线图上画了，所以必须做完&quot;。但路线图是手段，不是目的。这个项目的目的是练&quot;有真实代价的架构取舍&quot;；后三章的取舍密度明显更低，继续做只是把&quot;引入中间件 + 写胶水&quot;重复三遍。<strong>承认范围边界，比假装什么都能做完更专业。</strong></p>
+<p><strong>② 如果只能续做一章，从哪开始？</strong><br><strong>第六章（MQ）</strong>。理由：它针对的是前五章<strong>唯一没被解决的真瓶颈</strong>——写路径的行锁串行化。读缓存的收益已经吃干净了，不解决写路径，QPS 就卡在万级。第七章的 Lua 预扣本质是&quot;把裁决从 DB 挪到 Redis&quot;，属于在第六章基础上的进一步优化；第八章是流量治理，优先级在两者之后。</p>
+<p><strong>③ 为什么这篇要如实标注&quot;未实测&quot;？</strong><br>因为技术写作最贵的东西是<strong>可信度</strong>。前五章的每个数字都有压测脚本和 HTML 报告可复核；后三章没有代码，就绝不能把&quot;预期&quot;写成&quot;实测&quot;。<strong>预期目标与实测数字必须用不同措辞隔离</strong>——这本身就是本系列从第一章延续到收官的态度。</p>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><ul>
+<li>系列<strong>交付范围止于第五章</strong>（阶段二，<code>v0.2.0</code> 收官）；第六至八章以本篇「规划与预计实现」收口，<strong>无落地代码</strong>。</li>
+<li><strong>第六章（MQ 削峰）</strong>：下单接口只投消息不落库，消费者按 DB 承受速率落库；预计接口 QPS 数万，可靠性靠 confirm + 手动 ACK + 死信 + 幂等。</li>
+<li><strong>第七章（Lua 预扣）</strong>：库存预热到 Redis，Lua 原子完成&quot;判库存 + 扣减 + 一人一单&quot;；DB 退化为最终落账；预计 QPS 再上一层，回补幂等是防超卖的关键。</li>
+<li><strong>第八章（防刷限流）</strong>：接口限流（用户 + IP）+ 令牌桶 + 秒杀令牌大闸三层前置；挡无效流量而非正常用户。</li>
+<li><strong>收官判据</strong>：前五章证明了&quot;QPS 跃迁来自架构决策&quot;；后三章的决策有标准答案、取舍密度更低——<strong>把已完成的部分做扎实，比堆两个没压测过的半成品阶段更有价值</strong>。🐾</li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/seckcpp0900/">https://hespethorn.github.io/posts/seckcpp0900/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/C/">C++</a><a class="post-meta__tags" href="/tags/Lua/">Lua</a><a class="post-meta__tags" href="/tags/Seckill/">Seckill</a><a class="post-meta__tags" href="/tags/Drogon/">Drogon</a><a class="post-meta__tags" href="/tags/%E6%9E%B6%E6%9E%84%E8%A7%84%E5%88%92/">架构规划</a><a class="post-meta__tags" href="/tags/RabbitMQ/">RabbitMQ</a><a class="post-meta__tags" href="/tags/%E9%99%90%E6%B5%81/">限流</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0101/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍">秒杀系统高并发优化实战（C++ / Drogon）：1.1 专栏介绍</a><time datetime="2026-08-27T16:00:00.000Z" title="Created 2026-08-28 00:00:00">2026-08-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0102/" title="秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择">秒杀系统高并发优化实战（C++ / Drogon）：1.2 为什么是 Drogon——C++ 框架横评与工业界的真实选择</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0201/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计">秒杀系统高并发优化实战（C++ / Drogon）：2.1 数据库表设计</a><time datetime="2026-08-28T16:00:00.000Z" title="Created 2026-08-29 00:00:00">2026-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0202/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包">秒杀系统高并发优化实战（C++ / Drogon）：2.2 后端接口梳理与设计——GET 还是 POST，防的从来不是抓包</a><time datetime="2026-08-29T16:00:00.000Z" title="Created 2026-08-30 00:00:00">2026-08-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0204/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空">秒杀系统高并发优化实战（C++ / Drogon）：2.3 接入 MySQL 的第一个坑——getDbClient 为什么返回空</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0203/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）">秒杀系统高并发优化实战（C++ / Drogon）：2.4 Drogon 多模块项目搭建（CMake + 子项目）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0205/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）">秒杀系统高并发优化实战（C++ / Drogon）：2.5 完善项目基础设施（配置 / 日志 / 全局异常）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0206/" title="秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）">秒杀系统高并发优化实战（C++ / Drogon）：2.6 整合高性能异步日志（spdlog + 环形缓冲，替代 Log4j2+Disruptor）</a><time datetime="2026-08-30T16:00:00.000Z" title="Created 2026-08-31 00:00:00">2026-08-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0301/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.1 用户注册接口：PBKDF2 加盐哈希 + 自实现 JWT + 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0302/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话">秒杀系统高并发优化实战（C++ / Drogon）：3.2 用户登录接口：密码比对 + 自实现 HS256 签发 + Redis 可吊销会话</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0303/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连">秒杀系统高并发优化实战（C++ / Drogon）：3.3 短信验证码接口：生成 / 限流 / 存储 / 腾讯云直连</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0304/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis">秒杀系统高并发优化实战（C++ / Drogon）：3.4 注册验证码校验 &amp; Token 持久化到 Redis</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0305/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限">秒杀系统高并发优化实战（C++ / Drogon）：3.5 验证码安全加固：Redis Lua 原子校验 + 每日发送上限 + 试错上限</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0306/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定">秒杀系统高并发优化实战（C++ / Drogon）：3.6 登录安全加固：密码错误次数限制 + 账号临时锁定</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0307/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销">秒杀系统高并发优化实战（C++ / Drogon）：3.7 退出登录接口：校验 Token + 删 Redis 会话即吊销</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0308/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper">秒杀系统高并发优化实战（C++ / Drogon）：3.8 代码细节重构：抽出 seckill::http 统一 JSON 响应 helper</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0309/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）">秒杀系统高并发优化实战（C++ / Drogon）：3.9 验证码接口安全加固：滑块验证码（设计篇，代码推迟到前端阶段）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0310/" title="秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析">秒杀系统高并发优化实战（C++ / Drogon）：3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0401/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.1 秒杀商品列表接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0402/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发">秒杀系统高并发优化实战（C++ / Drogon）：4.2 秒杀商品详情接口开发</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0403/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）">秒杀系统高并发优化实战（C++ / Drogon）：4.3 秒杀下单接口开发（基础版，同步落库）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0404/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖">秒杀系统高并发优化实战（C++ / Drogon）：4.4 压测：100 用户抢 10 件，核对不超卖</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0405/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）">秒杀系统高并发优化实战（C++ / Drogon）：4.5 压测：验证重复下单（uk_user_sku 幂等，0 重复）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0406/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）">秒杀系统高并发优化实战（C++ / Drogon）：4.6 解决超卖：SQL 条件判断（行锁内 WHERE stock&gt;0）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0407/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）">秒杀系统高并发优化实战（C++ / Drogon）：4.7 基线性能测试（官方 JMeter QPS≈371 + 阶段一总结）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0408/" title="秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）">秒杀系统高并发优化实战（C++ / Drogon）：4.8 应用层锁（mutex / 自旋 / 原子三后端）</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0501/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测">秒杀系统高并发优化实战（C++ / Drogon）：5.1 缓存 Key 设计规范与接口基线压测</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0502/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口">秒杀系统高并发优化实战（C++ / Drogon）：5.2 加 Redis 缓存：商品列表接口</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0503/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）">秒杀系统高并发优化实战（C++ / Drogon）：5.3 加 Redis 缓存：商品详情接口（含空值哨兵防穿透）</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0504/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删">秒杀系统高并发优化实战（C++ / Drogon）：5.4 缓存一致性：为什么先删库后删缓存，以及延迟双删</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0505/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.5 缓存预热与雪崩：冷启动的回写风暴，和流量进来前该做的事">秒杀系统高并发优化实战（C++ / Drogon）：5.5 缓存预热与雪崩：冷启动的回写风暴，和流量进来前该做的事</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0506/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.6 防缓存穿透：空值策略——把&quot;查无此物&quot;也缓存下来">秒杀系统高并发优化实战（C++ / Drogon）：5.6 防缓存穿透：空值策略——把&quot;查无此物&quot;也缓存下来</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0507/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.7 防缓存穿透：自实现布隆过滤器——海量随机 id 的终结者">秒杀系统高并发优化实战（C++ / Drogon）：5.7 防缓存穿透：自实现布隆过滤器——海量随机 id 的终结者</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0508/" title="秒杀系统高并发优化实战（C++ / Drogon）：5.8 多级缓存：自实现本地 LRU 做 L1">秒杀系统高并发优化实战（C++ / Drogon）：5.8 多级缓存：自实现本地 LRU 做 L1</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

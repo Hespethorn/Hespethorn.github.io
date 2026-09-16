@@ -1,0 +1,618 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>背压：慢消费者的保护机制 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="线上有个很常见的死法：上游一慢，下游先崩。 下游没做错什么，它只是老老实实收下所有请求，放进队列，然后慢慢处理。结果队列越来越长，内存越来越满，延迟越来越高，最后 OutOfMemoryError 或者一次超时雪崩——监控图上，崩溃前那段&quot;吞吐还挺好看&quot;的时间，往往就是队列在替它挨打。 再对比两个现象：Kafka 的消费者处理不过来时，Broker 一点事没有，只是 lag 在">
+<meta property="og:type" content="article">
+<meta property="og:title" content="背压：慢消费者的保护机制">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-backpressure/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="线上有个很常见的死法：上游一慢，下游先崩。 下游没做错什么，它只是老老实实收下所有请求，放进队列，然后慢慢处理。结果队列越来越长，内存越来越满，延迟越来越高，最后 OutOfMemoryError 或者一次超时雪崩——监控图上，崩溃前那段&quot;吞吐还挺好看&quot;的时间，往往就是队列在替它挨打。 再对比两个现象：Kafka 的消费者处理不过来时，Broker 一点事没有，只是 lag 在">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-13T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T11:58:05.700Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="流式处理">
+<meta property="article:tag" content="并发">
+<meta property="article:tag" content="稳定性">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "背压：慢消费者的保护机制",
+  "url": "https://hespethorn.github.io/posts/princ-backpressure/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-13T16:00:00.000Z",
+  "dateModified": "2026-09-16T11:58:05.700Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-backpressure/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '背压：慢消费者的保护机制',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">背压：慢消费者的保护机制</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">背压：慢消费者的保护机制</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>线上有个很常见的死法：<strong>上游一慢，下游先崩。</strong></p>
+<p>下游没做错什么，它只是老老实实收下所有请求，放进队列，然后慢慢处理。结果队列越来越长，内存越来越满，延迟越来越高，最后 <code>OutOfMemoryError</code> 或者一次超时雪崩——监控图上，崩溃前那段&quot;吞吐还挺好看&quot;的时间，往往就是队列在替它挨打。</p>
+<p>再对比两个现象：Kafka 的消费者处理不过来时，Broker 一点事没有，只是 lag 在涨；而写一个死循环 <code>send()</code> 的客户端，对着一个不读的服务端狂发数据，<strong>它自己会被卡住，对端安然无恙</strong>。</p>
+<p>它们背后是同一件事：<strong>背压（back pressure）</strong>——把下游的&quot;我接不动了&quot;传回上游。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>&quot;背压&quot;这个词是从流体力学借来的：管道下游堵住，压力会反推到上游。计算机里最早的工业级实现不是某个框架，而是<strong>网络协议本身</strong>：</p>
+<ul>
+<li><strong>1981 年，RFC 793（TCP）</strong> 就用<strong>滑动窗口</strong>做了流量控制：接收方通过 <code>rwnd</code>（receive window）告诉发送方&quot;我还能收多少&quot;，窗口归零时发送方必须停下等。这是背压最朴素也最可靠的形态——<strong>数据的送达速率由接收方决定</strong>。</li>
+<li><strong>1965 年，Dijkstra 的信号量</strong>与生产者-消费者问题，第一次在程序里把&quot;缓冲&quot;和&quot;同步&quot;作为一对矛盾摆上台面：缓冲容量有限，生产快于消费就必须有人等。</li>
+<li><strong>2015 年 5 月，Reactive Streams 规范 1.0.0 发布</strong>（RxJava、Typesafe&#x2F;Akka、Pivotal 等共同推动）。它把背压写成了接口约定：发布者不能&quot;想推就推&quot;，订阅者通过 <code>request(n)</code> <strong>主动索取</strong>，<code>onNext</code> 的节奏由下游决定。</li>
+<li><strong>2017 年，Java 9 把它收编进标准库</strong>：<code>java.util.concurrent.Flow</code> 的四个接口（<code>Publisher</code>&#x2F;<code>Subscriber</code>&#x2F;<code>Subscription</code>&#x2F;<code>Processor</code>）就是 Reactive Streams 的翻版。</li>
+<li>同一时期，<strong>Kafka 用 pull 模型</strong>给出了另一种答案：消费者自己拉数据，拉多少由自己决定——背压不需要额外机制，<strong>模型本身就带背压</strong>。</li>
+</ul>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为<strong>速率的错配是常态</strong>。生产速率由外部流量决定（用户、上游服务、传感器），消费速率由处理能力决定（CPU、下游依赖、磁盘）。这两个数字从不相等，也不该指望它们相等。</p>
+<p>面对&quot;生产快、消费慢&quot;，只有三种应对：</p>
+<ol>
+<li><strong>丢</strong>（load shedding）：拒绝、降级、采样，返回 <code>429</code>。系统活着，业务受损。</li>
+<li><strong>缓冲</strong>：排队、落盘。看起来最友好，但它只把问题<strong>延后</strong>。</li>
+<li><strong>背压</strong>：把消费能力反传给生产者，让它减速。<strong>这是唯一能&quot;不丢数据也不爆内存&quot;的答案——前提是上游听得见。</strong></li>
+</ol>
+<p>缓冲为什么危险？排队论里有个 Little&#39;s Law：<code>L = λW</code>（队列中平均元素数 &#x3D; 到达率 × 平均停留时间）。缓冲变大 → 同上吞吐下等待变长 → 延迟上升 → 上游超时 → <strong>重试把到达率又抬高</strong> → 队列更长。这就是雪崩的标准路径。缓冲从来不是解决方案，它只是<strong>把&quot;丢数据&quot;换成了&quot;延迟债&quot;，并且常常在你最需要它的时候一起爆掉</strong>。</p>
+<p>所以背压的本质是一次<strong>控制权移交</strong>：不是&quot;我尽量接住&quot;，而是&quot;<strong>我接不动的时候，你必须停</strong>&quot;。</p>
+<p><strong>本质一句话：背压 &#x3D; 让下游的&quot;我接不动了&quot;能被上游听见；没有背压的系统，只能拿内存和延迟去替下游挨打。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看一次有背压的交互——注意最后那条反向消息才是关键：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant P as 生产者（速率 1000/s）
+    participant Q as 有界队列
+    participant C as 消费者（只能 100/s）
+    P-&gt;&gt;Q: 写入
+    Q-&gt;&gt;C: 投递
+    Note over C: 处理不过来，队列水位上升
+    C--)P: 背压信号：我接不动了
+    P-&gt;&gt;P: 减速 / 阻塞 / 直接拒绝新请求
+    Note over Q: 队列不再膨胀，延迟被钳住</code></pre>
+
+<p>再看&quot;三种应对&quot;的选择树——<strong>能不能丢、上游能不能听见</strong>，决定你只有哪条路可走：</p>
+<pre><code class="highlight mermaid">flowchart TB
+    A[&quot;生产速率 &gt; 消费速率&quot;] --&gt; B&#123;&quot;数据可以丢吗？&quot;&#125;
+    B --&gt;|&quot;可以&quot;| C[&quot;丢弃 / 采样 / 降级&lt;br/&gt;load shedding：返回 429&quot;]
+    B --&gt;|&quot;不可以&quot;| D&#123;&quot;上游听得见吗？&quot;&#125;
+    D --&gt;|&quot;听得见&quot;| E[&quot;背压：反传消费能力&lt;br/&gt;有界队列 + 阻塞或拒绝&quot;]
+    D --&gt;|&quot;听不见（单向链路）&quot;| F[&quot;只能缓冲：&lt;br/&gt;必须设上限并落盘&lt;br/&gt;同时接受延迟与 lag&quot;]</code></pre>
+
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. TCP：背压是协议自带的，写不对都难</strong></p>
+<p>一个&quot;完全不管下游死活&quot;的实验（本机实测，脚本 <code>.workbuddy/backpressure_demo.py</code>）：服务端 <code>accept()</code> 之后<strong>一个字节都不读</strong>，客户端用非阻塞 <code>send</code> 拼命灌。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">发送端 SO_SNDBUF = 64 KB   接收端 SO_RCVBUF = 64 KB</span><br><span class="line">[阶段一] 对端完全不读：send 到第 192 KB 时抛出 BlockingIOError</span><br><span class="line">         → 生产者被内核按住了（这就是 TCP 的背压），数据没有凭空消失</span><br><span class="line">[阶段二] 对端开始慢速读（200ms / 32KB）：发送端可继续发送，对端已读出 192 KB</span><br></pre></td></tr></table></figure>
+
+<p>读法：192 KB ≈ 发送缓冲 + 接收缓冲 + 在途数据，这几块一满，<strong>内核就不再让应用往下塞</strong>。对端一旦开始读，<code>rwnd</code> 恢复，发送端自动复活。这就是滑动窗口的价值：<strong>接收方从不被迫丢数据，发送方也从不会以为自己可以无限发。</strong></p>
+<p>Linux 上想看现场：<code>ss -ti</code> 输出里的 <code>rwnd</code>（接收窗口）、<code>cwnd</code>（拥塞窗口）就是这两个旋钮。</p>
+<p><strong>2. Node 流：<code>write()</code> 返回 false 就是背压信号</strong></p>
+<p>同一个生产者，只改一个参数 <code>highWaterMark</code>（高水位线），结果完全不同（本机实测，<code>.workbuddy/node_backpressure.js</code>）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">生产者固定写入 100 块 × 4 KB，消费者每块耗时 20ms：</span><br><span class="line">highWaterMark = 16 KB      write() 返回 false:  25 次   缓冲峰值(内存):   16 KB</span><br><span class="line">highWaterMark = 1024 KB    write() 返回 false:   0 次   缓冲峰值(内存):  400 KB</span><br></pre></td></tr></table></figure>
+
+<p>第二行是陷阱：<code>false</code> 一次都没出现，不是性能变好了，而是<strong>背压被关掉了</strong>——400 KB 全压在内存里，而且这还只是 100 块。正确的写法只有一句话：</p>
+<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (!sink.<span class="title function_">write</span>(chunk)) &#123;</span><br><span class="line">  <span class="keyword">await</span> <span class="title function_">once</span>(sink, <span class="string">&#x27;drain&#x27;</span>);   <span class="comment">// 等到下游排空再继续生产</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>3. Reactive Streams &#x2F; Java Flow：把背压写进类型系统</strong></p>
+<p>订阅者不主动索取，就一条数据都不会来：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 下游用 request(n) 控制&quot;我要多少&quot;，上游只能按需给</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">class</span> <span class="title class_">SlowSubscriber</span> <span class="keyword">implements</span> <span class="title class_">Flow</span>.Subscriber&lt;Integer&gt; &#123;</span><br><span class="line">    <span class="keyword">private</span> Flow.Subscription subscription;</span><br><span class="line">    <span class="keyword">private</span> <span class="type">int</span> <span class="variable">processed</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span> <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onSubscribe</span><span class="params">(Flow.Subscription s)</span> &#123;</span><br><span class="line">        <span class="built_in">this</span>.subscription = s;</span><br><span class="line">        s.request(<span class="number">1</span>);                       <span class="comment">// 一次只要 1 条</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="meta">@Override</span> <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onNext</span><span class="params">(Integer item)</span> &#123;</span><br><span class="line">        handle(item);                        <span class="comment">// 慢慢处理</span></span><br><span class="line">        <span class="keyword">if</span> (++processed % <span class="number">100</span> == <span class="number">0</span>) System.out.println(<span class="string">&quot;已处理 &quot;</span> + processed);</span><br><span class="line">        subscription.request(<span class="number">1</span>);             <span class="comment">// 处理完再要下一条</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="meta">@Override</span> <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onError</span><span class="params">(Throwable t)</span> &#123; <span class="comment">/* ... */</span> &#125;</span><br><span class="line">    <span class="meta">@Override</span> <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">onComplete</span><span class="params">()</span> &#123; <span class="comment">/* ... */</span> &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>配 <code>SubmissionPublisher</code> 时还能给缓冲设上限，超了就让 <code>submit()</code> 阻塞或直接拒绝——<strong>背压从&quot;自觉&quot;变成了&quot;协议&quot;</strong>。（这段代码本机没有 JDK 可编译，属示例。）</p>
+<p><strong>4. Kafka：用 pull 模型天然免疫</strong></p>
+<p>消费者自己拉，拉多少由 <code>max.poll.records</code> &#x2F; <code>fetch.max.bytes</code> 决定。所以 Broker 永远不会被&quot;慢消费者&quot;打爆——慢的后果是 <strong>lag 上涨</strong>，一个可观测、可扩缩容的信号。应用层更精细的手段是 <code>consumer.pause()/resume()</code>：处理得慢就先暂停分区，处理完再恢复。</p>
+<p><strong>5. Redis：最暴力的背压——直接断你</strong></p>
+<p>发布订阅和普通客户端都有输出缓冲上限：</p>
+<figure class="highlight properties"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">client-output-buffer-limit</span> <span class="string">pubsub 32mb 8mb 60</span></span><br></pre></td></tr></table></figure>
+
+<p>意思是：输出缓冲超过 32 MB（或持续 60 秒超过 8 MB），<strong>直接断开这个客户端</strong>。宁可断你，也不让自己吃光内存——这是&quot;丢&quot;分支的硬实现，也是背压的一种极端形态（把拒绝的成本推给消费者）。</p>
+<p><strong>6. 线程池：最省事的背压是有界队列</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 队列满 → 由提交线程自己执行 → 提交方自然减速（背压）</span></span><br><span class="line"><span class="keyword">new</span> <span class="title class_">ThreadPoolExecutor</span>(<span class="number">8</span>, <span class="number">8</span>, <span class="number">0L</span>, TimeUnit.SECONDS,</span><br><span class="line">        <span class="keyword">new</span> <span class="title class_">ArrayBlockingQueue</span>&lt;&gt;(<span class="number">200</span>),</span><br><span class="line">        <span class="keyword">new</span> <span class="title class_">ThreadPoolExecutor</span>.CallerRunsPolicy());</span><br></pre></td></tr></table></figure>
+
+<p>反例就在 JDK 自带工厂里：<code>Executors.newFixedThreadPool</code> 用的是<strong>无界队列</strong>（<code>LinkedBlockingQueue</code> 不设容量），流量一涨，队列无限增长——<strong>等于把背压关掉了</strong>。</p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>单向链路做不了背压</strong>。短信下发、日志外发、传感器采样——上游根本不会听你的。这时只能&quot;丢 + 上限&quot;：降采样、丢弃策略、落盘并设死上限，并且把丢弃率当指标看，别假装它不存在。</li>
+<li><strong>背压会把延迟传染给上游</strong>。如果这条链在关键路径上，全体阻塞会拖垮 SLA。此时正确的选择是<strong>在边界上丢</strong>（<code>429</code> &#x2F; 降级），而不是让整条链一起慢下来。<strong>背压保护系统，load shedding 保护 SLA</strong>，两者要配合。</li>
+<li><strong>无界队列 &#x3D; 关闭背压</strong>。<code>new LinkedBlockingQueue&lt;&gt;()</code>、无限创建线程的 <code>newCachedThreadPool</code>、把 <code>ConcurrentLinkedQueue</code> 当缓冲池——全都是把背压换成 OOM 或线程风暴的经典写法。</li>
+<li><strong>多生产者有队头阻塞</strong>。一个慢消费者会拖住所有生产者。解法是按生产方隔离（独立队列、独立连接、优先级队列），而不是把队列开得更大。</li>
+<li><strong>背压 ≠ 限流</strong>。限流按<strong>外部配额</strong>切（QPS、租户额度、接口配额），背压按<strong>内部容量</strong>切（队列水位、处理速率）。限流挡外部洪水，背压保内部节奏，两者通常同时存在。</li>
+<li><strong>缓冲不是原罪，无上限才是</strong>。Kafka 的 log、MQ 的持久化队列可以很大，因为它们把&quot;不可控的内存增长&quot;换成了&quot;可观测的 lag&quot;——<strong>有界 + 可观测 + 可落后</strong>，这三点齐了，缓冲才是安全的。</li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>策略</th>
+<th>做什么</th>
+<th>代价</th>
+<th>什么时候用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>丢弃（load shedding）</td>
+<td>拒绝 &#x2F; 降级 &#x2F; 采样，返回 <code>429</code></td>
+<td>业务受损，但系统活着</td>
+<td>上游不可控、数据可丢或可重试</td>
+</tr>
+<tr>
+<td>缓冲</td>
+<td>排队、落盘、加大水位</td>
+<td>延迟上升（Little&#39;s Law），仍需上限</td>
+<td>数据不能丢，且能承受延迟</td>
+</tr>
+<tr>
+<td>背压</td>
+<td>反传消费能力，让上游减速</td>
+<td>上游被拖慢，延迟沿链路传染</td>
+<td>上下游可通信、链条长度可控</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>背压机制</th>
+<th>信号</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TCP</td>
+<td>接收窗口 <code>rwnd</code> + 滑动窗口</td>
+<td>窗口归零 → 发送端停</td>
+</tr>
+<tr>
+<td>Node 流</td>
+<td><code>highWaterMark</code> + <code>write()</code> 返 false</td>
+<td><code>false</code> &#x2F; <code>drain</code> 事件</td>
+</tr>
+<tr>
+<td>Reactive Streams &#x2F; Flow</td>
+<td><code>request(n)</code> 需求驱动</td>
+<td>下游不 <code>request</code> 就没有数据</td>
+</tr>
+<tr>
+<td>Kafka</td>
+<td>pull 模型 + <code>pause()</code>&#x2F;<code>resume()</code></td>
+<td>lag</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td><code>client-output-buffer-limit</code></td>
+<td>超限直接断开客户端</td>
+</tr>
+<tr>
+<td>线程池</td>
+<td>有界队列 + <code>CallerRunsPolicy</code></td>
+<td>队列满 → 提交线程自己执行</td>
+</tr>
+<tr>
+<td>HTTP&#x2F;2、gRPC</td>
+<td>流控窗口 <code>WINDOW_UPDATE</code></td>
+<td>窗口耗尽</td>
+</tr>
+<tr>
+<td>网关 &#x2F; 边缘</td>
+<td><code>429</code>、限流、熔断</td>
+<td>拒绝</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：凡是&quot;生产速率由外力决定、消费速率由处理能力决定&quot;的系统，都必须回答同一个问题——<strong>下游接不动的时候，会发生什么？</strong> 答案只有三个：丢、堆、慢。选&quot;堆&quot;的系统，迟早会把内存当缓冲用，然后用一次 OOM 学会 Little&#39;s Law。而背压的珍贵之处在于：它让&quot;慢&quot;变成一个<strong>被传递的信号</strong>，而不是一场<strong>只在下游爆发的雪崩</strong>。</p>
+<p><strong>相关阅读</strong></p>
+<ul>
+<li>空间换时间：哈希、缓存与索引的共同母题（缓冲就是空间换时间，只是它换来的时间迟早要连本带利还）：<a href="/posts/princ-space-time/">&#x2F;posts&#x2F;princ-space-time&#x2F;</a></li>
+<li>幂等性：让重试变得安全（背压场景下&quot;拒绝 + 重试&quot;必须安全，否则背压会放大成重复写入）：<a href="/posts/princ-idempotency/">&#x2F;posts&#x2F;princ-idempotency&#x2F;</a></li>
+<li>CAP 定理：分布式的取舍三角（可用性与一致性的取舍，就是&quot;丢还是等&quot;的分布式版本）：<a href="/posts/princ-cap/">&#x2F;posts&#x2F;princ-cap&#x2F;</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-backpressure/">https://hespethorn.github.io/posts/princ-backpressure/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E6%B5%81%E5%BC%8F%E5%A4%84%E7%90%86/">流式处理</a><a class="post-meta__tags" href="/tags/%E5%B9%B6%E5%8F%91/">并发</a><a class="post-meta__tags" href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7/">稳定性</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">799</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1083</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/seckcpp0900/" title="秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）">秒杀系统高并发优化实战（C++ / Drogon）：收官篇 · 6-8 章规划与预计实现（MQ 削峰 / Lua 预扣 / 防刷限流）</a><time datetime="2026-09-15T16:00:00.000Z" title="Created 2026-09-16 00:00:00">2026-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
