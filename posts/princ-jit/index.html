@@ -1,0 +1,661 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>JIT：让程序在奔跑中变快 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="同一个函数，同一台机器，同一份代码，只改了启动参数——吞吐差了 13 倍： 12345运行模式                    数值热循环 次&#x2F;秒------------------------------------------------默认（JIT 全开）               198,656--no-opt（禁用优化编译器）        28,936      0.14x--">
+<meta property="og:type" content="article">
+<meta property="og:title" content="JIT：让程序在奔跑中变快">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-jit/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="同一个函数，同一台机器，同一份代码，只改了启动参数——吞吐差了 13 倍： 12345运行模式                    数值热循环 次&#x2F;秒------------------------------------------------默认（JIT 全开）               198,656--no-opt（禁用优化编译器）        28,936      0.14x--">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-17T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-19T07:48:50.337Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="运行时">
+<meta property="article:tag" content="编译优化">
+<meta property="article:tag" content="性能">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "JIT：让程序在奔跑中变快",
+  "url": "https://hespethorn.github.io/posts/princ-jit/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-17T16:00:00.000Z",
+  "dateModified": "2026-09-19T07:48:50.337Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-jit/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'JIT：让程序在奔跑中变快',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">808</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1096</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">JIT：让程序在奔跑中变快</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">JIT：让程序在奔跑中变快</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.8k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>16mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>同一个函数，同一台机器，同一份代码，只改了启动参数——吞吐差了 <strong>13 倍</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">运行模式                    数值热循环 次/秒</span><br><span class="line">------------------------------------------------</span><br><span class="line">默认（JIT 全开）               198,656</span><br><span class="line">--no-opt（禁用优化编译器）        28,936      0.14x</span><br><span class="line">--jitless（纯解释器）           15,281      0.08x</span><br></pre></td></tr></table></figure>
+
+<p>更耐人寻味的是逐次调用的耗时——<strong>第 21 次还是 82.8 µs，第 22 次就掉到 5.0 µs</strong>，中间没有任何代码变化，只是编译器在程序运行的过程中&quot;决定&quot;给它生成一份更快的机器码。</p>
+<p>这就是 JIT（Just-In-Time compilation，即时编译）最反直觉的地方：<strong>它把编译从&quot;运行之前&quot;挪到了&quot;运行之中&quot;，用运行时的真实信息换更激进的优化。</strong></p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>JIT 的直系祖先是<strong>动态语言的实现者</strong>——因为只有他们非这么做不可。</p>
+<ul>
+<li><strong>1960 年代</strong>：Lisp 社区已有&quot;运行时编译&quot;的实践（MacLisp、后续的各类 Lisp 实现），但更多是显式调用编译器的形式。</li>
+<li><strong>1984 年，Xerox PARC</strong>：Deutsch 与 Schiffman 的《Efficient Implementation of the Smalltalk-80 System》提出了 <strong>dynamic translation</strong>——把字节码在运行时翻译成机器码。这是 JIT 作为&quot;透明优化手段&quot;的起点。</li>
+<li><strong>1987–1994 年，Self 语言</strong>：Ungar、Smith、<strong>Urs Hölzle</strong>、Chambers 等人做出了完整形态的<strong>自适应优化</strong>（adaptive optimization）。关键的 1994 年 PLDI 论文《Optimizing Dynamically-Dispatched Calls with Run-Time Type Feedback》确立了今天所有 JIT 的核心机制：<strong>靠运行时反馈（type feedback）来做优化决策</strong>，并允许优化失效后<strong>去优化</strong>（deoptimization）回到安全状态。</li>
+<li><strong>1999 年，Java HotSpot VM</strong>：Sun 收购了 Self&#x2F;Strongtalk 团队创办的 Animorphic，把他们请去写了 HotSpot。<strong>C1（client，快速编译）+ C2（server，激进优化）</strong> 的分层编译由此进入工业主流。</li>
+<li><strong>2008 年，V8</strong>：为 JavaScript 而生。早期版本干脆<strong>不做解释器</strong>，直接全量编译成机器码；2015 年引入 <strong>Ignition（字节码解释器）+ TurboFan</strong> 组成分层 + 去优化的骨架；2021 年 V8 9.0 又补上 <strong>Sparkplug（基线编译器）</strong> 与 <strong>Maglev（中层）</strong>，形成四级阶梯。</li>
+<li><strong>同一条技术路线的其他成员</strong>：PyPy（2007，用 trace 化的 JIT 让 Python 快起来）、<strong>LuaJIT</strong>（2005，Mike Pall，至今仍是&quot;小语言 + 顶级 JIT&quot;的样板）、PHP 8.0（2020）、.NET RyuJIT、以及 WebAssembly 规范里的分层编译。</li>
+</ul>
+<p>所以 JIT 不是&quot;编译器的某个优化&quot;，而是<strong>一整套运行期架构</strong>：解释器负责启动与采集反馈，编译器负责把反馈变成机器码，去优化机制负责在猜测失效时安全撤退。</p>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为<strong>提前编译（AOT）拿不到运行时才存在的信息</strong>。</p>
+<p>一个静态编译的编译器面对这样的代码：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">interface</span> <span class="title class_">Shape</span> &#123; <span class="type">double</span> <span class="title function_">area</span><span class="params">()</span>; &#125;</span><br></pre></td></tr></table></figure>
+
+<p>它只看到&quot;这里可能是一百种实现&quot;。于是它必须生成<strong>保守</strong>的代码：查虚表、做间接跳转、准备处理所有分支。哪怕实际运行中这里 100% 都是同一种实现，编译器也无从得知——<strong>这个信息直到程序跑起来才产生</strong>。</p>
+<p>JIT 的做法是：</p>
+<ol>
+<li><strong>先跑，边跑边看</strong>：解释器执行时记录类型反馈、分支计数、对象形状；</li>
+<li><strong>发现热点</strong>，用真实观察到的信息生成<strong>推测性优化</strong>的机器码（&quot;这里总是 <code>Circle</code>，那就把 <code>area()</code> 内联进来&quot;）；</li>
+<li><strong>加守卫（guard）</strong>：如果输入不符合假设，立刻<strong>去优化</strong>回退到解释器。</li>
+</ol>
+<p>翻译成本不消失，只是<strong>被推迟，并被分摊</strong>：只对真正热的代码付这份钱。</p>
+<p>这解释了为什么<strong>分层</strong>是必然的：不同代码&quot;值得&quot;的优化强度不同。用最激进的编译器去编译只跑一次的函数，是纯亏；让跑了一亿次的循环继续走解释器，也是纯亏。<strong>分层编译就是&quot;用最小的编译成本，把每一段代码放到它值的那一级&quot;。</strong></p>
+<p><strong>本质一句话：JIT 用运行期的真实信息换更激进的优化——代价是预热成本、内存占用与去优化抖动，收益是稳态吞吐；它把&quot;编译&quot;从一次性开销变成了一个持续的投资决策。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看分层编译的阶梯。注意那条<strong>从优化代码指回解释器的箭头</strong>——它是 JIT 能成立的前提：</p>
+<pre><code class="highlight mermaid">flowchart TD
+    A[&quot;字节码 / 中间表示&quot;] --&gt; B[&quot;① 解释器（Ignition）&lt;br/&gt;逐条分派执行&lt;br/&gt;启动最快 · 稳态最慢&lt;br/&gt;同时采集类型反馈与分支计数&quot;]
+    B --&gt;|&quot;函数反复被调用&lt;br/&gt;超过阈值&quot;| C[&quot;② 基线编译器（Sparkplug）&lt;br/&gt;不做激进优化&lt;br/&gt;只把字节码快速翻译成机器码&quot;]
+    C --&gt;|&quot;更热 · 反馈更充分&quot;| D[&quot;③ 优化编译器（Maglev / TurboFan）&lt;br/&gt;内联 · 类型特化 · 逃逸分析&quot;]
+    D --&gt;|&quot;推测成立&quot;| E[&quot;稳定机器码&lt;br/&gt;稳态吞吐最高&quot;]
+    D --&gt;|&quot;推测失效（来了别的类型 / 对象形状变了）&quot;| B
+    E --&gt;|&quot;新的形态出现，守卫失败&quot;| B</code></pre>
+
+<p>去优化这条回边是整个设计的<strong>安全阀</strong>：因为随时能退回解释器，优化器才可以放心大胆地<strong>猜</strong>。没有它，JIT 只能做绝对安全的优化，收益会大幅缩水——这也解释了为什么&quot;JIT 的性能上限&quot;和&quot;去优化的成本&quot;是一对必须一起看的东西。</p>
+<p>再看执行策略的三角，它们各自擅长的事几乎不重叠：</p>
+<pre><code class="highlight mermaid">flowchart TD
+    Q[&quot;同一段代码，三种执行策略&quot;] --&gt; A[&quot;纯解释器&lt;br/&gt;启动最快 · 稳态最慢&lt;br/&gt;内存最小 · 延迟可预测&quot;]
+    Q --&gt; B[&quot;JIT 分层编译&lt;br/&gt;启动较慢（要预热）· 稳态最快&lt;br/&gt;内存最大 · 有去优化抖动&quot;]
+    Q --&gt; C[&quot;AOT 提前编译&lt;br/&gt;启动快 · 稳态好&lt;br/&gt;无运行期自适应 · 产物固定&quot;]</code></pre>
+
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 热循环吞吐：默认 &#x2F; 禁用优化 &#x2F; 纯解释器（Node 22.22.2 &#x2F; V8 12.4 实跑）</strong></p>
+<p>被测负载是一个纯数值热循环 <code>work(4000)</code>，另有两组对象形状测试。脚本 <code>.workbuddy/jit_demo.js</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">Node v22.22.2 / V8 12.4.254.21-node.39</span><br><span class="line">==============================================================================</span><br><span class="line">运行模式                    数值热循环 次/秒      单态调用 次/秒        多态调用 次/秒</span><br><span class="line">------------------------------------------------------------------------------</span><br><span class="line">默认（JIT 全开）               198656          2491096815       163037911</span><br><span class="line">--no-opt（禁用优化编译器）        27968            73888405        36827707</span><br><span class="line">--jitless（纯解释器）          15281            36918440        24029810</span><br><span class="line">==============================================================================</span><br><span class="line">相对默认模式的数值循环吞吐：</span><br><span class="line">  默认（JIT 全开）                1.00x</span><br><span class="line">  --no-opt（禁用优化编译器）          0.14x</span><br><span class="line">  --jitless（纯解释器）            0.08x</span><br></pre></td></tr></table></figure>
+
+<p>三点解读：</p>
+<ul>
+<li><strong>优化编译器贡献了约 7 倍</strong>（默认 vs <code>--no-opt</code>）。这一档来自内联、循环优化、类型特化、去虚拟化。</li>
+<li><strong>字节码解释器又慢了一半</strong>（<code>--no-opt</code> vs <code>--jitless</code>）：基线编译器把&quot;逐条分派字节码&quot;变成&quot;逐条执行机器码&quot;，本身就很值钱。</li>
+<li><strong><code>--jitless</code> 不是&quot;更安全的默认&quot;，而是另一种取舍</strong>：它没有可写可执行内存（安全收益），也彻底没有预热期（延迟收益），代价就是这 13 倍。</li>
+</ul>
+<p><strong>2. &quot;跑着跑着变快&quot;的实际形状（同一脚本，逐次调用计时）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">默认模式：同一个 work(4000) 连续调用 400 次，逐次单次耗时（µs，越小越快）</span><br><span class="line">  第  1- 6 次:    76.8   225.7    91.1    61.2    64.3    63.7</span><br><span class="line">  第  7-12 次:    75.3    37.7    37.6    39.1    38.8    39.2</span><br><span class="line">  第 13-18 次:    38.1    51.2    36.7    36.2    37.4    44.2</span><br><span class="line">  第 19-24 次:    39.0    82.8     5.0     4.8     4.7     4.6</span><br><span class="line">  第 25-30 次:     4.7     4.7     4.7     4.7     4.6     4.7</span><br><span class="line">  第 31-36 次:     4.7    14.0     4.7     4.7     4.7     4.7</span><br><span class="line">  第 37-42 次:     4.7     4.7     4.7     4.7     4.7     4.7</span><br><span class="line">  第 43-48 次:     4.7     4.7     4.8     4.7     4.7     4.6</span><br><span class="line">  第 49-54 次:     4.7     4.7     4.7     4.6     4.7     4.7</span><br><span class="line">  第 55-60 次:     4.6     4.7     4.7     4.7     4.7     4.7</span><br><span class="line"></span><br><span class="line">  前 40 次平均 32.99 µs  /  第 200 次之后平均 4.52 µs  →  冷热差 7.30x</span><br></pre></td></tr></table></figure>
+
+<p><strong>第 21 次是 82.8 µs，第 22 次就是 5.0 µs</strong>——一个台阶，不是渐变。这就是优化编译器上线的那一刻：第 21 次的尖峰正是编译开销记在了那次调用上。前六次的抖动（76.8 &#x2F; 225.7 &#x2F; 91.1 &#x2F; 61.2 …）则是解释器阶段的常态：<strong>还没优化，本来就快不到哪去。</strong></p>
+<p>冷热差在各模式下对比得非常干净：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">各模式的冷启动差距（前 40 次均值 ÷ 第 200 次之后均值）：</span><br><span class="line">  默认（JIT 全开）              7.30x   （前 40 次均 32.99 µs / 稳态 4.52 µs）</span><br><span class="line">  --no-opt（禁用优化编译器）       1.14x   （前 40 次均 41.81 µs / 稳态 36.74 µs）</span><br><span class="line">  --jitless（纯解释器）          2.27x   （前 40 次均 139.51 µs / 稳态 61.35 µs）</span><br></pre></td></tr></table></figure>
+
+<p><strong>只有默认模式有稳定、可复现的冷热差（多次实测 6.6x ~ 7.3x）。</strong> <code>--no-opt</code> 只有 1.14x，说明基线编译是&quot;来一次编译一次&quot;，没有随时间变强的过程。<code>--jitless</code> 那一行的 2.27x 是测量噪声——另一次实测它是 0.97x（也就是完全没有冷热差），两次结果不一致正说明<strong>它没有分层编译带来的方向性收益</strong>，剩下的只是解释器自身与机器状态的波动。</p>
+<p>顺便说一个微基准的坑：这类测试里累加结果必须<strong>被真正使用</strong>（上面用了 <code>sink += work(N)</code>），否则编译器完全可以把整个循环当成死代码删掉，测出来的是一个&quot;不存在的工作&quot;的速度——<strong>微基准骗人的一半原因在这里。</strong></p>
+<p><strong>3. 单态 vs 多态：内联缓存的代价（同一脚本实跑）</strong></p>
+<p>同一个函数 <code>addPoint(p) &#123; return p.x + p.y; &#125;</code>，分别喂&quot;一种对象形状&quot;和&quot;五种对象形状&quot;：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">对象形状（单态 vs 多态，同一函数 addPoint）：</span><br><span class="line">  默认（JIT 全开）              单态/多态 = 15.28x</span><br><span class="line">  --no-opt（禁用优化编译器）       单态/多态 = 2.01x</span><br><span class="line">  --jitless（纯解释器）          单态/多态 = 1.54x</span><br></pre></td></tr></table></figure>
+
+<p>这是 JIT 最核心的机制之一——<strong>内联缓存（inline cache）</strong> 的可见后果：</p>
+<ul>
+<li><strong>单态</strong>（只有一个形状）：编译器把属性偏移量<strong>直接写死</strong>进机器码，一次内存访问搞定；</li>
+<li><strong>多态</strong>（几个形状）：得先查表再跳转，慢一点；</li>
+<li><strong>巨型态</strong>（megamorphic，形状更多）：退化成哈希查找，几乎丢掉全部优化收益。</li>
+</ul>
+<p>有意思的是 <code>--no-opt</code> 下也有 2.01x 的差距——这说明形状差异<strong>在基线编译层面就已经有成本</strong>（属性访问的路径本来就不同），而 JIT 把它放大到了 15.3 倍：<strong>优化器把&quot;其实很便宜&quot;的那条路变得极快，于是&quot;不够便宜&quot;的那条路显得更贵。</strong></p>
+<p>工程含义很直接：<strong>同一份数据保持同一种形状</strong>（初始化时把字段都赋上、别一会儿加字段一会儿删字段、别让同一函数处理结构差异很大的对象）是性价比最高的 JS 性能建议之一。</p>
+<p><strong>4. 和纯解释型语言的同一负载对比（本机实跑）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">CPython 3.13.14（官方二进制默认不带 JIT）</span><br><span class="line">  work(4000) 吞吐 = 5,758 次/秒   单次耗时 = 173.7 µs</span><br><span class="line">  第一次调用耗时 = 160.5 µs</span><br></pre></td></tr></table></figure>
+
+<p>同一个算法：<strong>Node（JIT）198,656 次&#x2F;秒 vs CPython 5,758 次&#x2F;秒，约 34 倍</strong>。</p>
+<p>两个必要的诚实说明：</p>
+<ul>
+<li>这不是&quot;JS 比 Python 快 34 倍&quot;。语言语义、字节码设计、对象模型都不同，这组数字只说明<strong>同一算法在&quot;有优化编译器&quot;和&quot;只有字节码解释器&quot;两种运行时上的差距</strong>。</li>
+<li>CPython 也不是没有动作：3.13 起有实验性的 tier-2 JIT，但<strong>需要编译期开启，官方二进制默认关闭</strong>，所以这里按&quot;纯解释&quot;看待。另外 CPython 的第一次调用耗时（160.5 µs）和稳态（173.7 µs）几乎一样——<strong>没有 JIT，就没有预热效应，延迟反而更可预测</strong>。这是很多低延迟系统宁可用解释型语言的原因之一。</li>
+</ul>
+<p><strong>5. JIT 的另一种形态：iOS 上的&quot;没有 JIT&quot;</strong></p>
+<p>一个常被忽略的现实约束：<strong>iOS 长期不允许第三方应用使用 JIT</strong>（可执行内存受限），只有 WebKit 自己作为系统组件可以用。结果是在 iOS 上，JavaScriptCore 主要以解释&#x2F;基线模式运行，跨平台框架（Cordova、早期 React Native、各类小程序容器）在 iOS 上的性能长期落后于 Android——<strong>这不是代码问题，是&quot;能不能开 JIT&quot;的问题。</strong></p>
+<p>这条边界很重要：<strong>JIT 不是免费的午餐，它需要一整套运行期设施（可执行内存、编译器、profile 存储）</strong>。在嵌入式、实时、强安全隔离（云厂商的多租户沙箱、WASM 的无 JIT 模式）场景里，&quot;不开 JIT&quot;常常是刻意的选择。</p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>JIT 对短命进程基本没有价值</strong>。编译器、CLI 工具、一次性脚本、批处理里的小任务，进程活不过预热期，付出的是纯成本。这就是 Go &#x2F; Rust &#x2F; C++ 在这类场景胜出的根本原因——<strong>AOT 不是&quot;更先进的编译&quot;，而是&quot;另一组取舍&quot;</strong>。</li>
+<li><strong>预热期就是尾延迟</strong>。服务刚发布、实例刚扩容、缓存刚失效时，请求正好落在<strong>还没优化</strong>的代码路径上——平均延迟好看，p99 难看。这也是 serverless 冷启动问题的一部分（虽然主要成本在运行时初始化，但预热同样贡献一份）。</li>
+<li><strong>去优化会造成性能断崖</strong>。一旦运行中出现了新类型或新形状，优化代码被丢弃、回到解释器、重新预热。<strong>&quot;通常很快&quot;和&quot;突然变慢&quot;会在同一进程里交替出现</strong>——这在压测里常被误判为&quot;抖动&quot;。</li>
+<li><strong>内存成本是真实的</strong>。机器码 + profile 数据 + 元数据，往往让 JIT 运行时的内存占用明显高于解释器。移动端和嵌入式设备上，这个成本经常比性能收益更关键。</li>
+<li><strong>它扩大了安全面</strong>。可写可执行内存带来 JIT spraying 这类攻击；推测执行侧信道（Spectre 家族）需要 JIT 生成的 gadget 才能发挥——很多运行时因此提供了&quot;关闭 JIT&quot;的开关（<code>--jitless</code> 就是 V8 的官方安全选项之一）。</li>
+<li><strong>优化绝不能改变语义</strong>。浮点与 <code>NaN</code> 的处理、对象身份比较、GC 可见性、<code>eval</code> &#x2F; 反射 &#x2F; 动态属性都会限制优化空间。<strong>如果某个&quot;优化&quot;会改变可观察行为，那它就不是优化，是 bug。</strong></li>
+<li><strong>多态&#x2F;巨型态会吞掉优化收益</strong>（实测单态比多态快 15.3x，而关掉优化编译器后只剩 2.0x）。<strong>&quot;代码没变但性能掉了&quot;的常见原因，是数据的形状变了。</strong></li>
+<li><strong>AOT 正在用 PGO 把差距补回来</strong>。PGO（Profile-Guided Optimization）把&quot;运行时采集&quot;提前到构建期：先跑一遍采集 profile，再用它指导编译。Go &#x2F; Rust &#x2F; .NET NativeAOT &#x2F; GraalVM Native Image 都在走这条路，能拿到接近 JIT 的稳态性能 + AOT 的启动性能——代价是<strong>失去了运行期自适应</strong>：同一份产物没法根据真实负载重新优化。</li>
+<li><strong>微基准极易骗人</strong>。死代码消除、常量折叠、循环被整体优化掉、CPU 频率与缓存状态，都会让结论失真。<strong>看到&quot;快了 20 倍&quot;先问一句：这段代码真的还在跑吗？</strong></li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>纯解释器</th>
+<th>基线 JIT</th>
+<th>优化 JIT（分层）</th>
+<th>AOT（+PGO）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>冷启动</td>
+<td>最快</td>
+<td>快</td>
+<td>慢（要预热）</td>
+<td>快</td>
+</tr>
+<tr>
+<td>稳态吞吐</td>
+<td>最低</td>
+<td>中</td>
+<td><strong>最高</strong></td>
+<td>高（接近 JIT）</td>
+</tr>
+<tr>
+<td>内存占用</td>
+<td>最小</td>
+<td>中</td>
+<td>最大（代码 + profile）</td>
+<td>中</td>
+</tr>
+<tr>
+<td>延迟可预测性</td>
+<td><strong>最好</strong>（无预热）</td>
+<td>较好</td>
+<td>差（有预热与去优化）</td>
+<td>好</td>
+</tr>
+<tr>
+<td>运行期自适应</td>
+<td>无</td>
+<td>弱</td>
+<td><strong>强</strong>（能重新优化）</td>
+<td>无（产物固定）</td>
+</tr>
+<tr>
+<td>安全面</td>
+<td>最小</td>
+<td>中</td>
+<td>最大（可执行内存）</td>
+<td>中</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>嵌入式、强隔离沙箱、低延迟</td>
+<td>短命进程、启动敏感</td>
+<td>长驻服务、动态语言</td>
+<td>CLI、容器化服务、移动端</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>观察到的现象</th>
+<th>背后机制</th>
+<th>该怎么应对</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>前几十次调用明显慢</td>
+<td>解释器 → 基线 → 优化 的分层爬升</td>
+<td>压测前充分预热；关注 p99 而不是均值</td>
+</tr>
+<tr>
+<td>单次调用出现尖峰</td>
+<td>编译开销记在了那一次调用上</td>
+<td>预热放在流量低峰或启动阶段</td>
+</tr>
+<tr>
+<td>同一函数处理多种对象形状后变慢</td>
+<td>内联缓存从单态退化为多态&#x2F;巨型态</td>
+<td>统一对象形状，避免同一热路径吃多种结构</td>
+</tr>
+<tr>
+<td>运行一段时间后突然变慢</td>
+<td>去优化（来了新类型 &#x2F; 守卫失败）</td>
+<td>用 <code>--trace-deopt</code> 之类工具定位，别当成&quot;抖动&quot;</td>
+</tr>
+<tr>
+<td>微基准显示快了很多倍</td>
+<td>死代码消除 &#x2F; 常量折叠 &#x2F; 循环被删掉</td>
+<td>保证结果被使用，用不可预测的输入</td>
+</tr>
+<tr>
+<td>同一份代码在不同平台性能差很多</td>
+<td>iOS 等平台不允许 JIT</td>
+<td>按平台能力设计，别假设 JIT 一定存在</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：JIT 的本质不是&quot;更聪明的编译器&quot;，而是<strong>一个把编译成本推迟并分摊到热点上的运行期投资机制</strong>——先用解释器跑起来、顺便采集真实信息，再为真正热的代码生成激进的机器码，并保留随时退回的安全阀。理解它的关键，是同时记住这几件事：<strong>启动慢换来稳态快，预热期会变成尾延迟，多态会吞掉优化，而&quot;不开 JIT&quot;在很多时候是理性的选择。</strong> 看到&quot;这段代码怎么跑着跑着变快了&quot;，或者&quot;压力一大就变慢了&quot;，你现在应该知道该往哪个方向查了。</p>
+<p><strong>相关阅读</strong></p>
+<ul>
+<li>局部性原理：缓存体系的地基（JIT 的收益很大一部分来自缓存友好的机器码）：<a href="/posts/princ-locality/">&#x2F;posts&#x2F;princ-locality&#x2F;</a></li>
+<li>Amdahl 定律：并行加速比的天花板（优化哪一段才真的有意义）：<a href="/posts/princ-amdahl/">&#x2F;posts&#x2F;princ-amdahl&#x2F;</a></li>
+<li>二八定律（Pareto）：热点总是集中（分层编译就是这条定律的编译器版本）：<a href="/posts/princ-pareto/">&#x2F;posts&#x2F;princ-pareto&#x2F;</a></li>
+<li>空间换时间：哈希、缓存与索引的共同母题（profile 数据与机器码都是&quot;用空间换时间&quot;）：<a href="/posts/princ-space-time/">&#x2F;posts&#x2F;princ-space-time&#x2F;</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-jit/">https://hespethorn.github.io/posts/princ-jit/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E8%BF%90%E8%A1%8C%E6%97%B6/">运行时</a><a class="post-meta__tags" href="/tags/%E7%BC%96%E8%AF%91%E4%BC%98%E5%8C%96/">编译优化</a><a class="post-meta__tags" href="/tags/%E6%80%A7%E8%83%BD/">性能</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">808</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1096</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

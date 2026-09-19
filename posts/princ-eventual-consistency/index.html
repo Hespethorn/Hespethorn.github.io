@@ -1,0 +1,663 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>最终一致性：不一致是常态，收敛才是目标 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="三个副本，写了 300 次，然后什么都不做： 123r1 本地 counter &#x3D; 103r2 本地 counter &#x3D; 99r3 本地 counter &#x3D; 98  三个数不一样。如果你以为&quot;最终一致&quot;的意思是&quot;放着不管，过一会儿它们自己就一样了&quot;，那这三个数字就是反例——晾 1000 轮也不会变。 最终一致性被误解得最厉害的地方就在这个&quot;最终&amp;q">
+<meta property="og:type" content="article">
+<meta property="og:title" content="最终一致性：不一致是常态，收敛才是目标">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-eventual-consistency/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="三个副本，写了 300 次，然后什么都不做： 123r1 本地 counter &#x3D; 103r2 本地 counter &#x3D; 99r3 本地 counter &#x3D; 98  三个数不一样。如果你以为&quot;最终一致&quot;的意思是&quot;放着不管，过一会儿它们自己就一样了&quot;，那这三个数字就是反例——晾 1000 轮也不会变。 最终一致性被误解得最厉害的地方就在这个&quot;最终&amp;q">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-17T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-19T07:48:50.337Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="分布式">
+<meta property="article:tag" content="一致性">
+<meta property="article:tag" content="数据复制">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "最终一致性：不一致是常态，收敛才是目标",
+  "url": "https://hespethorn.github.io/posts/princ-eventual-consistency/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-17T16:00:00.000Z",
+  "dateModified": "2026-09-19T07:48:50.337Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-eventual-consistency/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '最终一致性：不一致是常态，收敛才是目标',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">808</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1096</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">最终一致性：不一致是常态，收敛才是目标</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">最终一致性：不一致是常态，收敛才是目标</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>14mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>三个副本，写了 300 次，然后什么都不做：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">r1 本地 counter = 103</span><br><span class="line">r2 本地 counter = 99</span><br><span class="line">r3 本地 counter = 98</span><br></pre></td></tr></table></figure>
+
+<p>三个数不一样。<strong>如果你以为&quot;最终一致&quot;的意思是&quot;放着不管，过一会儿它们自己就一样了&quot;，那这三个数字就是反例——晾 1000 轮也不会变。</strong></p>
+<p>最终一致性被误解得最厉害的地方就在这个&quot;最终&quot;上。它不是&quot;时间会治愈一切&quot;，而是一份<strong>有条件的承诺</strong>：<em>在停止写入、并且修复机制跑完之后，所有副本会收敛到同一个值。</em> 注意后半句——<strong>修复机制必须存在。</strong></p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>最终一致性的谱系，比大多数人以为的要长。</p>
+<ul>
+<li><strong>1975 年，Johnson 与 Thomas</strong> 在《The Maintenance of Duplicate Databases》（RFC 677）里提出用时间戳来解决副本冲突——这是 <strong>Last-Write-Wins</strong> 的雏形，也是&quot;让副本自己收敛&quot;这一思路最早的落地。</li>
+<li><strong>1987 年，Xerox PARC 的 Demers 等人</strong> 发表《Epidemic Algorithms for Replicated Database Maintenance》，给出一整套<strong>反熵（anti-entropy）</strong> 与 <strong>gossip</strong> 机制：副本之间周期性地互相&quot;传染&quot;数据，直到全网络收敛。这是&quot;收敛&quot;从口号变成工程手段的关键一步。</li>
+<li><strong>1989–1995 年，同样是 Xerox PARC 的 Bayou 项目</strong>：Douglas Terry 等人在 SOSP 1995 的《Managing Update Conflicts in a Weakly Connected Replicated Storage System》里，<strong>明确提出了 eventual consistency 这个术语</strong>，并配上一套今天还在用的 <strong>session guarantees</strong>（read-your-writes、monotonic reads、writes-follow-reads）。Bayou 的动机非常具体：<strong>移动计算</strong>——笔记本电脑会断网，断网也得能用。</li>
+<li><strong>2000–2002 年</strong>：Eric Brewer 的 CAP 猜想被 Gilbert 与 Lynch 证明，给&quot;为什么必须放弃一部分一致性&quot;提供了理论框架。</li>
+<li><strong>2007 年，Amazon Dynamo</strong>（SOSP 2007）：把最终一致性推向工业主流，并给出了一整套配套机制——<strong>quorum（R + W &gt; N）、向量时钟、读修复、带 Merkle 树的反熵、hinted handoff</strong>。今天你能见到的&quot;最终一致系统&quot;，几乎都能在这篇论文里找到对应零件。</li>
+<li><strong>2008–2009 年</strong>：Werner Vogels 的《Eventually Consistent》把这个词变成通用术语；Dan Pritchett 的《BASE: An Acid Alternative》给出 <strong>Basically Available &#x2F; Soft state &#x2F; Eventually consistent</strong> 这套对照 ACID 的命名。</li>
+<li><strong>2011 年，INRIA 的 Marc Shapiro 等人</strong> 提出 <strong>CRDT</strong>（Conflict-free Replicated Data Types），把&quot;合并&quot;从&quot;靠时间戳猜&quot;升级为&quot;靠数学性质保证&quot;——要求合并操作满足<strong>交换律、结合律、幂等</strong>，从而得到比&quot;最终一致&quot;更强的 <strong>强最终一致（Strong Eventual Consistency）</strong>：只要收到全部更新，副本立刻一致，不需要&quot;等一等&quot;。</li>
+</ul>
+<p>值得一提的还有两次&quot;反转&quot;：</p>
+<ul>
+<li><strong>2012 年，Brewer 自己写了《CAP Twelve Years Later》</strong>，澄清&quot;C 是线性一致性&quot;、&quot;分区发生时 CAP 才适用&quot;、&quot;三选二是误读&quot;——因为&quot;最终一致 vs 强一致&quot;的二分，本来就是 CAP 被过度简化后的产物。</li>
+<li><strong>2020 年 12 月，AWS S3 宣布所有读写都强一致</strong>，结束了 S3 长达十四年的&quot;最终一致&quot;叙事。这提醒我们：<strong>最终一致经常是工程折中的产物，而不是理想——当底层技术允许时，提供方会把它换成强一致。</strong></li>
+</ul>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为<strong>强一致的代价是延迟与可用性，而且这个代价由物理定律决定</strong>。</p>
+<p>要保证&quot;任何一次读都能看到之前所有成功的写&quot;（线性一致性），系统必须让写<strong>同步</strong>到足够多的副本才能返回。这意味着：</p>
+<ul>
+<li><strong>延迟下限 &#x3D; 最慢那个副本的往返时间</strong>。跨地域多副本时，这一条直接把延迟钉死在几十到上百毫秒；</li>
+<li><strong>可用性下限 &#x3D; 需要同时活着的副本数</strong>。网络一分区，少数派一侧就不许读写——宁可不可用，也不给可能过期的数据；</li>
+<li><strong>写入吞吐受限于最慢的参与者</strong>。</li>
+</ul>
+<p>最终一致换掉的是&quot;立刻&quot;，保住的是&quot;正确<strong>最终</strong>会到&quot;。它做的事很直白：<strong>把写操作先接住、立刻返回，把&quot;让副本对齐&quot;这件事从写路径挪到后台</strong>。收益是延迟从&quot;最慢副本的 RTT&quot;降到&quot;本地&quot;，可用性从&quot;多数派存活&quot;放宽到&quot;只要写得到某一个副本&quot;。</p>
+<p>它的典型适用场景也就自然浮现：</p>
+<ul>
+<li><strong>跨地域&#x2F;多活部署</strong>，物理距离摆在那里；</li>
+<li><strong>读多写少、且能容忍短暂陈旧</strong>的场景（商品详情、用户资料、时间线）；</li>
+<li><strong>断连&#x2F;弱网&#x2F;离线优先</strong>（Bayou 的初衷，今天的移动端本地优先架构、Notion&#x2F;Figma 类协作工具）；</li>
+<li><strong>可用性优先于新鲜度</strong>的核心链路（购物车&quot;加进去就一定成功&quot;，而不是&quot;加不进去就报错&quot;）；</li>
+<li><strong>无法强一致的技术形态</strong>：DNS 传播、CDN 缓存、消息队列的跨集群复制。</li>
+</ul>
+<p><strong>本质一句话：最终一致性是把一致性的责任从写路径转移到后台修复策略上——它承诺的不是&quot;数据会自己变一致&quot;，而是&quot;只要停止写入，并且存在一套在跑的修复机制，副本最终会收敛到同一个值&quot;。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看收敛这件事在系统里长什么样。注意图中<strong>写路径</strong>和<strong>修复路径</strong>是两条独立的路：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant C as 客户端
+    participant R1 as 副本 r1
+    participant R2 as 副本 r2
+    participant R3 as 副本 r3
+    C-&gt;&gt;R1: 写入（本地副本，立刻返回）
+    Note over R1: 写入成功即应答&lt;br/&gt;不等待其他副本
+    C-&gt;&gt;R2: 读取
+    R2--&gt;&gt;C: 返回旧值（暂时不一致）
+    Note over R1,R3: 后台修复路径开始工作
+    R1-&gt;&gt;R2: 反熵：周期对账，补齐缺失的更新
+    R2-&gt;&gt;R3: 反熵：继续传染，直到全网络收敛
+    R2--&gt;&gt;C: 之后的读取返回新值（已收敛）</code></pre>
+
+<p>再看&quot;最终&quot;到底要多久——这取决于你选了哪种修复策略，实测数据如下：</p>
+<pre><code class="highlight mermaid">flowchart TD
+    A[&quot;3 个副本，300 次写&lt;br/&gt;初始不一致键数约 173&quot;] --&gt; B&#123;&quot;修复策略&quot;&#125;
+    B --&gt;|&quot;什么都不做&quot;| C[&quot;200 轮后仍为 174&lt;br/&gt;永远不收敛&quot;]
+    B --&gt;|&quot;读修复：只修被读到的 25% 键&quot;| D[&quot;15 次读 → 158&lt;br/&gt;只降了被读到的那部分&quot;]
+    B --&gt;|&quot;周期反熵：每 10 轮全量对账&quot;| E[&quot;30 轮后 → 0&lt;br/&gt;收敛，代价是频繁对账&quot;]
+    B --&gt;|&quot;周期反熵：每 50 轮全量对账&quot;| F[&quot;100 轮后 → 0&lt;br/&gt;省带宽，收敛更慢&quot;]</code></pre>
+
+<p>这张图要传达的核心是：<strong>&quot;最终&quot;不是一个时间承诺，而是一个策略选择。</strong> 同样叫&quot;最终一致&quot;，什么都不做是永远不一致，每 10 轮对账是 30 轮收敛，每 50 轮对账是 100 轮收敛。</p>
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 没有修复机制，&quot;最终&quot;永远不会到来（本机实跑，脚本 <code>.workbuddy/eventual_demo.py</code>）</strong></p>
+<p>3 个副本，300 次写随机落在各副本上，写后不做任何信息交换：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">  r1 本地 counter = 103</span><br><span class="line">  r2 本地 counter = 99</span><br><span class="line">  r3 本地 counter = 98</span><br><span class="line">三个数不一样，而且差异不会自己变小。两两不一致键数：</span><br><span class="line">  r1 vs r2：不一致键数 = 1</span><br><span class="line">  r1 vs r3：不一致键数 = 1</span><br><span class="line">  r2 vs r3：不一致键数 = 1</span><br><span class="line">即使再空转 1000 轮，只要没有信息交换，这个数字不会变</span><br></pre></td></tr></table></figure>
+
+<p><strong>2. 三种修复策略的收敛速度（同一脚本实跑）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">无修复（写后不管）                初始不一致  174 → 结束  174，耗时 200 轮</span><br><span class="line">读修复（只修被读到的那 25% 键）       初始不一致  173 → 结束  158，耗时  15 轮</span><br><span class="line">周期反熵（每 10 轮全量对账）         初始不一致  172 → 结束    0，耗时  30 轮</span><br><span class="line">周期反熵（每 50 轮全量对账）         初始不一致  173 → 结束    0，耗时 100 轮</span><br></pre></td></tr></table></figure>
+
+<p>这四行几乎就是最终一致系统的完整经济学：</p>
+<ul>
+<li><strong>无修复</strong>：不花钱，也永远不收敛——<strong>&quot;最终一致&quot;必须有人为它付账</strong>；</li>
+<li><strong>读修复（read repair）</strong>：只修<strong>被读到</strong>的键。15 次读让不一致从 173 降到 158——降幅 15，正好对应&quot;被读到的键&quot;。<strong>好处是&quot;热点数据自动修复&quot;（被读的东西恰好是最该对的），坏处是&quot;冷数据永远不对&quot;</strong>——没人读的数据，分歧就一直躺着。Dynamo 的读修复正是这个语义。</li>
+<li><strong>反熵（anti-entropy）</strong>：定期全量对账，能真正收敛到 0。间隔 10 轮 → 30 轮收敛；间隔 50 轮 → 100 轮收敛。<strong>间隔越短越快、也越贵</strong>（对账本身要传数据、算摘要）。真实系统用 Merkle 树来压缩对账流量——先比树根，只传不同的子树。</li>
+</ul>
+<p>工程上的标准答案是<strong>两者都要</strong>：读修复负责热点与延迟，反熵负责兜底冷数据。</p>
+<p><strong>3. 收敛 ≠ 没丢数据：冲突解决才是真正的难点（同一脚本实跑）</strong></p>
+<p>3 个副本各自本地自增（彼此看不到对方，这就是并发），20 轮后全量互相同步，期间共发生 420 次自增：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">并发自增总数（三个副本本地自增之和）：420</span><br><span class="line">------------------------------------------------------------</span><br><span class="line">r1：LWW 计数 =  140    G-Counter 计数 =  420</span><br><span class="line">r2：LWW 计数 =  140    G-Counter 计数 =  420</span><br><span class="line">r3：LWW 计数 =  140    G-Counter 计数 =  420</span><br><span class="line"></span><br><span class="line">LWW：三副本最终值 [140] —— 收敛了，但只剩 140，并发写被静默覆盖</span><br><span class="line">G-Counter：三副本最终值 [420] —— 收敛，且每一次自增都留下了</span><br></pre></td></tr></table></figure>
+
+<p>这是全文最该记住的一组数字：<strong>两种方案都&quot;最终一致&quot;，都收敛到三个副本完全相同。但 LWW 把 420 次点赞记成了 140 次——三分之一。</strong></p>
+<p><strong>收敛描述的是&quot;副本之间是否一致&quot;，跟&quot;结果是否正确&quot;完全是两件事。</strong> LWW（Last-Write-Wins）的规则是&quot;时间戳大的赢&quot;，在并发自增场景下，每一次合并都等于把对方那一次增量<strong>丢掉</strong>。它是一致的、确定的、可解释的——<strong>只是错的</strong>。</p>
+<p>G-Counter 走的是另一条路：<strong>改变数据的表示</strong>。不存&quot;总数是多少&quot;，而存&quot;每个副本贡献了多少&quot;，合并时逐副本取最大值再求和。这样合并天然满足<strong>交换律、结合律、幂等</strong>——无论同步顺序怎样、重复几次，结果都一样，而且每一次自增都被保留。</p>
+<p>这就是 CRDT 的核心思想：<strong>与其在合并时试图&quot;判断谁对&quot;，不如把数据结构设计成&quot;怎么合并都对&quot;。</strong></p>
+<p><strong>4. 真实系统里的落点</strong></p>
+<ul>
+<li><strong>Dynamo 式系统（Cassandra、Riak、早期 DynamoDB）</strong>：<code>R + W &gt; N</code> 的 quorum 保证读写集合有交集，配合向量时钟检测冲突、读修复 + Merkle 反熵兜底、hinted handoff 处理临时不可达的副本。</li>
+<li><strong>副本复制</strong>：MySQL 主从、Redis 主从默认都是<strong>异步复制</strong>——从库落后几毫秒到几秒是常态。所以&quot;写完立刻读从库读不到&quot;不是 bug，是模型。</li>
+<li><strong>多活架构</strong>：同城&#x2F;异地双活、单元化部署，跨单元的数据靠消息或 CDC 异步同步，冲突靠业务规则或 CRDT 解决。</li>
+<li><strong>DNS 与 CDN</strong>：TTL 就是&quot;你接受多久的陈旧&quot;。改一次解析记录，全球收敛可能要几小时——这是最古老、也最被接受的最终一致。</li>
+<li><strong>离线优先应用</strong>：本地库先写、后台再同步，冲突留给业务层或 CRDT 处理。</li>
+<li><strong>计数器&#x2F;集合类数据</strong>：点赞数、播放量、购物车内容、被标记已读的集合——这些正是 CRDT 的甜区。</li>
+</ul>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>&quot;最终&quot;没有时限，可能永远不来</strong>。副本长期离线、墓碑（tombstone）被 GC 掉、修复任务静默失败，都会让某些键永远不收敛。<strong>必须以&quot;复制延迟&quot;为指标持续观测，而不是相信&quot;最终&quot;会自动发生。</strong></li>
+<li><strong>收敛不等于业务正确</strong>（见上面 420 → 140 的实测）。<strong>冲突解决策略是业务决策，不是技术默认值。</strong> 电商库存用 LWW 会超卖，点赞数用 LWW 会少算，用户资料用 LWW 一般无所谓——<strong>同一个策略在不同业务上的正确性完全不同。</strong></li>
+<li><strong>读到旧数据会直接破坏业务不变量</strong>。&quot;注册完立刻登录&quot;、&quot;转账后立刻查余额&quot;、&quot;下单后立刻查订单&quot;——这些都需要 <strong>session guarantee</strong>（read-your-writes &#x2F; monotonic reads）。Bayou 在 1995 年就提出了这套东西，今天仍然经常被忘掉。<strong>解决办法不是&quot;改回强一致&quot;，而是给会话提供保证</strong>（粘性路由、写后读走主库、会话内版本号）。</li>
+<li><strong>删除比写入更容易出事</strong>。删除在副本上表现为墓碑，如果墓碑被过早清理，而被删的数据从慢副本&quot;复活&quot;，就会得到一个<strong>删不掉的幽灵记录</strong>。这是最终一致系统里最经典的一类诡异故障。</li>
+<li><strong>反熵的成本随数据量增长</strong>。全量对账在 TB 级数据上不可行，所以必须靠 Merkle 树&#x2F;分片摘要来&quot;只比不同的部分&quot;——<strong>而这又引入新的实现复杂度与故障模式</strong>。</li>
+<li><strong>别把 CAP 当成&quot;最终一致 vs 强一致&quot;的二选一</strong>。CAP 里的 C 指的是<strong>线性一致性</strong>（一个非常强的模型）；分区不发生的时候，CAP 根本不适用。真实系统更多是在<strong>一致性谱系</strong>上取点（线性一致 → 顺序一致 → 因果一致 → 读己之写 → 单调读 → 最终一致），而不是二选一。</li>
+<li><strong>&quot;最终一致&quot;最容易被当成不做的借口</strong>。&quot;反正是最终一致，冲突以后再说&quot;——这句话之后通常就是数据错乱。<strong>正确的姿势是：先定义冲突如何解决，再决定要不要用最终一致。</strong></li>
+<li><strong>不是所有场景都值得付这份复杂度</strong>。需要强一致的场景（账务、库存扣减、唯一性约束、权限变更）<strong>应该老老实实上强一致</strong>。S3 在 2020 年把最终一致换成强一致，就是行业对&quot;这个折中未必值得&quot;的一次表态。</li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>强一致（线性一致）</th>
+<th>最终一致</th>
+<th>强最终一致（CRDT）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>写延迟</td>
+<td>取决于最慢的副本（跨地域可达上百毫秒）</td>
+<td><strong>本地延迟即可返回</strong></td>
+<td>本地延迟</td>
+</tr>
+<tr>
+<td>分区时可用性</td>
+<td>少数派一侧不可用</td>
+<td><strong>几乎总可写</strong></td>
+<td>几乎总可写</td>
+</tr>
+<tr>
+<td>读到什么</td>
+<td>一定是最新已提交值</td>
+<td>可能是旧值</td>
+<td>可能缺更新，但<strong>不会算错</strong></td>
+</tr>
+<tr>
+<td>收敛保证</td>
+<td>不需要（本来就一致）</td>
+<td>停止写入 + 修复机制跑完</td>
+<td>收到全部更新即一致</td>
+</tr>
+<tr>
+<td>冲突处理</td>
+<td>不存在冲突</td>
+<td><strong>必须自己定义</strong></td>
+<td>由数据结构保证可合并</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>高（共识协议）</td>
+<td>中高（修复 + 冲突解决）</td>
+<td>中（但要求数据结构受限）</td>
+</tr>
+<tr>
+<td>典型代价</td>
+<td>延迟、可用性</td>
+<td>陈旧读、业务不变量风险</td>
+<td>无法表达任意语义</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>账务、库存、唯一性、权限</td>
+<td>读多写少、跨地域、离线优先</td>
+<td>计数、集合、协作编辑、购物车</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>修复&#x2F;收敛机制</th>
+<th>修什么</th>
+<th>成本</th>
+<th>覆盖不到的地方</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>读修复 read repair</td>
+<td>读写路径上碰到的键</td>
+<td>低（搭在正常读写上）</td>
+<td><strong>冷数据永远不修</strong></td>
+</tr>
+<tr>
+<td>反熵 anti-entropy</td>
+<td>全量对账</td>
+<td>高（可被 Merkle 树压缩）</td>
+<td>延迟取决于间隔</td>
+</tr>
+<tr>
+<td>hinted handoff</td>
+<td>临时不可达副本的写</td>
+<td>低</td>
+<td>只解决暂时性故障</td>
+</tr>
+<tr>
+<td>Merkle 树比对</td>
+<td>只传不同的子树</td>
+<td>中</td>
+<td>本身要维护树结构</td>
+</tr>
+<tr>
+<td>向量时钟 &#x2F; 版本向量</td>
+<td>检测并发冲突</td>
+<td>低</td>
+<td>只负责<strong>发现</strong>，不负责<strong>解决</strong></td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：最终一致性最容易误解的一点，就是把&quot;最终&quot;当成一个时间承诺。它其实是<strong>一份有条件的工程合同</strong>：写路径先接住、立刻返回，后台必须有修复机制（读修复管热点、反熵兜全量），并且必须<strong>先定义冲突怎么解决</strong>——否则你会得到一个完美收敛、但数据是错的结果。落地时问自己两个问题：<strong>&quot;这个数据不一致一段时间，业务能接受吗？&quot;</strong> 以及**&quot;两份并发的写入撞在一起，我到底要哪一个——还是都要？&quot;** 第一个问题决定要不要用最终一致，第二个问题决定用了之后会不会出事。</p>
+<p><strong>相关阅读</strong></p>
+<ul>
+<li>CAP 定理：分布式的取舍三角（最终一致是从哪条边被推出来的）：<a href="/posts/princ-cap/">&#x2F;posts&#x2F;princ-cap&#x2F;</a></li>
+<li>幂等性：让重试变得安全（弱一致环境下的必备前提）：<a href="/posts/princ-idempotency/">&#x2F;posts&#x2F;princ-idempotency&#x2F;</a></li>
+<li>写前日志 WAL：先记账、后落库（另一条&quot;先记录、后处理&quot;的思路）：<a href="/posts/princ-wal/">&#x2F;posts&#x2F;princ-wal&#x2F;</a></li>
+<li>快速失败：让 Bug 早点现形（不一致被静默容忍，等于另一种静默兜底）：<a href="/posts/princ-fail-fast/">&#x2F;posts&#x2F;princ-fail-fast&#x2F;</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-eventual-consistency/">https://hespethorn.github.io/posts/princ-eventual-consistency/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/">分布式</a><a class="post-meta__tags" href="/tags/%E4%B8%80%E8%87%B4%E6%80%A7/">一致性</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E5%A4%8D%E5%88%B6/">数据复制</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">808</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1096</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
