@@ -1,0 +1,701 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="有读者在《X-Forwarded-For 取首段的陷阱》那篇下面留了一条评论，大意是：  搞太复杂了。就一点——这个 HTTP header 的内容是不是来自可信来源？比如自己信任的 proxy。如果不是，直接忽略掉。或者用更好的办法：直接在 proxy 上 strip 掉非可信来源的 header 内容，把复杂性丢到 proxy 上，简化后端业务代码。  这条评论我盯了两天才想清楚该怎么回。原因">
+<meta property="og:type" content="article">
+<meta property="og:title" content="信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩">
+<meta property="og:url" content="https://hespethorn.github.io/posts/net-xff-trust-boundary/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="有读者在《X-Forwarded-For 取首段的陷阱》那篇下面留了一条评论，大意是：  搞太复杂了。就一点——这个 HTTP header 的内容是不是来自可信来源？比如自己信任的 proxy。如果不是，直接忽略掉。或者用更好的办法：直接在 proxy 上 strip 掉非可信来源的 header 内容，把复杂性丢到 proxy 上，简化后端业务代码。  这条评论我盯了两天才想清楚该怎么回。原因">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-21T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-23T07:47:53.847Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="HTTP">
+<meta property="article:tag" content="Networking">
+<meta property="article:tag" content="反向代理">
+<meta property="article:tag" content="安全边界">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩",
+  "url": "https://hespethorn.github.io/posts/net-xff-trust-boundary/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-21T16:00:00.000Z",
+  "dateModified": "2026-09-23T07:47:53.847Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/net-xff-trust-boundary/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">813</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1108</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Networking/">Networking</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>14mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>有读者在《<a href="/posts/seckcpp0311/">X-Forwarded-For 取首段的陷阱</a>》那篇下面留了一条评论，大意是：</p>
+<blockquote>
+<p><strong>搞太复杂了。就一点——这个 HTTP header 的内容是不是来自可信来源？比如自己信任的 proxy。如果不是，直接忽略掉。或者用更好的办法：直接在 proxy 上 strip 掉非可信来源的 header 内容，把复杂性丢到 proxy 上，简化后端业务代码。</strong></p>
+</blockquote>
+<p>这条评论我盯了两天才想清楚该怎么回。原因是它<strong>有一半是对的</strong>，而且是那种你说不出&quot;不对&quot;的对；另一半听起来更简洁，但那个简洁是错觉。</p>
+<p>先说结论：**它描述的不是&quot;更简单的实现&quot;，而是&quot;把同一条约束换个地方执行&quot;。**换个地方本身没问题——问题在于换过去之后，那条约束落进了一层基本没人测的配置里，而它本来是一段可测的代码。</p>
+<h2 id="一、评论其实说了两件事"><a href="#一、评论其实说了两件事" class="headerlink" title="一、评论其实说了两件事"></a>一、评论其实说了两件事</h2><table>
+<thead>
+<tr>
+<th>#</th>
+<th>评论的主张</th>
+<th>它是什么</th>
+<th>我的判定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A</td>
+<td>header 是否来自可信来源，不是就直接忽略</td>
+<td>解析逻辑的第一步</td>
+<td>原文已经这么写了</td>
+</tr>
+<tr>
+<td>B</td>
+<td>在 proxy 上 strip 掉非可信来源的 header，把复杂性丢给 proxy</td>
+<td>架构层面的归属主张</td>
+<td>方向对，但它是&quot;搬迁&quot;，不是&quot;消除&quot;</td>
+</tr>
+</tbody></table>
+<p>先把 A 说清楚，因为它经常被当成&quot;更简单的替代方案&quot;，其实不是。</p>
+<p>XFF 的解析确实分两步，<a href="/posts/seckcpp0311/">前一篇</a>拆过：</p>
+<ol>
+<li>**先看直连方是不是可信代理。**不是 → XFF 里任何内容都不采信，直接用 TCP 对端地址。</li>
+<li><strong>是 → 从右往左跳过可信地址，取第一个不可信地址。</strong></li>
+</ol>
+<p>评论的 A 就是第 1 步。它成立，但没回答第 2 步的问题：<strong>来源可信之后，那段 XFF 里到底取哪一段？</strong></p>
+<p>这一步省不掉，因为&quot;来源可信&quot;和&quot;可以取首段&quot;是两件事。</p>
+<h2 id="二、分水岭：代理是覆盖写头，还是追加写头"><a href="#二、分水岭：代理是覆盖写头，还是追加写头" class="headerlink" title="二、分水岭：代理是覆盖写头，还是追加写头"></a>二、分水岭：代理是覆盖写头，还是追加写头</h2><p>决定&quot;取哪一段&quot;的，是代理<strong>怎么写</strong>这个头。</p>
+<div align="center">
+<svg width="100%" viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg">
+  <text x="340" y="22" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a1a1a">同一个请求，两种写法留下的东西不一样</text>
+  <rect x="20" y="40" width="640" height="92" rx="8" fill="#e6f4ea" stroke="#137333" stroke-width="1.5"/>
+  <text x="36" y="62" font-size="12" font-weight="bold" fill="#137333">覆盖（首跳）</text>
+  <text x="36" y="82" font-size="12" font-family="monospace" fill="#1a1a1a">proxy_set_header X-Forwarded-For $remote_addr;</text>
+  <text x="36" y="102" font-size="12" fill="#1a1a1a">客户端带来的 9.9.9.9 被丢掉，写进去的是 Nginx 亲眼看到的对端</text>
+  <rect x="36" y="110" width="300" height="16" rx="3" fill="#ffffff" stroke="#137333" stroke-width="1"/>
+  <text x="42" y="122" font-size="11" font-family="monospace" fill="#1a1a1a">X-Forwarded-For: 1.2.3.4</text>
+  <text x="352" y="122" font-size="12" fill="#137333">← 单值，可直接采信</text>
+  <rect x="20" y="148" width="640" height="92" rx="8" fill="#fce8e6" stroke="#c5221f" stroke-width="1.5"/>
+  <text x="36" y="170" font-size="12" font-weight="bold" fill="#c5221f">追加（非首跳，模板里最常见）</text>
+  <text x="36" y="190" font-size="12" font-family="monospace" fill="#1a1a1a">proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;</text>
+  <text x="36" y="210" font-size="12" fill="#1a1a1a">客户端带来的 9.9.9.9 原样保留，对端地址缀到右边</text>
+  <rect x="36" y="218" width="300" height="16" rx="3" fill="#ffffff" stroke="#c5221f" stroke-width="1"/>
+  <text x="42" y="230" font-size="11" font-family="monospace" fill="#1a1a1a">X-Forwarded-For: 9.9.9.9, 1.2.3.4</text>
+  <text x="352" y="230" font-size="12" fill="#c5221f">← 伪造值留在最左</text>
+</svg>
+</div>
+
+<p>Nginx 侧的两种写法：</p>
+<figure class="highlight nginx"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 首跳：覆盖。客户端带来的 XFF 被丢掉，只写 Nginx 亲眼看到的对端</span></span><br><span class="line"><span class="attribute">proxy_set_header</span> X-Forwarded-For <span class="variable">$remote_addr</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment"># 非首跳：追加。客户端带来的 XFF 原样保留，对端地址缀到右边</span></span><br><span class="line"><span class="attribute">proxy_set_header</span> X-Forwarded-For <span class="variable">$proxy_add_x_forwarded_for</span>;</span><br></pre></td></tr></table></figure>
+
+<p><code>$proxy_add_x_forwarded_for</code> 的语义是&quot;<strong>客户端带来的 XFF（若有）+ 自己的对端地址</strong>&quot;——追加，不是覆盖。客户端自己塞一个 XFF 时，结果就是 <code>伪造值, 真实IP</code>，伪造值稳稳留在最左边。</p>
+<p>而现实里这两种写法是<strong>共存</strong>的：一份 nginx 模板里，首跳写覆盖、后面几跳写追加，非常常见。于是到了后端，XFF 里混着三种来源的东西——客户端自称的、中间跳追加的、首跳亲眼所见的——<strong>你只能靠位置去分辨</strong>。</p>
+<p>这就是两步解析躲不掉的原因。不是我把问题想复杂了，是<strong>追加语义把答案放在了右边</strong>。</p>
+<p><strong>本质一句话</strong>：取哪一段，取决于这个头是被覆盖过还是被追加过；而这件事在读它之前看不出来，所以只能从<strong>可信的那一端</strong>往左数。</p>
+<h2 id="三、-边界-strip-的正式名字：Nginx-与-Envoy"><a href="#三、-边界-strip-的正式名字：Nginx-与-Envoy" class="headerlink" title="三、&quot;边界 strip&quot;的正式名字：Nginx 与 Envoy"></a>三、&quot;边界 strip&quot;的正式名字：Nginx 与 Envoy</h2><p>评论的 B 我认。而且它不是野路子，是工业界的默认姿势。</p>
+<p><strong>Envoy</strong> 做边缘节点时要求 <code>use_remote_address: true</code>，它的语义是<strong>不采信 <code>x-forwarded-for</code>，改用下游真实地址</strong>；前面还有几层可信代理，再用 <code>xff_num_trusted_hops</code> 告诉它&quot;从右数第几跳&quot;。文档里有一句写得很直白：</p>
+<blockquote>
+<p>Malicious clients can forge XFF, but the <strong>last address in XFF</strong> can be trusted <strong>if it was put there by a trusted proxy</strong>.</p>
+</blockquote>
+<p>在 Envoy 头部清洗绕过（CVE-2025-0752）的处置讨论里，给出的建议也正是这两条：用 <code>request_headers_to_remove</code> 把 <code>x-forwarded-for</code> 摘掉，再配 <code>xff_num_trusted_hops = 0</code> + <code>use_remote_address = true</code>。<strong>这就是评论说的&quot;在 proxy 上 strip&quot;。</strong></p>
+<p><strong>Nginx</strong> 做同一件事的是 realip 模块：</p>
+<figure class="highlight nginx"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attribute">set_real_ip_from</span> <span class="number">10.0.0.0</span>/<span class="number">8</span>;      <span class="comment"># 声明谁是可信代理</span></span><br><span class="line"><span class="attribute">real_ip_header</span> X-Forwarded-For;   <span class="comment"># 从哪个头里取</span></span><br><span class="line"><span class="attribute">real_ip_recursive</span> <span class="literal">on</span>;             <span class="comment"># 怎么取</span></span><br></pre></td></tr></table></figure>
+
+<p>关键在最后一行。官方文档对 <code>real_ip_recursive</code> 的定义是：</p>
+<ul>
+<li><strong>on</strong>：匹配可信地址的客户端地址，被替换成请求头里「<strong>最后一个非可信地址</strong>」；</li>
+<li><strong>off（默认）</strong>：被替换成请求头里「<strong>最后一个地址</strong>」。</li>
+</ul>
+<p>再配合 nginx 作者 Maxim Dounin 在邮件列表里逐步走过的那条链（<code>192.168.1.79, 178.150.189.138, 8.47.98.129</code>，结论是&quot;取右起第一个不可信地址&quot;），结论就很清楚了：<strong><code>real_ip_recursive on</code> 和前面那两步解析是同一个算法。</strong></p>
+<div align="center">
+<svg width="100%" viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg">
+  <text x="340" y="22" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a1a1a">同一套遍历、同一份信任名单，差别只在落在哪一层</text>
+  <rect x="20" y="40" width="310" height="130" rx="8" fill="#e8f0fe" stroke="#3367d6" stroke-width="1.5"/>
+  <text x="36" y="62" font-size="12" font-weight="bold" fill="#3367d6">边界层：nginx.conf</text>
+  <text x="36" y="86" font-size="11" font-family="monospace" fill="#1a1a1a">set_real_ip_from 10.0.0.0/8;</text>
+  <text x="36" y="104" font-size="11" font-family="monospace" fill="#1a1a1a">real_ip_header X-Forwarded-For;</text>
+  <text x="36" y="122" font-size="11" font-family="monospace" fill="#1a1a1a">real_ip_recursive on;</text>
+  <text x="36" y="150" font-size="11" fill="#3367d6">语义：取「最后一个非可信地址」</text>
+  <rect x="350" y="40" width="310" height="130" rx="8" fill="#fef7e0" stroke="#b06000" stroke-width="1.5"/>
+  <text x="366" y="62" font-size="12" font-weight="bold" fill="#b06000">应用层：C++ 插件 / 业务代码</text>
+  <text x="366" y="86" font-size="11" font-family="monospace" fill="#1a1a1a">trust_ips = ["10.0.0.0/8"]</text>
+  <text x="366" y="104" font-size="11" font-family="monospace" fill="#1a1a1a">for (ip : 反向遍历(XFF))</text>
+  <text x="366" y="122" font-size="11" font-family="monospace" fill="#1a1a1a">    if (!可信(ip)) return ip;</text>
+  <text x="366" y="150" font-size="11" fill="#b06000">语义：取「第一个不可信地址」</text>
+  <rect x="20" y="186" width="640" height="44" rx="8" fill="#f1f3f4" stroke="#5f6368" stroke-width="1"/>
+  <text x="340" y="208" text-anchor="middle" font-size="12" fill="#1a1a1a">搬到边界不等于复杂度消失：语言换了，可测性也换了</text>
+</svg>
+</div>
+
+<p>所以搬过去之后，复杂度并没有消失。它从 C++ 的 <code>trust_ips</code> 遍历，搬进了 <code>nginx.conf</code> 的 <code>set_real_ip_from</code> + <code>real_ip_recursive</code>。<strong>换了个语言，顺带从&quot;可测的代码&quot;变成了&quot;基本没人测的配置&quot;。</strong></p>
+<p>顺带说个容易忽略的细节：Dounin 那个例子里，最靠近 nginx 的那一跳（<code>10.6.1.56</code>）出现在 <code>$realip_remote_addr</code> 里，<strong>它根本不在 XFF 中</strong>。XFF 的条数等于上游代理个数，每一跳追加的是<strong>它自己的对端</strong>。</p>
+<h2 id="四、但它是-搬迁-，而且是有损的"><a href="#四、但它是-搬迁-，而且是有损的" class="headerlink" title="四、但它是&quot;搬迁&quot;，而且是有损的"></a>四、但它是&quot;搬迁&quot;，而且是有损的</h2><p>如果只是搬家，那还好说。真正让我把这条评论按住的是另一件事：<strong>覆盖式 strip 会丢东西。</strong></p>
+<p>链路是：客户端 <code>1.2.3.4</code> → 别人家的 CDN <code>8.47.98.129</code> → 你的 Nginx → 后端。</p>
+<ul>
+<li>Nginx 用 <code>$proxy_add_x_forwarded_for</code>（追加）：到后端的头是 <code>1.2.3.4, 8.47.98.129</code>。<strong>中间跳亲眼所见的 <code>1.2.3.4</code> 还在列表里</strong>，只要把 CDN 网段列进 <code>set_real_ip_from</code>，右→左就能把它捞回来。</li>
+<li>Nginx 用 <code>$remote_addr</code>（覆盖）：到后端的头是 <code>8.47.98.129</code>。<strong>你写进去的是自己亲眼看到的那一跳</strong>，真实客户端 <code>1.2.3.4</code> 就这么没了——后端拿到这个头，用什么算法都救不回来。</li>
+</ul>
+<p>所以&quot;入口全由自己控住时，后端那步可以被边界替代&quot;这句话，<strong>条件比字面严</strong>。要替代掉的不是&quot;代理是不是我的&quot;，而是&quot;<strong>入口能不能被绕过</strong>&quot;。</p>
+<table>
+<thead>
+<tr>
+<th>前提</th>
+<th>检验方式</th>
+<th>不满足会怎样</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>入口不可绕过</td>
+<td>有没有一条路能不经边界直达后端？（集群内直连 svc、debug 端口、第二个 ingress、IPv6 旁路）</td>
+<td>strip 形同虚设，而后端毫无防备</td>
+</tr>
+<tr>
+<td>strip 覆盖全族</td>
+<td>不只 XFF，见下一节</td>
+<td>漏掉的那个头，正好会被业务代码拿去用</td>
+</tr>
+<tr>
+<td>配置进版本控制 + 有测试</td>
+<td>新加入口时 CI 会不会拦</td>
+<td>洞原样回来，<strong>代码零改动、测试全绿</strong></td>
+</tr>
+<tr>
+<td>每个入口都配</td>
+<td>一共有几个入口</td>
+<td>漏一处等于没做</td>
+</tr>
+</tbody></table>
+<p>第三行最值得盯。<strong>用一个不可测的层去承载安全决策，等于把风险从&quot;看得见的代码&quot;挪到&quot;看不见的配置&quot;。</strong> Nginx 配置没有单元测试，也很少有人为它写&quot;伪造头&quot;的用例。这跟&quot;压测全绿不代表安全&quot;是同一个形状的坑，只是换了一层。</p>
+<h2 id="五、要-strip，就-strip-干净"><a href="#五、要-strip，就-strip-干净" class="headerlink" title="五、要 strip，就 strip 干净"></a>五、要 strip，就 strip 干净</h2><p>评论说的是&quot;strip 掉非可信来源的 header 内容&quot;。这句如果只做一半，比不做更糟——因为你会<strong>信任一个没摘干净的头</strong>。</p>
+<p>要摘的是<strong>一整族</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">X-Forwarded-For      X-Real-IP          X-Forwarded-Host</span><br><span class="line">X-Forwarded-Proto    Forwarded          CF-Connecting-IP</span><br><span class="line">True-Client-IP       Client-IP          X-Originating-IP</span><br></pre></td></tr></table></figure>
+
+<p>其中 <code>Forwarded</code> 是 RFC 7239 定义的标准头（写法如 <code>Forwarded: for=1.2.3.4;proto=https</code>），不少框架会顺手读它；<code>CF-Connecting-IP</code>、<code>True-Client-IP</code> 则是 CDN 厂商的单值头。<strong>业务代码只要读了一个没被摘掉的头，洞就回来了</strong>——而且这次连&quot;取哪一段&quot;的困惑都没有，伪造值就是唯一的值。</p>
+<p>两层并存的写法大致是这样：</p>
+<figure class="highlight nginx"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 第一层：边界。覆盖式重写全族 —— 客户端带来的这些头一律丢掉</span></span><br><span class="line"><span class="attribute">proxy_set_header</span> X-Forwarded-For   <span class="variable">$remote_addr</span>;</span><br><span class="line"><span class="attribute">proxy_set_header</span> X-Real-IP         <span class="variable">$remote_addr</span>;</span><br><span class="line"><span class="attribute">proxy_set_header</span> X-Forwarded-Proto <span class="variable">$scheme</span>;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 第二层：后端。信任名单里只填边界的地址，别人谁都不信</span></span><br><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;drogon::plugin::RealIpResolver&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;config&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;trust_ips&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="string">&quot;10.0.0.7&quot;</span><span class="punctuation">]</span><span class="punctuation">,</span> <span class="attr">&quot;from_header&quot;</span><span class="punctuation">:</span> <span class="string">&quot;x-forwarded-for&quot;</span> <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="六、这不是-又实现了一遍-：写侧消歧与读侧求解"><a href="#六、这不是-又实现了一遍-：写侧消歧与读侧求解" class="headerlink" title="六、这不是&quot;又实现了一遍&quot;：写侧消歧与读侧求解"></a>六、这不是&quot;又实现了一遍&quot;：写侧消歧与读侧求解</h2><p>写到这里，可以澄清一件很容易误会的事：后端那一步<strong>不是把边界该做的事又做了一遍</strong>。</p>
+<ul>
+<li>边界做的是<strong>写侧消歧</strong>——把可能被伪造的内容删掉，让后面只看到一种可能。</li>
+<li>后端做的是<strong>读侧求解</strong>——在内容还是脏的、可能有三段来源的时候，把答案算出来。</li>
+</ul>
+<p>strip 的产出其实是&quot;<strong>没有了</strong>&quot;，也就是缺省。缺省没法在 C++ 里再实现一次；能在 C++ 里再实现的，只有那份&quot;谁可信&quot;的名单和那段遍历。</p>
+<p>所以更准确的说法是：**我是在读侧把同一条判断又执行了一遍。**边界那层失效时——漏配一个新入口、有旁路、中间夹着不受控的一跳——它还能给出正确答案。</p>
+<p>这就是纵深防御的定义：不是不信任边界，是<strong>不假设边界永不出错</strong>。</p>
+<div align="center">
+<svg width="100%" viewBox="0 0 680 230" xmlns="http://www.w3.org/2000/svg">
+  <text x="340" y="22" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a1a1a">两层各挡什么</text>
+  <rect x="20" y="40" width="310" height="124" rx="8" fill="#e8f0fe" stroke="#3367d6" stroke-width="1.5"/>
+  <text x="36" y="62" font-size="12" font-weight="bold" fill="#3367d6">边界 strip（写侧）</text>
+  <text x="36" y="88" font-size="12" fill="#137333">挡得住：一切经过边界的伪造输入</text>
+  <text x="36" y="112" font-size="12" fill="#c5221f">挡不住：旁路直连、新入口漏配</text>
+  <text x="36" y="140" font-size="11" fill="#5f6368">前提是入口不可绕过</text>
+  <rect x="350" y="40" width="310" height="124" rx="8" fill="#e6f4ea" stroke="#137333" stroke-width="1.5"/>
+  <text x="366" y="62" font-size="12" font-weight="bold" fill="#137333">后端解析（读侧）</text>
+  <text x="366" y="88" font-size="12" fill="#137333">挡得住：无论从哪条路进来的伪造</text>
+  <text x="366" y="112" font-size="12" fill="#c5221f">挡不住：入口本身被攻陷</text>
+  <text x="366" y="140" font-size="11" fill="#5f6368">不依赖网络拓扑</text>
+  <rect x="20" y="176" width="640" height="40" rx="8" fill="#fef7e0" stroke="#b06000" stroke-width="1"/>
+  <text x="340" y="200" text-anchor="middle" font-size="12" fill="#1a1a1a">两者不是二选一：纵深防御是不假设前一层永不出错</text>
+</svg>
+</div>
+
+<h2 id="七、三种读取策略，跑一遍看差异"><a href="#七、三种读取策略，跑一遍看差异" class="headerlink" title="七、三种读取策略，跑一遍看差异"></a>七、三种读取策略，跑一遍看差异</h2><p>空口说&quot;右→左才对&quot;没意思。把同一批请求头喂给三种策略，看它们各自算出什么（可信网段 <code>10.0.0.0/8</code>、<code>172.16.0.0/12</code>，直连方 <code>10.0.0.1</code>）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> ipaddress</span><br><span class="line"></span><br><span class="line"><span class="comment"># 声明的可信代理网段（对应 Nginx 的 set_real_ip_from / Drogon 的 trust_ips）</span></span><br><span class="line">TRUSTED = [ipaddress.ip_network(<span class="string">&#x27;10.0.0.0/8&#x27;</span>),</span><br><span class="line">           ipaddress.ip_network(<span class="string">&#x27;172.16.0.0/12&#x27;</span>)]</span><br><span class="line">PEER = <span class="string">&#x27;10.0.0.1&#x27;</span>          <span class="comment"># 直连方（本例中是 Nginx 自己）</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">split_xff</span>(<span class="params">xff</span>):</span><br><span class="line">    <span class="keyword">return</span> [s.strip() <span class="keyword">for</span> s <span class="keyword">in</span> xff.split(<span class="string">&#x27;,&#x27;</span>) <span class="keyword">if</span> s.strip()]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">is_trusted</span>(<span class="params">ip</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;True=可信代理；False=不可信；None=解析不了（按不可信处理）&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        a = ipaddress.ip_address(ip)</span><br><span class="line">    <span class="keyword">except</span> ValueError:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">any</span>(a.version == n.version <span class="keyword">and</span> a <span class="keyword">in</span> n <span class="keyword">for</span> n <span class="keyword">in</span> TRUSTED)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">take_first</span>(<span class="params">xff</span>):</span><br><span class="line">    <span class="keyword">return</span> split_xff(xff)[<span class="number">0</span>]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">take_last</span>(<span class="params">xff</span>):</span><br><span class="line">    <span class="keyword">return</span> split_xff(xff)[-<span class="number">1</span>]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">walk_rtl</span>(<span class="params">xff, peer=PEER</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Nginx real_ip_recursive on / Drogon RealIpResolver 的等价逻辑&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> is_trusted(peer) <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">True</span>:      <span class="comment"># 第一步：直连方不可信 → 完全不看 XFF</span></span><br><span class="line">        <span class="keyword">return</span> peer</span><br><span class="line">    <span class="keyword">for</span> ip <span class="keyword">in</span> <span class="built_in">reversed</span>(split_xff(xff)):   <span class="comment"># 第二步：从右往左，跳过可信，取第一个不可信</span></span><br><span class="line">        <span class="keyword">if</span> is_trusted(ip) <span class="keyword">is</span> <span class="literal">False</span>:</span><br><span class="line">            <span class="keyword">return</span> ip</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&#x27;<span class="subst">&#123;peer&#125;</span>（回退 TCP 对端）&#x27;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">CASES = [</span><br><span class="line">    (<span class="string">&#x27;单跳：客户端不带 XFF&#x27;</span>, <span class="string">&#x27;1.2.3.4&#x27;</span>),</span><br><span class="line">    (<span class="string">&#x27;单跳：客户端自带伪造值&#x27;</span>, <span class="string">&#x27;9.9.9.9, 1.2.3.4&#x27;</span>),</span><br><span class="line">    (<span class="string">&#x27;双跳：客户端自带伪造值&#x27;</span>, <span class="string">&#x27;9.9.9.9, 1.2.3.4, 172.16.0.5&#x27;</span>),</span><br><span class="line">    (<span class="string">&#x27;链上全是可信代理&#x27;</span>, <span class="string">&#x27;172.16.0.5, 10.0.0.9&#x27;</span>),</span><br><span class="line">    (<span class="string">&#x27;尾部混入脏数据&#x27;</span>, <span class="string">&#x27;1.2.3.4, not-an-ip&#x27;</span>),</span><br><span class="line">]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">w</span>(<span class="params">s</span>):</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">sum</span>(<span class="number">2</span> <span class="keyword">if</span> <span class="built_in">ord</span>(c) &gt; <span class="number">0x2E80</span> <span class="keyword">else</span> <span class="number">1</span> <span class="keyword">for</span> c <span class="keyword">in</span> s)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">pad</span>(<span class="params">s, n</span>):</span><br><span class="line">    <span class="keyword">return</span> s + <span class="string">&#x27; &#x27;</span> * <span class="built_in">max</span>(<span class="number">1</span>, n - w(s))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(pad(<span class="string">&#x27;场景&#x27;</span>, <span class="number">30</span>) + pad(<span class="string">&#x27;取首段&#x27;</span>, <span class="number">18</span>) + pad(<span class="string">&#x27;取最右&#x27;</span>, <span class="number">18</span>) + <span class="string">&#x27;右→左跳过可信&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&#x27;-&#x27;</span> * <span class="number">84</span>)</span><br><span class="line"><span class="keyword">for</span> name, xff <span class="keyword">in</span> CASES:</span><br><span class="line">    <span class="built_in">print</span>(pad(name, <span class="number">30</span>) + pad(take_first(xff), <span class="number">18</span>) + pad(take_last(xff), <span class="number">18</span>) + walk_rtl(xff))</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">场景                          取首段            取最右            右→左跳过可信</span><br><span class="line">------------------------------------------------------------------------------------</span><br><span class="line">单跳：客户端不带 XFF          1.2.3.4           1.2.3.4           1.2.3.4</span><br><span class="line">单跳：客户端自带伪造值        9.9.9.9           1.2.3.4           1.2.3.4</span><br><span class="line">双跳：客户端自带伪造值        9.9.9.9           172.16.0.5        1.2.3.4</span><br><span class="line">链上全是可信代理              172.16.0.5        10.0.0.9          10.0.0.1（回退 TCP 对端）</span><br><span class="line">尾部混入脏数据                1.2.3.4           not-an-ip         1.2.3.4</span><br></pre></td></tr></table></figure>
+
+<p>第 2、3 行是关键：<strong>单跳伪造时&quot;取最右&quot;碰巧是对的</strong>（<code>1.2.3.4</code>），一进多跳就错——它拿到 <code>172.16.0.5</code>，那是倒数第二跳代理。第 5 行说明脏数据要跳过而不是当成结果：<code>not-an-ip</code> 这种条目如果跟着位置走，就会跑到频控 key 里去。四列里只有最后一列在五个场景下都站得住。</p>
+<h2 id="八、对比表与小结"><a href="#八、对比表与小结" class="headerlink" title="八、对比表与小结"></a>八、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>做法</th>
+<th>单跳伪造</th>
+<th>多跳</th>
+<th>链路中间有不受控代理</th>
+<th>落在哪一层</th>
+<th>可测性</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>取 XFF 首段</td>
+<td>✗ 直接绕过</td>
+<td>✗</td>
+<td>✗</td>
+<td>应用代码</td>
+<td>可测</td>
+</tr>
+<tr>
+<td>取 XFF 最右</td>
+<td>✓ 碰巧对</td>
+<td>✗ 拿到倒数第二跳</td>
+<td>✗</td>
+<td>配置 &#x2F; 代码</td>
+<td>一般</td>
+</tr>
+<tr>
+<td>边界覆盖式 strip</td>
+<td>✓</td>
+<td>✓</td>
+<td><strong>✗ 真实客户端被永久抹掉</strong></td>
+<td>边界配置</td>
+<td><strong>基本没人测</strong></td>
+</tr>
+<tr>
+<td>后端两步解析</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>应用代码</td>
+<td>可测</td>
+</tr>
+<tr>
+<td><strong>两层一起做</strong>（推荐）</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+<td>两层</td>
+<td>边界配置 + 代码</td>
+</tr>
+</tbody></table>
+<p>小结：</p>
+<ul>
+<li>评论说的&quot;只信可信来源、不是就忽略&quot;，是解析的第 1 步；<strong>第 2 步&quot;取哪一段&quot;省不掉</strong>——Nginx 模板里最常见的 <code>$proxy_add_x_forwarded_for</code> 是<strong>追加</strong>语义，会把客户端伪造的值留在最左边。</li>
+<li>&quot;在 proxy 上 strip&quot;不是野路子：Envoy 有 <code>use_remote_address</code> &#x2F; <code>xff_num_trusted_hops</code>，Nginx 有 <code>set_real_ip_from</code> + <code>real_ip_recursive</code>。但它<strong>不是消除复杂度，是搬迁</strong>——搬过去用的还是同一套右→左，只是从可测的代码变成了不可测的配置。</li>
+<li>它还有个更硬的前提：<strong>覆盖式 strip 是有损的</strong>。链路中间夹着不受自己控制的代理时，覆盖会把真实客户端永久抹掉；想捞回来，那一层的 Nginx 自己还得跑 <code>real_ip_recursive</code>。</li>
+<li>判据不是&quot;代理是不是我的&quot;，是**&quot;入口能不能被绕过&quot;**。入口可强制 → 边界兜得住；不可强制 → 后端那步就是这条约束唯一的执行者。</li>
+<li>真要 strip，就得<strong>整族 strip</strong>：<code>X-Forwarded-For</code> &#x2F; <code>X-Real-IP</code> &#x2F; <code>Forwarded</code>(RFC 7239) &#x2F; <code>CF-Connecting-IP</code> &#x2F; <code>True-Client-IP</code>…… 漏一个等于没做。</li>
+<li>最后一句跟框架无关：边界 strip 是<strong>写侧消歧</strong>，后端解析是<strong>读侧求解</strong>。strip 产出的是&quot;缺省&quot;，缺省没法在代码里再实现一次——所以这不是重复劳动，是不假设前一层不出错。🐾</li>
+</ul>
+<h2 id="相关阅读"><a href="#相关阅读" class="headerlink" title="相关阅读"></a>相关阅读</h2><ul>
+<li><a href="/posts/seckcpp0310/">3.10 注册安全加固：同 IP 注册频控 + 反代真实客户端 IP 解析</a></li>
+<li><a href="/posts/seckcpp0311/">3.11 X-Forwarded-For 取首段的陷阱：一次真实的注册频控绕过</a></li>
+<li><a href="/posts/a2b01e97/">正向代理与反向代理</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/net-xff-trust-boundary/">https://hespethorn.github.io/posts/net-xff-trust-boundary/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/HTTP/">HTTP</a><a class="post-meta__tags" href="/tags/Networking/">Networking</a><a class="post-meta__tags" href="/tags/%E5%8F%8D%E5%90%91%E4%BB%A3%E7%90%86/">反向代理</a><a class="post-meta__tags" href="/tags/%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C/">安全边界</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">813</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1108</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/29e62ba/" title="《Linux C 语言 TCP Socket 编程详解》学习笔记">《Linux C 语言 TCP Socket 编程详解》学习笔记</a><time datetime="2023-03-23T16:00:00.000Z" title="Created 2023-03-24 00:00:00">2023-03-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1d6b4bdc/" title="从Socket编程到QUIC协议（Computer-Networking）">从Socket编程到QUIC协议（Computer-Networking）</a><time datetime="2022-05-25T16:00:00.000Z" title="Created 2022-05-26 00:00:00">2022-05-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a3a91ba7/" title="多进程编程：早期服务器实现逻辑">多进程编程：早期服务器实现逻辑</a><time datetime="2023-05-15T16:00:00.000Z" title="Created 2023-05-16 00:00:00">2023-05-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9df713de/" title="多进程并发服务器的选择与放弃">多进程并发服务器的选择与放弃</a><time datetime="2023-05-27T16:00:00.000Z" title="Created 2023-05-28 00:00:00">2023-05-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c3d48b2b/" title="多进程文件传输服务器与客户端实现">多进程文件传输服务器与客户端实现</a><time datetime="2023-06-15T16:00:00.000Z" title="Created 2023-06-16 00:00:00">2023-06-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/6841069c/" title="基于 TCP 协议的双向通信程序实现与解析">基于 TCP 协议的双向通信程序实现与解析</a><time datetime="2023-04-14T16:00:00.000Z" title="Created 2023-04-15 00:00:00">2023-04-15</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cb884869/" title="基于 UDP 协议的双向通信程序实现与解析">基于 UDP 协议的双向通信程序实现与解析</a><time datetime="2023-04-07T16:00:00.000Z" title="Created 2023-04-08 00:00:00">2023-04-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a898a0c/" title="基于多人聊天室系统的实现，详细学习 epoll 函数基础">基于多人聊天室系统的实现，详细学习 epoll 函数基础</a><time datetime="2023-05-10T16:00:00.000Z" title="Created 2023-05-11 00:00:00">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/800c7140/" title="基于多人聊天室系统的实现，详细学习select 函数基础">基于多人聊天室系统的实现，详细学习select 函数基础</a><time datetime="2023-04-25T16:00:00.000Z" title="Created 2023-04-26 00:00:00">2023-04-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/9c7e901d/" title="基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践">基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践</a><time datetime="2023-04-29T16:00:00.000Z" title="Created 2023-04-30 00:00:00">2023-04-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a30c1e5/" title="基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究">基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究</a><time datetime="2023-03-18T16:00:00.000Z" title="Created 2023-03-19 00:00:00">2023-03-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2a4bc159/" title="简单echo服务器 -- IPv4/IPv6 双栈兼容">简单echo服务器 -- IPv4/IPv6 双栈兼容</a><time datetime="2025-09-15T16:00:00.000Z" title="Created 2025-09-16 00:00:00">2025-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/614c11d0/" title="简单echo服务器 -- v2.0">简单echo服务器 -- v2.0</a><time datetime="2025-09-19T16:00:00.000Z" title="Created 2025-09-20 00:00:00">2025-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d568c8d6/" title="进程间通信：pipe 与 socketpair 对比">进程间通信：pipe 与 socketpair 对比</a><time datetime="2023-06-20T16:00:00.000Z" title="Created 2023-06-21 00:00:00">2023-06-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b71210bb/" title="聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现">聊天改了又改版：基于 epoll 的简易多人聊天服务器与客户端实现</a><time datetime="2023-05-11T16:00:00.000Z" title="Created 2023-05-12 00:00:00">2023-05-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/97708de/" title="上传下载系列的整理修改改改">上传下载系列的整理修改改改</a><time datetime="2023-07-21T16:00:00.000Z" title="Created 2023-07-22 00:00:00">2023-07-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/3d8a1834/" title="上传下载系列的整理修改改改 - 2">上传下载系列的整理修改改改 - 2</a><time datetime="2023-07-21T16:00:00.000Z" title="Created 2023-07-22 00:00:00">2023-07-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bd6e1b32/" title="上传下载系列的整理修改改改 - 服务端 - 1">上传下载系列的整理修改改改 - 服务端 - 1</a><time datetime="2023-07-27T16:00:00.000Z" title="Created 2023-07-28 00:00:00">2023-07-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/24674a88/" title="上传下载系列的整理修改改改 - 服务端 - 2">上传下载系列的整理修改改改 - 服务端 - 2</a><time datetime="2023-08-02T16:00:00.000Z" title="Created 2023-08-03 00:00:00">2023-08-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/53607a1e/" title="上传下载系列的整理修改改改 - 服务端 - 3">上传下载系列的整理修改改改 - 服务端 - 3</a><time datetime="2023-08-15T16:00:00.000Z" title="Created 2023-08-16 00:00:00">2023-08-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/cd04efbd/" title="上传下载系列的整理修改改改 - 服务端 - 4">上传下载系列的整理修改改改 - 服务端 - 4</a><time datetime="2023-08-21T16:00:00.000Z" title="Created 2023-08-22 00:00:00">2023-08-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e9dd2639/" title="数据库事务隔离机制全面解析：并发问题与解决方案">数据库事务隔离机制全面解析：并发问题与解决方案</a><time datetime="2023-08-28T16:00:00.000Z" title="Created 2023-08-29 00:00:00">2023-08-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8ae6ef6e/" title="双栈 TCP 回声服务器 -- v3.0">双栈 TCP 回声服务器 -- v3.0</a><time datetime="2025-09-19T16:00:00.000Z" title="Created 2025-09-20 00:00:00">2025-09-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/449dee1e/" title="网络编程中的系统调用与信号处理机制">网络编程中的系统调用与信号处理机制</a><time datetime="2023-06-09T16:00:00.000Z" title="Created 2023-06-10 00:00:00">2023-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/84e78701/" title="网络理论核心知识整理">网络理论核心知识整理</a><time datetime="2023-03-05T16:00:00.000Z" title="Created 2023-03-06 00:00:00">2023-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/net-xff-trust-boundary/" title="信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩">信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a2b01e97/" title="正向代理与反向代理">正向代理与反向代理</a><time datetime="2025-09-13T16:00:00.000Z" title="Created 2025-09-14 00:00:00">2025-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/a71dc607/" title="C++ 实现 JWT 工具类封装">C++ 实现 JWT 工具类封装</a><time datetime="2025-09-21T16:00:00.000Z" title="Created 2025-09-22 00:00:00">2025-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/70d59293/" title="getaddrinfo 查找网络IP">getaddrinfo 查找网络IP</a><time datetime="2025-09-03T16:00:00.000Z" title="Created 2025-09-04 00:00:00">2025-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d83767f7/" title="HTTP 无状态性相关概念详解">HTTP 无状态性相关概念详解</a><time datetime="2023-02-19T16:00:00.000Z" title="Created 2023-02-20 00:00:00">2023-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/4d9d90c6/" title="HTTP客户端实现 - 百度首页探寻">HTTP客户端实现 - 百度首页探寻</a><time datetime="2025-09-06T16:00:00.000Z" title="Created 2025-09-07 00:00:00">2025-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/7c6e7059/" title="Linux 进程间文件描述符传输技术详解">Linux 进程间文件描述符传输技术详解</a><time datetime="2023-05-21T16:00:00.000Z" title="Created 2023-05-22 00:00:00">2023-05-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f26b2da3/" title="Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析">Linux：多人聊天室系统实现 - 改版：从功能设计到代码解析</a><time datetime="2023-05-05T16:00:00.000Z" title="Created 2023-05-06 00:00:00">2023-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bb924032/" title="Linux：基于 select 多路复用的 C 语言多人聊天室实现">Linux：基于 select 多路复用的 C 语言多人聊天室实现</a><time datetime="2023-04-20T16:00:00.000Z" title="Created 2023-04-21 00:00:00">2023-04-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-port-roles-convergence/" title="RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制">RSTP快速生成树协议详解（二）：端口角色、状态与快速收敛机制</a><time datetime="2026-05-19T16:00:00.000Z" title="Created 2026-05-20 00:00:00">2026-05-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/rstp-evolution-from-stp/" title="RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路">RSTP快速生成树协议详解（一）：从STP到RSTP的演进之路</a><time datetime="2026-05-12T16:00:00.000Z" title="Created 2026-05-13 00:00:00">2026-05-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c4667e6/" title="select 与 epoll 的核心区别整理">select 与 epoll 的核心区别整理</a><time datetime="2023-05-10T16:00:00.000Z" title="Created 2023-05-11 00:00:00">2023-05-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/266e4756/" title="TCP 泛洪攻击">TCP 泛洪攻击</a><time datetime="2023-03-29T16:00:00.000Z" title="Created 2023-03-30 00:00:00">2023-03-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/64148787/" title="TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践">TCP 文件传输系统：事件驱动与线程池协同架构下的代码解构与设计实践</a><time datetime="2023-06-27T16:00:00.000Z" title="Created 2023-06-28 00:00:00">2023-06-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/e4593de3/" title="TCP 与 UDP 协议对比：抓包视角下的特性与应用分析">TCP 与 UDP 协议对比：抓包视角下的特性与应用分析</a><time datetime="2023-02-27T16:00:00.000Z" title="Created 2023-02-28 00:00:00">2023-02-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/634cd8cb/" title="URL：网络资源的精准定位机制">URL：网络资源的精准定位机制</a><time datetime="2023-03-11T16:00:00.000Z" title="Created 2023-03-12 00:00:00">2023-03-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/net-xff-trust-boundary/" title="信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩">信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/multi-lang-algebraic-effects/" title="代数效应三语言对比：C++ 协程、Python 生成器与 Java 的缺席">代数效应三语言对比：C++ 协程、Python 生成器与 Java 的缺席</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

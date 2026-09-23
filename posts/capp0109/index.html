@@ -1,0 +1,617 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>网络编程基础 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="你给异地的朋友寄过信吗？信封上写收件人地址，邮局按地址一层层转发，对方拆信读内容。计算机网络干的是同一件事，只不过把&quot;信&quot;换成&quot;字节&quot;，把&quot;邮局&quot;换成路由器，把&quot;地址&quot;换成 IP。CSAPP 第 11 章讲的就是：程序员怎么用一套统一的接口（socket），让两台机器像读写文件一样交换数据。 本文把客户端-服务器模型、">
+<meta property="og:type" content="article">
+<meta property="og:title" content="网络编程基础">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0109/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="你给异地的朋友寄过信吗？信封上写收件人地址，邮局按地址一层层转发，对方拆信读内容。计算机网络干的是同一件事，只不过把&quot;信&quot;换成&quot;字节&quot;，把&quot;邮局&quot;换成路由器，把&quot;地址&quot;换成 IP。CSAPP 第 11 章讲的就是：程序员怎么用一套统一的接口（socket），让两台机器像读写文件一样交换数据。 本文把客户端-服务器模型、">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-01-05T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-23T07:47:53.817Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="TCP&#x2F;IP">
+<meta property="article:tag" content="CSAPP">
+<meta property="article:tag" content="网络编程">
+<meta property="article:tag" content="Socket">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "网络编程基础",
+  "url": "https://hespethorn.github.io/posts/capp0109/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-01-05T16:00:00.000Z",
+  "dateModified": "2026-09-23T07:47:53.817Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0109/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '网络编程基础',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">813</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1108</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">网络编程基础</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">网络编程基础</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-01-05T16:00:00.000Z" title="Created 2025-01-06 00:00:00">2025-01-06</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>9mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>你给异地的朋友寄过信吗？信封上写收件人地址，邮局按地址一层层转发，对方拆信读内容。计算机网络干的是同一件事，只不过把&quot;信&quot;换成&quot;字节&quot;，把&quot;邮局&quot;换成路由器，把&quot;地址&quot;换成 IP。CSAPP 第 11 章讲的就是：程序员怎么用<strong>一套统一的接口（socket）</strong>，让两台机器像读写文件一样交换数据。</p>
+<p>本文把客户端-服务器模型、协议分层、TCP&#x2F;UDP、socket 接口、字节序坑、以及一个最小 Echo 服务器一次讲透。代码能跑的我都跑了，跑不了的（C 版需要 gcc）明确标出来。</p>
+<h2 id="一、客户端-服务器模型：一切网络的原点"><a href="#一、客户端-服务器模型：一切网络的原点" class="headerlink" title="一、客户端-服务器模型：一切网络的原点"></a>一、客户端-服务器模型：一切网络的原点</h2><p>不管上层多花哨，绝大多数网络应用都逃不出这个模型：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    C[客户端&lt;br/&gt;发起请求 等响应] --&gt;|网络| S[服务器&lt;br/&gt;常驻 被动等待请求]
+    S --&gt;|响应| C</code></pre>
+
+<ul>
+<li><strong>客户端</strong>是主动方：在某个时刻启动，向已知地址发起连接，拿到结果就走人（浏览器、SSH 客户端都是）。</li>
+<li><strong>服务器</strong>是被动方：开机就常驻，绑定一个端口，死循环 <code>accept</code> 等待连接，来一个服务一个。</li>
+</ul>
+<p>这个模型妙在&quot;对称被打破&quot;——客户端不用暴露地址，服务器必须有一个稳定的&quot;门牌号&quot;（IP + 端口），客户端才能找上门。</p>
+<h2 id="二、网络长什么样：四层协议栈"><a href="#二、网络长什么样：四层协议栈" class="headerlink" title="二、网络长什么样：四层协议栈"></a>二、网络长什么样：四层协议栈</h2><p>数据从你的程序到对面机器，要穿过四层。每层只跟上下层打交道，各自解决一类问题：</p>
+<pre><code class="highlight mermaid">graph TB
+    A[应用层 HTTP / FTP / DNS / 你的代码] --&gt; B[传输层 TCP 或 UDP]
+    B --&gt; C[网络层 IP 负责寻址与路由]
+    C --&gt; D[链路层 以太网 / WiFi 管相邻节点]
+    D --&gt; E[物理层 电缆 光纤 电磁波]</code></pre>
+
+<ul>
+<li><strong>应用层</strong>：你真正关心的&quot;信的内容&quot;（HTTP 报文、<code>echo</code> 的字符串）。</li>
+<li><strong>传输层</strong>：决定&quot;这条连接可靠不可靠&quot;（TCP 保证送达且有序，UDP 只管扔）。</li>
+<li><strong>网络层</strong>：IP 负责把包从源主机路由到目的主机，靠 IP 地址寻址。</li>
+<li><strong>链路层 &#x2F; 物理层</strong>：在一条网线或一段 WiFi 里把比特传过去。</li>
+</ul>
+<p>程序员写 socket 程序时，主要碰<strong>应用层 + 传输层</strong>；IP 和链路层由内核和网卡代劳。</p>
+<h2 id="三、TCP-vs-UDP：可靠还是够快"><a href="#三、TCP-vs-UDP：可靠还是够快" class="headerlink" title="三、TCP vs UDP：可靠还是够快"></a>三、TCP vs UDP：可靠还是够快</h2><p>传输层两个主角，选哪个决定你应用的性格：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>TCP</th>
+<th>UDP</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>连接</td>
+<td>面向连接（三次握手）</td>
+<td>无连接，发就完了</td>
+</tr>
+<tr>
+<td>可靠性</td>
+<td>丢包重传、按序到达、无重复</td>
+<td>不保证，可能丢、乱序</td>
+</tr>
+<tr>
+<td>流量&#x2F;拥塞控制</td>
+<td>有，自动限速</td>
+<td>无，应用自己管</td>
+</tr>
+<tr>
+<td>单位</td>
+<td>字节流（无消息边界）</td>
+<td>数据报（保留边界）</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>网页、SSH、数据库</td>
+<td>视频通话、DNS 查询、游戏</td>
+</tr>
+</tbody></table>
+<p><strong>字节流这个特性是新手最大的坑</strong>：TCP 不保留你 <code>send</code> 的边界。你分两次 <code>send(&quot;AB&quot;)</code>、<code>send(&quot;CD&quot;)</code>，对方一次 <code>recv(1024)</code> 可能拿到 <code>&quot;ABCD&quot;</code>。要&quot;消息边界&quot;得自己在应用层加长度前缀或分隔符。</p>
+<p>TCP 建立连接靠三次握手，防的是&quot;旧连接残包&quot;被新连接误收：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant C as 客户端
+    participant S as 服务器
+    C-&gt;&gt;S: SYN (seq=x)
+    S-&gt;&gt;C: SYN-ACK (seq=y, ack=x+1)
+    C-&gt;&gt;S: ACK (ack=y+1)
+    Note over C,S: 双向通道建立，开始传数据</code></pre>
+
+<h2 id="四、Socket-抽象：一切皆文件描述符"><a href="#四、Socket-抽象：一切皆文件描述符" class="headerlink" title="四、Socket 抽象：一切皆文件描述符"></a>四、Socket 抽象：一切皆文件描述符</h2><p>Unix 的哲学是&quot;一切皆文件&quot;。socket 创建出来也是一个<strong>文件描述符（fd）</strong>，你用 <code>read</code>&#x2F;<code>write</code> 的近亲 <code>recv</code>&#x2F;<code>send</code> 去读写它，内核在背后把字节塞进网卡。</p>
+<p>一个 TCP 会话从建立到结束，双方要按顺序调一套固定的系统调用：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant C as 客户端
+    participant S as 服务器
+    Note over S: socket() + bind() + listen()
+    S-&gt;&gt;S: accept() 阻塞等连接
+    C-&gt;&gt;C: socket() + connect()
+    C-&gt;&gt;S: send(&quot;ping&quot;)
+    S-&gt;&gt;C: recv + 处理 + send(&quot;echo: ping&quot;)
+    C-&gt;&gt;S: recv 拿到响应
+    C-&gt;&gt;C: close()
+    S-&gt;&gt;S: close()</code></pre>
+
+<p>记住这组顺序：<code>socket → bind → listen → accept</code>（服务器）和 <code>socket → connect</code>（客户端），后面写代码就是填空。</p>
+<h2 id="五、动手：最小-Echo-服务器"><a href="#五、动手：最小-Echo-服务器" class="headerlink" title="五、动手：最小 Echo 服务器"></a>五、动手：最小 Echo 服务器</h2><p>Echo 服务是网络编程的 &quot;Hello World&quot;：客户端发什么，服务器原样回什么。下面先给 <strong>CSAPP 风格的 C 骨架</strong>（忠实于课本，但需要 gcc 编译，本机无编译器，故不伪造输出，请你在 Linux&#x2F;macOS 上 <code>gcc echo.c csapp.c -o echo</code> 自跑）：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* echo_server.c —— CSAPP 风格骨架（需 gcc 编译） */</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;csapp.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">int</span> listenfd, connfd;</span><br><span class="line">    <span class="type">char</span> buf[MAXLINE];</span><br><span class="line">    <span class="type">rio_t</span> rio;</span><br><span class="line">    listenfd = Open_listenfd(<span class="number">18000</span>);        <span class="comment">// socket+bind+listen 的封装</span></span><br><span class="line">    <span class="keyword">while</span> (<span class="number">1</span>) &#123;</span><br><span class="line">        connfd = Accept(listenfd, <span class="literal">NULL</span>, <span class="literal">NULL</span>);</span><br><span class="line">        Rio_readinitb(&amp;rio, connfd);</span><br><span class="line">        <span class="keyword">while</span> (Rio_readlineb(&amp;rio, buf, MAXLINE) != <span class="number">0</span>)</span><br><span class="line">            Rio_writen(connfd, buf, <span class="built_in">strlen</span>(buf));   <span class="comment">// 原样回显</span></span><br><span class="line">        Close(connfd);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>下面这段是<strong>我真的跑过的 Python 版</strong>，本地回环自连自收，输出逐字引用：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> socket, threading, time</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">server</span>():</span><br><span class="line">    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)</span><br><span class="line">    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, <span class="number">1</span>)</span><br><span class="line">    srv.bind((<span class="string">&quot;127.0.0.1&quot;</span>, <span class="number">18000</span>))</span><br><span class="line">    srv.listen(<span class="number">1</span>)</span><br><span class="line">    conn, _ = srv.accept()</span><br><span class="line">    data = conn.recv(<span class="number">1024</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;[Demo2] 服务器收到:&quot;</span>, data.decode())</span><br><span class="line">    conn.sendall(<span class="string">b&quot;echo: &quot;</span> + data)</span><br><span class="line">    conn.close()</span><br><span class="line">    srv.close()</span><br><span class="line"></span><br><span class="line">t = threading.Thread(target=server, daemon=<span class="literal">True</span>)</span><br><span class="line">t.start()</span><br><span class="line">time.sleep(<span class="number">0.2</span>)</span><br><span class="line"></span><br><span class="line">cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)</span><br><span class="line">cli.connect((<span class="string">&quot;127.0.0.1&quot;</span>, <span class="number">18000</span>))</span><br><span class="line">cli.sendall(<span class="string">&quot;ping 网络编程&quot;</span>.encode())</span><br><span class="line">reply = cli.recv(<span class="number">1024</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;[Demo2] 客户端收到:&quot;</span>, reply.decode())</span><br><span class="line">cli.close()</span><br><span class="line">t.join()</span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[Demo2] 服务器收到: ping 网络编程</span><br><span class="line">[Demo2] 客户端收到: echo: ping 网络编程</span><br></pre></td></tr></table></figure>
+
+<p>两行打印一对上，说明&quot;客户端发 → 服务器收 → 服务器回 → 客户端收&quot;这条链路通了。<code>SO_REUSEADDR</code> 那行是实战经验：否则端口刚关还处在 <code>TIME_WAIT</code> 时重启会报 &quot;Address already in use&quot;，加上它就能立刻复用。</p>
+<h2 id="六、字节序与地址结构：htons-为什么不能省"><a href="#六、字节序与地址结构：htons-为什么不能省" class="headerlink" title="六、字节序与地址结构：htons 为什么不能省"></a>六、字节序与地址结构：htons 为什么不能省</h2><p>不同 CPU 存多字节整数的顺序不一样：x86 是小端（低字节在前），网络规定用<strong>大端（网络字节序）</strong>。一个端口号 8080 &#x3D; <code>0x1F90</code>，在小端内存里是 <code>90 1f</code>，在网线上必须是 <code>1f 90</code>。如果不转换，对端解出来的端口就是 <code>0x901F = 36911</code>，connection 永远建不上。</p>
+<p><code>sockaddr_in</code> 里的端口和协议族要走 <code>htons</code>（host→network short），而 IP 地址用 <code>inet_aton</code> 已经返回网络序，<strong>不能</strong>再转一次。下面这段演示了&quot;组装一个 sockaddr_in 并原样还原&quot;的全过程，是真实运行结果：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> socket, struct</span><br><span class="line"></span><br><span class="line">family = socket.AF_INET                  <span class="comment"># 2</span></span><br><span class="line">port_host = <span class="number">8080</span></span><br><span class="line">addr = socket.inet_aton(<span class="string">&quot;127.0.0.1&quot;</span>)     <span class="comment"># 已是网络序，勿再翻转</span></span><br><span class="line">packed = struct.pack(<span class="string">&quot;&lt;HH4s&quot;</span>, family, socket.htons(port_host), addr)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;[Demo1] 完整 8 字节 =&quot;</span>, packed.<span class="built_in">hex</span>())</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;[Demo1] 端口的网络序 2 字节 =&quot;</span>, packed[<span class="number">2</span>:<span class="number">4</span>].<span class="built_in">hex</span>(), <span class="string">&quot;(8080=0x1F90 -&gt; 大端线序 1f 90)&quot;</span>)</span><br><span class="line">fam, port_net, a = struct.unpack(<span class="string">&quot;&lt;HH4s&quot;</span>, packed)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;[Demo1] ntohs 还原端口 =&quot;</span>, socket.ntohs(port_net))</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;[Demo1] inet_ntoa 还原地址 =&quot;</span>, socket.inet_ntoa(a))</span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[Demo1] 完整 8 字节 = 02001f907f000001</span><br><span class="line">[Demo1] 端口的网络序 2 字节 = 1f90 (8080=0x1F90 -&gt; 大端线序 1f 90)</span><br><span class="line">[Demo1] ntohs 还原端口 = 8080</span><br><span class="line">[Demo1] inet_ntoa 还原地址 = 127.0.0.1</span><br></pre></td></tr></table></figure>
+
+<p><code>0200</code> 是协议族、<code>1f90</code> 是端口、尾随 <code>7f000001</code> 正是 <code>127.0.0.1</code> 的网络序。注意这里用 <code>&lt;HH4s</code>（小端）来&quot;原样拍出内存字节&quot;，才能看到真实的线序 <code>1f90</code>；若用大端格式拍会被再翻转一次，那才是不对的展示。</p>
+<h2 id="七、往上走一层：HTTP-与-Web-服务器最小骨架"><a href="#七、往上走一层：HTTP-与-Web-服务器最小骨架" class="headerlink" title="七、往上走一层：HTTP 与 Web 服务器最小骨架"></a>七、往上走一层：HTTP 与 Web 服务器最小骨架</h2><p>socket 之上最常见的应用层协议是 HTTP。一个 Web 事务就是&quot;请求-响应&quot;两段文本：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    B[浏览器] --&gt;|GET /index.html HTTP/1.1| S[Web 服务器]
+    S --&gt;|200 OK 换行 HTML 正文| B
+    B --&gt;|解析渲染| P[页面]</code></pre>
+
+<p>服务器读到空行就知道请求头结束，回一个 <code>状态行 + 响应头 + 空行 + body</code>。最小骨架（概念版）：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* 读请求行 -&gt; 查文件 -&gt; 拼 HTTP 响应 -&gt; 写回，循环 accept */</span></span><br><span class="line"><span class="keyword">while</span> ((len = Rio_readlineb(&amp;rio, buf, MAXLINE)) != <span class="number">0</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> (buf[<span class="number">0</span>] == <span class="string">&#x27;\n&#x27;</span>) <span class="keyword">break</span>;        <span class="comment">// 空行：头部结束</span></span><br><span class="line">    <span class="comment">/* 解析 &quot;GET /path HTTP/1.1&quot;，打开文件，write 回去 */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>真实服务器还要处理并发（一个连接阻塞不能卡住其他用户）——这正是下一章&quot;并发&quot;要解决的，也是为什么 CSAPP 把网络放在并发之前讲：你先会写&quot;一次服务一个&quot;的服务器，再学会&quot;同时服务很多个&quot;。</p>
+<h2 id="八、写网络程序最常踩的坑"><a href="#八、写网络程序最常踩的坑" class="headerlink" title="八、写网络程序最常踩的坑"></a>八、写网络程序最常踩的坑</h2><ol>
+<li><strong>短读（short count）</strong>：<code>recv</code> 一次未必收满你要的字节数。网络数据可能分片到达，必须循环读直到凑够，或改用带缓冲的 <code>Rio_readlineb</code> 按行读。</li>
+<li><strong>字节流无边界</strong>：见第三节，别假设一次 <code>send</code> 对应一次 <code>recv</code>。</li>
+<li><strong>端口 TIME_WAIT</strong>：主动关闭的一方会 hold 住端口几十秒，<code>SO_REUSEADDR</code> 解君愁。</li>
+<li><strong>阻塞卡死</strong>：默认 socket 是阻塞的，一个慢客户端能拖垮整个服务器——要么每连接一个线程&#x2F;进程，要么用 <code>select</code>&#x2F;<code>poll</code>&#x2F;<code>epoll</code> 多路复用，要么非阻塞 + 事件循环。</li>
+<li><strong>忘了 <code>close</code></strong>：连接泄漏，文件描述符耗尽，服务器慢慢&quot;假死&quot;。</li>
+</ol>
+<h2 id="🐾-小结"><a href="#🐾-小结" class="headerlink" title="🐾 小结"></a>🐾 小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>你会用到的接口</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>客户端-服务器</td>
+<td>客户端主动、服务器常驻被动</td>
+<td><code>connect</code> &#x2F; <code>accept</code></td>
+</tr>
+<tr>
+<td>分层</td>
+<td>应用管内容、传输管可靠、IP 管寻址</td>
+<td>socket 之上写应用层</td>
+</tr>
+<tr>
+<td>TCP vs UDP</td>
+<td>要可靠选 TCP，要快选 UDP</td>
+<td><code>SOCK_STREAM</code> &#x2F; <code>SOCK_DGRAM</code></td>
+</tr>
+<tr>
+<td>socket &#x3D; fd</td>
+<td>像读写文件一样收发网络字节</td>
+<td><code>recv</code> &#x2F; <code>send</code></td>
+</tr>
+<tr>
+<td>字节序</td>
+<td>x86 小端，网络大端，端口必 <code>htons</code></td>
+<td><code>htons</code> &#x2F; <code>ntohs</code> &#x2F; <code>inet_aton</code></td>
+</tr>
+<tr>
+<td>并发前置</td>
+<td>单连接服务器好写，多连接才需并发</td>
+<td>下一章</td>
+</tr>
+</tbody></table>
+<p>网络编程的本质就一句：<strong>把&quot;文件读写&quot;的直觉，搬到一个跨主机的、按字节流传输的 fd 上，并替内核处理好字节序和边界。</strong> 把这套骨架刻进肌肉记忆，后面学 HTTP、RPC、分布式都不虚。</p>
+<p>下一篇进入《并发：线程与锁》——你会看到怎么让这个 Echo 服务器同时招呼成百上千个客户端而不互相踩脚。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0109/">https://hespethorn.github.io/posts/capp0109/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/TCP-IP/">TCP/IP</a><a class="post-meta__tags" href="/tags/CSAPP/">CSAPP</a><a class="post-meta__tags" href="/tags/%E7%BD%91%E7%BB%9C%E7%BC%96%E7%A8%8B/">网络编程</a><a class="post-meta__tags" href="/tags/Socket/">Socket</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">813</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1108</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0110/" title="并发：线程与锁">并发：线程与锁</a><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0111/" title="并发问题：死锁与竞争">并发问题：死锁与竞争</a><time datetime="2025-01-12T16:00:00.000Z" title="Created 2025-01-13 00:00:00">2025-01-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0109/" title="网络编程基础">网络编程基础</a><time datetime="2025-01-05T16:00:00.000Z" title="Created 2025-01-06 00:00:00">2025-01-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0108/" title="系统级 I/O">系统级 I/O</a><time datetime="2025-01-01T16:00:00.000Z" title="Created 2025-01-02 00:00:00">2025-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0107/" title="虚拟内存">虚拟内存</a><time datetime="2024-12-29T16:00:00.000Z" title="Created 2024-12-30 00:00:00">2024-12-30</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/net-xff-trust-boundary/" title="信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩">信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/multi-lang-algebraic-effects/" title="代数效应三语言对比：C++ 协程、Python 生成器与 Java 的缺席">代数效应三语言对比：C++ 协程、Python 生成器与 Java 的缺席</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

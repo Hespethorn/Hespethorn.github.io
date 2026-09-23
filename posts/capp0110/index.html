@@ -1,0 +1,730 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>并发：线程与锁 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="上一篇的 Echo 服务器有个致命毛病：accept 拿到连接之后，它就守着这一个客户端，对方不发数据，整个服务器就傻站着，后面排队的连接一个也进不来。想同时招呼几百个客户端，程序就得同时干几件事——这就是并发。 CSAPP 第 12 章有意思的地方在于，它前半章教你三种并发写法，后半章几乎全在讲这些写法会怎么咬你。这篇讲前半：并发的三条路线、线程共享了什么、丢失更新怎么来的、以及把窗口关上的那把">
+<meta property="og:type" content="article">
+<meta property="og:title" content="并发：线程与锁">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0110/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="上一篇的 Echo 服务器有个致命毛病：accept 拿到连接之后，它就守着这一个客户端，对方不发数据，整个服务器就傻站着，后面排队的连接一个也进不来。想同时招呼几百个客户端，程序就得同时干几件事——这就是并发。 CSAPP 第 12 章有意思的地方在于，它前半章教你三种并发写法，后半章几乎全在讲这些写法会怎么咬你。这篇讲前半：并发的三条路线、线程共享了什么、丢失更新怎么来的、以及把窗口关上的那把">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-01-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-23T07:47:53.817Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="并发">
+<meta property="article:tag" content="线程">
+<meta property="article:tag" content="互斥锁">
+<meta property="article:tag" content="临界区">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "并发：线程与锁",
+  "url": "https://hespethorn.github.io/posts/capp0110/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-01-08T16:00:00.000Z",
+  "dateModified": "2026-09-23T07:47:53.817Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0110/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '并发：线程与锁',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">813</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1108</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">并发：线程与锁</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">并发：线程与锁</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">5.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>18mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>上一篇的 Echo 服务器有个致命毛病：<code>accept</code> 拿到连接之后，它就守着这一个客户端，对方不发数据，整个服务器就傻站着，后面排队的连接一个也进不来。想同时招呼几百个客户端，程序就得同时干几件事——这就是并发。</p>
+<p>CSAPP 第 12 章有意思的地方在于，它前半章教你三种并发写法，后半章几乎全在讲这些写法会怎么咬你。这篇讲前半：并发的三条路线、线程共享了什么、丢失更新怎么来的、以及把窗口关上的那把锁。竞争与死锁的完整细节留给下一篇。</p>
+<h2 id="一、并发和并行，不是一回事"><a href="#一、并发和并行，不是一回事" class="headerlink" title="一、并发和并行，不是一回事"></a>一、并发和并行，不是一回事</h2><p>日常说话这俩词混着用，课本里是两码事：</p>
+<ul>
+<li><strong>并发（concurrency）</strong>：多个逻辑流在<strong>同一个时间窗口内推进</strong>，物理上可以只有一个核，靠切换制造&quot;同时在跑&quot;的错觉。</li>
+<li><strong>并行（parallelism）</strong>：多个逻辑流在<strong>同一时刻真的同时执行</strong>，得有多个核。</li>
+</ul>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph C1[单核：并发]
+        direction LR
+        A1[A 跑] --&gt; B1[B 跑] --&gt; A2[A 跑] --&gt; B2[B 跑]
+    end
+    subgraph C2[双核：并行]
+        direction LR
+        D1[核0 跑 A] --&gt; D2[核0 跑 A]
+        E1[核1 跑 B] --&gt; E2[核1 跑 B]
+    end</code></pre>
+
+<p>并行一定是并发，并发不一定是并行。一台单核路由器上跑着几百个连接的转发，那是并发；24 核机器上 4 个进程压满 4 个核，那是并行。</p>
+<p><strong>并发要解决的核心问题，其实只有两个字：切分。</strong> 你手里只有一条指令流，怎么把它切成&quot;看起来互不干扰&quot;的若干条。切得不好，代价就是下文的丢失更新、竞争、死锁。</p>
+<h2 id="二、三条路线：进程、事件驱动、线程"><a href="#二、三条路线：进程、事件驱动、线程" class="headerlink" title="二、三条路线：进程、事件驱动、线程"></a>二、三条路线：进程、事件驱动、线程</h2><p>CSAPP 12.3 到 12.5 用同一个&quot;迭代式 Echo 服务器&quot;改了三版，正好对应三条路线：</p>
+<pre><code class="highlight mermaid">flowchart TB
+    S[服务器要同时服务 N 个连接] --&gt; A[路线一 基于进程&lt;br/&gt;每来一个连接 fork 一个子进程]
+    S --&gt; B[路线二 基于事件驱动&lt;br/&gt;单进程 + select 或 epoll 多路复用]
+    S --&gt; C[路线三 基于线程&lt;br/&gt;每来一个连接开一个线程]
+    A --&gt; A1[隔离性最好&lt;br/&gt;开销最大 要 IPC 通信]
+    B --&gt; B1[开销最小 单进程单核&lt;br/&gt;编程模型最绕]
+    C --&gt; C1[折中方案&lt;br/&gt;共享地址空间 要加锁]</code></pre>
+
+<p>三条路线各自的性格：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>基于进程</th>
+<th>基于事件驱动</th>
+<th>基于线程</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>状态是否天然共享</td>
+<td>私有地址空间，不共享</td>
+<td>单进程，全局可见</td>
+<td>共享，随便改</td>
+</tr>
+<tr>
+<td>创建&#x2F;切换开销</td>
+<td>大（fork 拷贝页表）</td>
+<td>无切换，只轮询</td>
+<td>中（栈约 8 MB 起）</td>
+</tr>
+<tr>
+<td>数据传递</td>
+<td>管道、共享内存、信号</td>
+<td>函数调用、闭包</td>
+<td>直接读写变量</td>
+</tr>
+<tr>
+<td>崩一个会不会全倒</td>
+<td>不会，子进程挂了父进程还在</td>
+<td>会，全在一个进程里</td>
+<td>会，段错误整个进程完</td>
+</tr>
+<tr>
+<td>典型实现</td>
+<td>Apache prefork、FastCGI</td>
+<td>Nginx、Redis、Node.js</td>
+<td>Tomcat 线程池、Java 后端</td>
+</tr>
+</tbody></table>
+<p>三条路线到现在都还活着，没人能把谁淘汰掉——因为它们压的是不同的成本：进程路线花在隔离上，事件驱动路线花在编程复杂度上，线程路线花在同步上。<strong>选路线就是选一种痛法。</strong></p>
+<p>线程是三者里最常被用的，因为它写起来最像普通代码：想读取共享数据就读，不用管道、不用状态机。代价嘛，也正出在&quot;随便读随便写&quot;上。</p>
+<h2 id="三、线程到底共享了什么"><a href="#三、线程到底共享了什么" class="headerlink" title="三、线程到底共享了什么"></a>三、线程到底共享了什么</h2><p>一个进程里开几个线程，地址空间是同一份，但栈各是各的：</p>
+<pre><code class="highlight mermaid">flowchart TB
+    P[进程地址空间] --&gt; SH[所有线程共享]
+    P --&gt; PV[每个线程私有]
+    SH --&gt; SH1[代码段 text]
+    SH --&gt; SH2[全局数据 data bss]
+    SH --&gt; SH3[堆 malloc 出来的东西]
+    SH --&gt; SH4[打开的文件与 fd 表]
+    PV --&gt; PV1[栈 每个线程独立一块]
+    PV --&gt; PV2[寄存器与程序计数器 PC]
+    PV --&gt; PV3[线程局部存储 TLS errno]</code></pre>
+
+<p>这件事用二十行代码就能看见，下面这段我本机跑过：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> threading, multiprocessing</span><br><span class="line"></span><br><span class="line">GX = <span class="number">1</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">touch_thread</span>():</span><br><span class="line">    <span class="keyword">global</span> GX</span><br><span class="line">    GX = <span class="number">42</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">touch_process</span>():</span><br><span class="line">    <span class="keyword">global</span> GX</span><br><span class="line">    GX = <span class="number">999</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    t = threading.Thread(target=touch_thread)</span><br><span class="line">    t.start(); t.join()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;线程改完，主线程看到 GX =&quot;</span>, GX)</span><br><span class="line"></span><br><span class="line">    GX = <span class="number">1</span></span><br><span class="line">    p = multiprocessing.Process(target=touch_process)</span><br><span class="line">    p.start(); p.join()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;子进程改完，主进程看到 GX =&quot;</span>, GX)</span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">线程改完，主线程看到 GX = 42</span><br><span class="line">子进程改完，主进程看到 GX = 1</span><br></pre></td></tr></table></figure>
+
+<p>线程改完的 <code>42</code> 主线程看得一清二楚，因为改的就是同一块内存；子进程里的 <code>999</code> 主进程完全看不见，因为子进程拿到的是地址空间的一份拷贝，改自己那份，跟爹没关系。</p>
+<p><strong>本质一句话：线程是&quot;共享地址空间的执行流&quot;。</strong> 它省掉了进程间通信的全部仪式感，也顺手把&quot;谁都能改谁&quot;这件事合法化了。省下的通信成本，全部转移到同步成本上。</p>
+<h2 id="四、第一个坑：丢失更新"><a href="#四、第一个坑：丢失更新" class="headerlink" title="四、第一个坑：丢失更新"></a>四、第一个坑：丢失更新</h2><p>先看一个反直觉的现象。这是四线程各加 20 万次的天真写法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> threading, time</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">race_naive</span>(<span class="params">N, K</span>):</span><br><span class="line">    c = [<span class="number">0</span>]</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">w</span>():</span><br><span class="line">        <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(N):</span><br><span class="line">            c[<span class="number">0</span>] += <span class="number">1</span></span><br><span class="line">    ts = [threading.Thread(target=w) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(K)]</span><br><span class="line">    <span class="keyword">for</span> t <span class="keyword">in</span> ts: t.start()</span><br><span class="line">    <span class="keyword">for</span> t <span class="keyword">in</span> ts: t.join()</span><br><span class="line">    <span class="keyword">return</span> c[<span class="number">0</span>], N * K</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">3</span>):</span><br><span class="line">        got, want = race_naive(<span class="number">200_000</span>, <span class="number">4</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;第%d次: 期望 %d 实际 %d 丢失 %d&quot;</span> % (i + <span class="number">1</span>, want, got, want - got))</span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">第1次: 期望 800000 实际 800000 丢失 0</span><br><span class="line">第2次: 期望 800000 实际 800000 丢失 0</span><br><span class="line">第3次: 期望 800000 实际 800000 丢失 0</span><br></pre></td></tr></table></figure>
+
+<p>一次都没丢。很多人跑到这儿就下结论：&quot;CPython 多线程安全，不用加锁&quot;——<strong>这是全篇最危险的一句话。</strong></p>
+<p><code>+=</code> 这件事在字节码层面从来不是一步。把 <code>c[0] += 1</code> 编译出来看：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">99           LOAD_FAST                0 (c)</span><br><span class="line">             LOAD_CONST               1 (0)</span><br><span class="line">             COPY                     2</span><br><span class="line">             COPY                     2</span><br><span class="line">             BINARY_SUBSCR</span><br><span class="line">             LOAD_CONST               2 (1)</span><br><span class="line">             BINARY_OP               13 (+=)</span><br><span class="line">             SWAP                     3</span><br><span class="line">             SWAP                     2</span><br><span class="line">             STORE_SUBSCR</span><br></pre></td></tr></table></figure>
+
+<p>（节选：这是 <code>c[0] += 1</code> 对应的全部指令，行号来自我的测试脚本。）</p>
+<p>先 <code>LOAD</code> 把 <code>c[0]</code> 读进栈，再 <code>BINARY_OP</code> 加 1，最后 <code>STORE_SUBSCR</code> 写回。读和写之间隔着好几种指令，<strong>理论上任何一步之后线程都可能被切走</strong>。读、改、写三步，只要两个线程的这三步交错起来，就会丢：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant A as 线程 A
+    participant M as 共享变量 cnt
+    participant B as 线程 B
+    Note over M: 初始 cnt = 0
+    A-&gt;&gt;M: 读 cnt 拿到 0
+    B-&gt;&gt;M: 读 cnt 拿到 0
+    A-&gt;&gt;M: 写回 0 加 1 等于 1
+    B-&gt;&gt;M: 写回 0 加 1 等于 1
+    Note over M: 最终 cnt = 1 期望 2 丢了一次</code></pre>
+
+<p>那为什么上面实测一次没丢？因为 GIL。CPython 的全局解释器锁只在<strong>固定的检查点</strong>让出，而这些检查点恰好落在循环回边、函数调用这种边界上，一个 <code>+=</code> 的读改写三连很难被从中间切开。<strong>GIL 不是把窗口焊死了，它只是把窗口关小到了这块机器、这个版本、这段代码上碰不到的程度。</strong> 换个 CPython 版本、换个写法、换到 free-threaded 构建，窗口立刻张开。</p>
+<p>要看见窗口本身一直开着，最简单的办法是人为把它撑开：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> threading, time</span><br><span class="line"></span><br><span class="line">COUNTER = <span class="number">0</span></span><br><span class="line">gate = threading.Event()</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">worker</span>():</span><br><span class="line">    <span class="keyword">global</span> COUNTER</span><br><span class="line">    v = COUNTER        <span class="comment"># 1. 读，拿到 0</span></span><br><span class="line">    gate.wait()        <span class="comment"># 2. 卡住，等对方也读完</span></span><br><span class="line">    COUNTER = v + <span class="number">1</span>    <span class="comment"># 3. 写回 0 加 1，对方的 +1 被覆盖</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    t1 = threading.Thread(target=worker)</span><br><span class="line">    t2 = threading.Thread(target=worker)</span><br><span class="line">    t1.start(); t2.start()</span><br><span class="line">    time.sleep(<span class="number">0.05</span>)</span><br><span class="line">    gate.<span class="built_in">set</span>()         <span class="comment"># 两个线程都读完，同时放行</span></span><br><span class="line">    t1.join(); t2.join()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;期望 2，实际&quot;</span>, COUNTER)</span><br></pre></td></tr></table></figure>
+
+<p>运行输出（连跑三次结果一致）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">期望 2，实际 1</span><br></pre></td></tr></table></figure>
+
+<p>两个线程各加一次，最后是 1。这就是丢失更新，教科书里叫 lost update，CSAPP 图 12.16 那个 <code>badcnt.c</code> 丢的就是它。</p>
+<p>想看真并行的竞争，把战线挪到进程和共享内存上就行——那里没有 GIL：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> multiprocessing</span><br><span class="line"><span class="keyword">from</span> multiprocessing <span class="keyword">import</span> Value</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">worker</span>(<span class="params">v, n</span>):</span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        v.value += <span class="number">1</span>        <span class="comment"># 跨进程共享内存上的读-改-写，无锁</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    N, K = <span class="number">300_000</span>, <span class="number">4</span></span><br><span class="line">    cnt = Value(<span class="string">&#x27;i&#x27;</span>, <span class="number">0</span>)</span><br><span class="line">    ps = [multiprocessing.Process(target=worker, args=(cnt, N)) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(K)]</span><br><span class="line">    <span class="keyword">for</span> p <span class="keyword">in</span> ps: p.start()</span><br><span class="line">    <span class="keyword">for</span> p <span class="keyword">in</span> ps: p.join()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;期望 %d，实际 %d，丢失 %d&quot;</span> % (N * K, cnt.value, N * K - cnt.value))</span><br></pre></td></tr></table></figure>
+
+<p>运行输出（我这边连跑四次）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">期望 1200000，实际 388820，丢失 811180</span><br><span class="line">期望 1200000，实际 383006，丢失 816994</span><br><span class="line">期望 1200000，实际 381125，丢失 818875</span><br><span class="line">期望 1200000，实际 400013，丢失 799987</span><br></pre></td></tr></table></figure>
+
+<p>四个进程各自在共享内存上加 30 万次，最后只落在 38 万到 40 万之间，<strong>丢掉了将近七成</strong>，而且每次数字都不一样。这里的每个进程都跑在一个真核上，真的同时在改同一块内存，没人替它们排队。</p>
+<p>两个实验摆在一起，结论很清楚：<strong>并发 bug 的危险不在于它一定发生，而在于它发生的概率取决于调度器的心情。</strong> 平时跑一万次都正常，上线高峰被削掉一个核负载，它就开始丢数据。</p>
+<p>CSAPP 课本上用的是 pthread 版本，一行 <code>cnt++</code> 就是那个窗口：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* badcnt.c 骨架 —— 需要 gcc，本机无编译器，不伪造编译输出 */</span></span><br><span class="line"><span class="type">static</span> <span class="keyword">volatile</span> <span class="type">long</span> cnt = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> *<span class="title function_">thread</span><span class="params">(<span class="type">void</span> *vargp)</span> &#123;</span><br><span class="line">    <span class="type">long</span> i, niters = *((<span class="type">long</span> *)vargp);</span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; niters; i++)</span><br><span class="line">        cnt++;              <span class="comment">/* 展开成 load / add / store 三步，窗口就在这一行里 */</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>想自己复现，在 Linux 上 <code>gcc badcnt.c -pthread -o badcnt &amp;&amp; ./badcnt</code>，多跑几遍看 <code>cnt</code> 是多少。有个规律可以先记住：<strong>这个结果只会少不会多</strong>，因为它最多只能等于总加次数，而每次覆盖都白白扔掉一次。要看到稳定的重复，把 <code>niters</code> 开到千万量级，两个线程以上。</p>
+<h2 id="五、锁：把窗口关上"><a href="#五、锁：把窗口关上" class="headerlink" title="五、锁：把窗口关上"></a>五、锁：把窗口关上</h2><p>修法在概念上简单得过分：把&quot;读-改-写&quot;这三步圈成一块<strong>临界区</strong>，保证同一时刻只有一个线程能在里面。负责守门的那个东西，CSAPP 用信号量讲。</p>
+<p>信号量的接口就两个操作，荷兰人起的名字，P 和 V（Dijkstra 的母语里分别是 proberen 试探、verhogen 增加）：</p>
+<ul>
+<li><strong>P（<code>sem_wait</code>）</strong>：把信号量减 1，如果减完是负数就阻塞，等到不为负为止；</li>
+<li><strong>V（<code>sem_post</code>）</strong>：把信号量加 1，若有线程在等就唤醒一个。</li>
+</ul>
+<p>初始值设为 1 的信号量，就叫<strong>二元信号量</strong>，它跟互斥锁是一回事：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    A[线程想进临界区] --&gt; B[P 操作&lt;br/&gt;S 减 1 变成 0 放行]
+    B --&gt; C[临界区&lt;br/&gt;读改写共享变量]
+    C --&gt; D[V 操作&lt;br/&gt;S 加 1 恢复 1]
+    D --&gt; E[等在门外的线程此刻才被唤醒]</code></pre>
+
+<p>C 版本对应的两套接口，<code>sem_</code> 系列是信号量，<code>pthread_mutex_</code> 系列是专门的锁：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* mutex 版骨架 —— 同样需要 pthread 库，不伪造输出 */</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;pthread.h&gt;</span></span></span><br><span class="line"><span class="type">static</span> <span class="keyword">volatile</span> <span class="type">long</span> cnt = <span class="number">0</span>;</span><br><span class="line"><span class="type">static</span> <span class="type">pthread_mutex_t</span> mutex = PTHREAD_MUTEX_INITIALIZER;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> *<span class="title function_">thread</span><span class="params">(<span class="type">void</span> *vargp)</span> &#123;</span><br><span class="line">    <span class="type">long</span> i, niters = *((<span class="type">long</span> *)vargp);</span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; niters; i++) &#123;</span><br><span class="line">        pthread_mutex_lock(&amp;mutex);      <span class="comment">/* P */</span></span><br><span class="line">        cnt++;                           <span class="comment">/* 临界区 */</span></span><br><span class="line">        pthread_mutex_unlock(&amp;mutex);    <span class="comment">/* V */</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Python 里两套写法都有，我把它们和裸竞争放在一起测了：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> threading, time</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">lock_timing</span>(<span class="params">N, K</span>):</span><br><span class="line">    <span class="keyword">for</span> name, mk <span class="keyword">in</span> ((<span class="string">&quot;Lock&quot;</span>, threading.Lock),</span><br><span class="line">                     (<span class="string">&quot;Semaphore(1)&quot;</span>, <span class="keyword">lambda</span>: threading.Semaphore(<span class="number">1</span>))):</span><br><span class="line">        c = [<span class="number">0</span>]</span><br><span class="line">        lk = mk()</span><br><span class="line">        <span class="keyword">def</span> <span class="title function_">w</span>():</span><br><span class="line">            <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(N):</span><br><span class="line">                <span class="keyword">with</span> lk:</span><br><span class="line">                    c[<span class="number">0</span>] += <span class="number">1</span></span><br><span class="line">        ts = [threading.Thread(target=w) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(K)]</span><br><span class="line">        t0 = time.perf_counter()</span><br><span class="line">        <span class="keyword">for</span> t <span class="keyword">in</span> ts: t.start()</span><br><span class="line">        <span class="keyword">for</span> t <span class="keyword">in</span> ts: t.join()</span><br><span class="line">        dt = time.perf_counter() - t0</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;%-14s 结果 %d 正确 %s 耗时 %.3f s&quot;</span></span><br><span class="line">              % (name, c[<span class="number">0</span>], c[<span class="number">0</span>] == N * K, dt))</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    lock_timing(<span class="number">200_000</span>, <span class="number">4</span>)</span><br></pre></td></tr></table></figure>
+
+<p>运行输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Lock           结果 800000 正确 True 耗时 0.081 s</span><br><span class="line">Semaphore(1)   结果 800000 正确 True 耗时 0.528 s</span><br></pre></td></tr></table></figure>
+
+<p>两个都对。同样的活儿，<code>Lock</code> 用了 0.08 秒出头，<code>Semaphore(1)</code> 用了 0.53 秒上下，慢六倍多——<code>Semaphore</code> 内部是条件变量加一个计数判断，<code>acquire</code> 得先拿条件变量自己的锁再判断够不够减，路径比 <code>Lock</code> 长一截。所以写业务代码别拿信号量当锁用，那多出来的开销买不到任何好处。信号量的主战场是别处：限制并发数、做有界缓冲区，那才是它擅长的。（这几个数字随 Python 版本和机器会浮动，比值关系比绝对值有意义。）</p>
+<p>回到上面那个跨进程的共享内存实验，同样的循环套一层 <code>Lock</code> 之后：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">期望 1200000，实际 1200000，丢失 0</span><br></pre></td></tr></table></figure>
+
+<p>一字不差。顺带说一个观察：加了锁那版三次连跑都在 7.1 秒上下，裸竞争那版反而要 11 秒。锁把访问串行化之后，同一块缓存行被四个核来回抢的次数少了，无锁在高争用下并不等于快。这个计时的解读要谨慎，它受 ctypes 访问路径和缓存一致性流量的双重影响，别拿它当&quot;锁更快的&quot;普适结论——它只说明一件事：<strong>无锁共享写，正确性和吞吐一起赔。</strong></p>
+<p>锁用起来不难，难的是用对，三条经验先记着：</p>
+<ol>
+<li><strong>粒度</strong>：一把大锁包住所有共享数据，写起来最省心，但并发直接退化成串行；每个共享变量一把小锁性能好，可锁一多，顺序问题就来了。</li>
+<li><strong>持锁期间别做慢活</strong>：持锁时调 I&#x2F;O、发网络请求、等结果，等于让所有竞争者一起等你的磁盘。</li>
+<li><strong>加锁顺序要统一</strong>：这个坑太大，单独留给下一篇。</li>
+</ol>
+<h2 id="六、并发不等于快：GIL-与-Amdahl"><a href="#六、并发不等于快：GIL-与-Amdahl" class="headerlink" title="六、并发不等于快：GIL 与 Amdahl"></a>六、并发不等于快：GIL 与 Amdahl</h2><p>写完上面的锁，容易产生一种错觉：加了锁就万事大吉。可还有一半的问题在性能账上。同一个 CPU 密集的计算，我用三种方式各跑四份：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time, threading, multiprocessing</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">burn</span>(<span class="params">n</span>):</span><br><span class="line">    s = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        s += i * i</span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">_pb</span>(<span class="params">n</span>):</span><br><span class="line">    burn(n)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">cpu_demo</span>(<span class="params">N, K</span>):</span><br><span class="line">    t0 = time.perf_counter(); burn(N); one = time.perf_counter() - t0</span><br><span class="line">    t0 = time.perf_counter()</span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(K): burn(N)</span><br><span class="line">    serial = time.perf_counter() - t0</span><br><span class="line">    t0 = time.perf_counter()</span><br><span class="line">    ts = [threading.Thread(target=burn, args=(N,)) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(K)]</span><br><span class="line">    <span class="keyword">for</span> t <span class="keyword">in</span> ts: t.start()</span><br><span class="line">    <span class="keyword">for</span> t <span class="keyword">in</span> ts: t.join()</span><br><span class="line">    thr = time.perf_counter() - t0</span><br><span class="line">    t0 = time.perf_counter()</span><br><span class="line">    ps = [multiprocessing.Process(target=_pb, args=(N,)) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(K)]</span><br><span class="line">    <span class="keyword">for</span> p <span class="keyword">in</span> ps: p.start()</span><br><span class="line">    <span class="keyword">for</span> p <span class="keyword">in</span> ps: p.join()</span><br><span class="line">    pro = time.perf_counter() - t0</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;单份 %.3f s | 串行 %.3f s | 4线程 %.3f s (%.2fx) | 4进程 %.3f s (%.2fx)&quot;</span></span><br><span class="line">          % (one, serial, thr, serial / thr, pro, serial / pro))</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    cpu_demo(<span class="number">40_000_000</span>, <span class="number">4</span>)</span><br></pre></td></tr></table></figure>
+
+<p>在这台 24 逻辑核的机器上跑出来：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">单份 1.205 s | 串行 5.839 s | 4线程 6.649 s (0.88x) | 4进程 1.675 s (3.49x)</span><br></pre></td></tr></table></figure>
+
+<p>线程不但没加速，还倒退了 12%；进程拿到 3.49 倍。这个数字每轮会跳：我又跑了几轮，线程那栏在 0.76x 到 0.98x 之间摆动，进程那栏 3.49x 到 3.72x，结论没变。差别就是 GIL：CPython 里同一时刻只有一个线程能执行字节码，纯 Python 的 CPU 密集活儿开了线程也得排队，多出来的只是切换开销。进程各自有自己的解释器和 GIL，所以能真并行。</p>
+<p>进程那 3.49 倍也不是白拿的。同一个脚本里把任务量降到四份各两千万次再测一次，加速比只剩 1.82 倍——四份加起来才两秒多的活儿，光是把四个解释器拉起来（Windows 上还是 spawn，重新导入模块）就吃掉一大截。<strong>任务量不够大时，进程路线的固定开销会把收益吃干净</strong>，这正好印证了第二节那张表里&quot;创建开销大&quot;那一栏。</p>
+<p>这里能顺手带出 Amdahl 定律：</p>
+<p>$$S &#x3D; \frac{1}{(1-p) + \frac{p}{N}}$$</p>
+<p><code>p</code> 是能并行的那部分占比，<code>N</code> 是核数。哪怕 <code>p = 0.95</code>、<code>N</code> 无限大，加速比上限也只有 20 倍；<code>p</code> 里剩下那 5% 的串行段，会把所有并行的努力按住。<strong>并发改造的收益上限，由不可并行的那部分决定，不由核数决定。</strong></p>
+<p>判据就这么直白：</p>
+<ul>
+<li><strong>I&#x2F;O 密集</strong>（网络、磁盘、数据库等待）：线程或者协程。等待期间放别的线程去跑，GIL 不碍事。</li>
+<li><strong>CPU 密集的纯 Python</strong>：多进程，或者交给 C 扩展、NumPy 这类会释放 GIL 的库。</li>
+<li><strong>CPU 密集又必须共享状态</strong>：回到 C&#x2F;C++ 加 pthread，或者换语言——这也是为什么那台 RK3588 板子上的实时任务不会用 Python 线程去扛。</li>
+</ul>
+<h2 id="七、线程安全：不是-加了锁就行"><a href="#七、线程安全：不是-加了锁就行" class="headerlink" title="七、线程安全：不是&quot;加了锁就行&quot;"></a>七、线程安全：不是&quot;加了锁就行&quot;</h2><p>最后一个概念，CSAPP 12.7 前半。<strong>一个函数叫线程安全，指的是它被多个并发线程反复调用时，行为始终正确。</strong> 四类写法天然不安全：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>病灶</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>不保护共享变量</td>
+<td>多个线程读写同一全局状态</td>
+<td>计数器的裸 <code>+=</code>、懒加载单例</td>
+</tr>
+<tr>
+<td>保持跨调用状态</td>
+<td>状态存全局，被别的线程改了</td>
+<td>顺着链表缓存的指针</td>
+</tr>
+<tr>
+<td>返回静态变量地址</td>
+<td>返回同一块内存，调用方一改就乱</td>
+<td><code>ctime</code>、<code>localtime</code></td>
+</tr>
+<tr>
+<td>调用了不安全函数</td>
+<td>自己没毛病，被调用者拖下水</td>
+<td>内部用了 <code>strtok</code></td>
+</tr>
+</tbody></table>
+<p>对应的补丁都有配套版本：<code>strtok</code> 换成 <code>strtok_r</code>，<code>rand</code> 换成 <code>rand_r</code>，<code>localtime</code> 换成带缓冲区的 <code>localtime_r</code>。这套 <code>_r</code> 后缀的 API 就是给多线程准备的。</p>
+<p>顺便区分一个容易混的词：<strong>可重入（reentrant）比线程安全更强。</strong> 可重入函数不含任何静态或全局数据，连锁都不用加（它在任何时刻被中断再进来都安全）；线程安全函数可以靠加锁实现。所以可重入一定线程安全，线程安全不一定可重入——一个用全局锁保护的函数是线程安全的，但把锁去掉就完蛋了。</p>
+<h2 id="八、几个真实踩坑点"><a href="#八、几个真实踩坑点" class="headerlink" title="八、几个真实踩坑点"></a>八、几个真实踩坑点</h2><ol>
+<li><strong>&quot;有 GIL 所以不用锁&quot;</strong>：本文第四节已经实测反证过一次。GIL 保护的是解释器内部状态，不保护你的业务复合操作。Python 里 <code>d[k] = d.get(k, 0) + 1</code>、先 <code>if</code> 再 <code>set</code>，都是典型的读-改-写。</li>
+<li><strong>懒加载单例漏了锁</strong>：<code>if inst is None: inst = create()</code>，两个线程同时判断成立，创建出两个实例，谁持有都不对。</li>
+<li><strong>持锁做 I&#x2F;O</strong>：锁的持有时间应该只覆盖共享数据的读写，日志、网络调用一律挪到锁外面。</li>
+<li><strong>忘了 <code>join</code></strong>：主线程不等子线程跑完就继续，读到的全是半成品结果，还会在解释器退出时把线程硬杀掉。</li>
+<li><strong>线程和 <code>fork</code> 混用</strong>：<code>fork</code> 只复制调用线程，子进程里别的线程持有的锁全部处于&quot;永久被持有&quot;状态，一碰就死。多线程程序里优先用 <code>fork</code> 加 <code>exec</code>。</li>
+</ol>
+<h2 id="🐾-小结"><a href="#🐾-小结" class="headerlink" title="🐾 小结"></a>🐾 小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>关键接口</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>并发 vs 并行</td>
+<td>并发是交错推进，并行是同时执行</td>
+<td>——</td>
+</tr>
+<tr>
+<td>三条路线</td>
+<td>进程隔离好、事件驱动省、线程折中</td>
+<td><code>fork</code> &#x2F; <code>select</code> &#x2F; <code>pthread_create</code></td>
+</tr>
+<tr>
+<td>线程模型</td>
+<td>共享地址空间，栈和寄存器私有</td>
+<td>全局变量天然可见</td>
+</tr>
+<tr>
+<td>丢失更新</td>
+<td>读-改-写三步可被交错，写回覆盖别人的结果</td>
+<td>无（要靠锁）</td>
+</tr>
+<tr>
+<td>临界区</td>
+<td>同一时刻只允许一个执行流进入</td>
+<td><code>pthread_mutex_lock</code> &#x2F; <code>Lock</code></td>
+</tr>
+<tr>
+<td>二元信号量</td>
+<td>初值为 1 的信号量就是锁</td>
+<td><code>sem_wait</code> &#x2F; <code>sem_post</code></td>
+</tr>
+<tr>
+<td>GIL</td>
+<td>只缩小窗口，不消灭竞争，也不让你并起来</td>
+<td>——</td>
+</tr>
+<tr>
+<td>Amdahl</td>
+<td>加速比上限由串行部分决定</td>
+<td>$S &#x3D; 1&#x2F;((1-p)+p&#x2F;N)$</td>
+</tr>
+</tbody></table>
+<p><strong>并发的本质就一句：多个执行流共享同一份状态时，&quot;读-改-写&quot;必须变成不可分割的整体，否则正确性取决于调度器的心情。</strong> 锁是把这个整体焊起来的手段，代价是排队。</p>
+<p>下一篇进入《并发问题：死锁与竞争》——锁用错方向的两种典型后果：加锁顺序不一致造成互相等待的死锁，以及锁粒度选错造成的性能悬崖。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0110/">https://hespethorn.github.io/posts/capp0110/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%B9%B6%E5%8F%91/">并发</a><a class="post-meta__tags" href="/tags/%E7%BA%BF%E7%A8%8B/">线程</a><a class="post-meta__tags" href="/tags/%E4%BA%92%E6%96%A5%E9%94%81/">互斥锁</a><a class="post-meta__tags" href="/tags/%E4%B8%B4%E7%95%8C%E5%8C%BA/">临界区</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">813</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1108</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0110/" title="并发：线程与锁">并发：线程与锁</a><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0111/" title="并发问题：死锁与竞争">并发问题：死锁与竞争</a><time datetime="2025-01-12T16:00:00.000Z" title="Created 2025-01-13 00:00:00">2025-01-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0109/" title="网络编程基础">网络编程基础</a><time datetime="2025-01-05T16:00:00.000Z" title="Created 2025-01-06 00:00:00">2025-01-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0108/" title="系统级 I/O">系统级 I/O</a><time datetime="2025-01-01T16:00:00.000Z" title="Created 2025-01-02 00:00:00">2025-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0107/" title="虚拟内存">虚拟内存</a><time datetime="2024-12-29T16:00:00.000Z" title="Created 2024-12-30 00:00:00">2024-12-30</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/net-xff-trust-boundary/" title="信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩">信任边界放哪一层：XFF 的「边界 strip」与后端兜底之辩</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/multi-lang-algebraic-effects/" title="代数效应三语言对比：C++ 协程、Python 生成器与 Java 的缺席">代数效应三语言对比：C++ 协程、Python 生成器与 Java 的缺席</a><time datetime="2026-09-21T16:00:00.000Z" title="Created 2026-09-22 00:00:00">2026-09-22</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
