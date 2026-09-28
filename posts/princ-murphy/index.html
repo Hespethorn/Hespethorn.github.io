@@ -1,0 +1,647 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>墨菲定律：会出错的总会出错 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="「墨菲定律」大概是所有工程格言里被引用最多、被认真对待最少的一条。 它的日常用法是这样的：「今天演示肯定出问题，墨菲定律嘛。」——说完就过去了，像一个用来消解焦虑的段子。然后演示果然出了点小问题，大家哈哈一笑，散会。 但如果只把它当段子，就错过了它真正有用的那一半。因为这句话在工程语境里其实是一个关于概率的断言，而概率可以被计算。一旦你能计算它，它就从「自我实现的悲观预言」变成一条可以量化、可以设">
+<meta property="og:type" content="article">
+<meta property="og:title" content="墨菲定律：会出错的总会出错">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-murphy/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="「墨菲定律」大概是所有工程格言里被引用最多、被认真对待最少的一条。 它的日常用法是这样的：「今天演示肯定出问题，墨菲定律嘛。」——说完就过去了，像一个用来消解焦虑的段子。然后演示果然出了点小问题，大家哈哈一笑，散会。 但如果只把它当段子，就错过了它真正有用的那一半。因为这句话在工程语境里其实是一个关于概率的断言，而概率可以被计算。一旦你能计算它，它就从「自我实现的悲观预言」变成一条可以量化、可以设">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-09-27T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-28T01:55:23.485Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="容错设计">
+<meta property="article:tag" content="可靠性">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "墨菲定律：会出错的总会出错",
+  "url": "https://hespethorn.github.io/posts/princ-murphy/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-09-27T16:00:00.000Z",
+  "dateModified": "2026-09-28T01:55:23.485Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-murphy/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '墨菲定律：会出错的总会出错',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1117</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">墨菲定律：会出错的总会出错</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">墨菲定律：会出错的总会出错</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>16mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>「墨菲定律」大概是所有工程格言里被引用最多、被认真对待最少的一条。</p>
+<p>它的日常用法是这样的：「今天演示肯定出问题，墨菲定律嘛。」——说完就过去了，像一个用来消解焦虑的段子。然后演示果然出了点小问题，大家哈哈一笑，散会。</p>
+<p>但如果只把它当段子，就错过了它真正有用的那一半。因为这句话在工程语境里其实是一个<strong>关于概率的断言</strong>，而概率可以被计算。一旦你能计算它，它就从「自我实现的悲观预言」变成一条可以量化、可以设防的设计约束。</p>
+<p>本文讲的是<strong>工程意义上的墨菲定律</strong>：它最初说了什么、为什么它会成立、它给出的那个具体判据（&quot;有几个方式做一件事&quot;）、以及它怎么变成了可靠性工程里一整套具体做法。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>这句话的出处没有想象中古老。</p>
+<p><strong>1949 年</strong>，美国空军在加州 Muroc 干湖（后来改名叫爱德华兹空军基地）做一项叫 <strong>MX981</strong> 的项目，测试人类对突然减速的耐受极限——通俗说，就是&quot;人能被刹车刹到什么程度&quot;。参与测试的工程师里有一位叫 <strong>Edward A. Murphy Jr.</strong>（爱德华·墨菲），当时是莱特航空发展中心的试飞工程师。</p>
+<p>故事的版本有好几个，最广为流传的一版是：墨菲注意到某位技术员把一组传感器<strong>全部装反了</strong>——而每一个传感器都有两种装法，理论上有一半概率装对，结果全装错了。于是他抱怨了一句大意是「<strong>If there&#39;s any way to do it wrong, he&#39;ll find it.</strong>」（只要有办法装错，他就一定会装错。）</p>
+<p>项目负责人 <strong>John Paul Stapp</strong>（就是那位亲身坐火箭滑车、承受 40 倍重力把自己当实验对象的上校）在记者会上把这句抱怨浓缩成了后来传遍世界的形式，并把它当成了一个<strong>项目座右铭</strong>：</p>
+<blockquote>
+<p><strong>Whatever can go wrong, will go wrong.</strong><br>会出错的事情，总会出错。</p>
+</blockquote>
+<p>注意两个关键背景，它们决定了这条定律的性质：</p>
+<ol>
+<li><strong>它是从测试现场长出来的，不是从哲学书里长出来的。</strong> 墨菲关心的不是&quot;世界为什么充满恶意&quot;，而是一件很具体的事：<strong>一个接口&#x2F;零件&#x2F;操作有若干种可能的做法，其中错误做法的数量不为零，那么在一个足够长的流程里，错误做法会被碰到。</strong></li>
+<li><strong>它当时是用来做设计的，不是用来抱怨的。</strong> Stapp 把它当座右铭，是因为这句话能推动一件事：<strong>让错误的装法在物理上不可能发生。</strong> 后来那次事故的直接产物，就是给传感器做了<strong>防呆（pokayoke）设计</strong>——插头做成不对称的，装反了就插不进去。</li>
+</ol>
+<p><strong>1958 年</strong>，这句话被收进《Aviation Mechanics Bulletin》，正式进入工程文献。此后它又被不断&quot;再发现&quot;和改写：<strong>George Nichols</strong> 在 1950 年代把它提炼成今天最常见的措辞；<strong>Arthur Bloch</strong> 在 1977 年的 <strong>《Murphy&#39;s Law》</strong> 汇编里把它扩展成几十条&quot;墨菲定律变体&quot;（著名的&quot;面包掉在地上总是抹黄油那面朝下&quot;就出自这里）；软件工程里则有了 <strong>SNAFU 原则</strong>——&quot;Situation Normal: All Fouled Up&quot;，形容系统常态就是&quot;到处都有点小破&quot;。</p>
+<p>而软件工程对它的第一次严肃回应，出现在 <strong>1969 年</strong>：<strong>Melvin Conway</strong> 在《How Do Committees Invent?》里写下了那句后来被称作<strong>康威定律</strong>的话——这里之所以提它，是因为<strong>墨菲定律和康威定律是同一种思维的两种用法</strong>：一个管&quot;错误一定会被撞上，所以把路堵死&quot;，一个管&quot;结构一定会复刻沟通，所以先改沟通&quot;。</p>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为<strong>大多数系统的正确性假设是&quot;运气&quot;而不是&quot;约束&quot;</strong>。</p>
+<p>把这句话拆开看，会得到三个非常具体的工程事实。</p>
+<p><strong>事实一：人不是不会出错，而是不能被假设为不出错。</strong></p>
+<p>冗余设计里有一条铁律：<strong>冗余要能接管，前提是故障可被检测</strong>（这条在快速失败那篇里已经讲过）。墨菲定律补上了前半句：<strong>只要故障有可能发生，在足够的次数下它就会发生。</strong> 这里的&quot;足够次数&quot;不是玄学——一个 99% 正确的操作，重复 100 次后全部成功的概率是 <strong>0.99¹⁰⁰ ≈ 36.6%</strong>；重复 500 次是 <strong>0.66%</strong>。也就是说，<strong>一个每天都有一点点可能出错的流程，在一年里几乎必然出错。</strong></p>
+<p><strong>事实二：错误做法的数量决定了错误率，而这通常是可以数出来的。</strong></p>
+<p>这是墨菲定律里最被忽略、也最实用的一点。回到那次传感器事故：一个有 2 种装法的接口，错误做法有 1 种；如果有 4 种装法，错误做法就有 3 种。<strong>接口的设计者实际上是在选一个&quot;错误率&quot;</strong>，只不过大多数时候没意识到。这就是&quot;防呆&quot;这个词的由来——<strong>不是提醒人小心，而是把错误做法的数量压到 0。</strong></p>
+<p><strong>事实三：没有被观测到的错误会被无限保留。</strong></p>
+<p>系统出了错但没人知道，这个错误就会一直存在，而且会在每一次&quot;看起来正常&quot;的运行里得到一次&quot;掩盖成功&quot;。等到它终于以另一个形式暴露出来时，你面对的是一个长满了的、无法追溯的问题（这条同样是<strong>快速失败</strong>那篇的核心）。</p>
+<p>反过来看，如果承认墨菲定律，工程姿势会发生什么变化：</p>
+<ul>
+<li>设计阶段问的不是&quot;这样能跑通吗&quot;，而是「<strong>这个流程里，有哪几种办法把它做错？</strong>」</li>
+<li>实现阶段问的不是&quot;正常路径对不对&quot;，而是「<strong>异常路径会怎么表现？崩溃、静默、还是假装成功？</strong>」</li>
+<li>运维阶段问的不是&quot;系统稳定吗&quot;，而是「<strong>上一次故障是什么时候？我们是怎么知道的？</strong>」——如果答不上来，那只是&quot;故障还没被发现&quot;，不是&quot;没有故障&quot;。</li>
+</ul>
+<p><strong>本质一句话：墨菲定律说的是——只要一个流程存在非零的出错概率，那么在足够多的重复次数下，出错就是一个必然事件；所以可靠性不来自&quot;人小心一点&quot;，而来自把错误做法的数量压到零。</strong></p>
+<p>这句话里有两个地方需要读准：</p>
+<ul>
+<li><strong>&quot;足够多的重复次数&quot;才是关键</strong>。墨菲定律不是&quot;任何事情立刻就会出错&quot;，而是一个<strong>关于时间的渐进结论</strong>。这个特性让它和概率计算直接挂钩，而不是和&quot;运气&quot;挂钩。</li>
+<li><strong>落点是&quot;把错误做法的数量压到零&quot;，不是&quot;预测错误&quot;</strong>。你不能指望提前猜到错在哪，你能做的是让错的那条路走不通。</li>
+</ul>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看这条定律在时间轴上的真实形态。单次出错的概率不高，但重复次数一上去，&quot;一次都不出错&quot;就变成了小概率事件：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    A[&quot;单次操作的&lt;br/&gt;出错概率 p&quot;] --&gt; B&#123;&quot;重复 n 次，&lt;br/&gt;n 很大吗？&quot;&#125;
+    B --&gt;|&quot;n 小&lt;br/&gt;（一次性脚本 / 手工操作）&quot;| C[&quot;整体成功率 ≈ 1 - n·p&lt;br/&gt;偶发失败，&lt;br/&gt;可能被&quot;运气好&quot;掩盖&quot;]
+    B --&gt;|&quot;n 大&lt;br/&gt;（每天跑的任务 / 每笔请求）&quot;| D[&quot;至少出错一次的概率 → 1&lt;br/&gt;不是&quot;会不会&quot;，是&quot;什么时候&quot;&quot;]
+    C --&gt; E[&quot;危险区：&lt;br/&gt;以为是自己写得对，&lt;br/&gt;其实是碰上了运气&quot;]
+    D --&gt; F[&quot;必然区：&lt;br/&gt;必须假设错误已发生&quot;]
+    F --&gt; G[&quot;设计目标转向：&lt;br/&gt;把&quot;错误做法&quot;的数量压到 0&lt;br/&gt;＋让错误一旦发生必被观测&quot;]</code></pre>
+
+<p>再看&quot;防呆&quot;这条设计路线的判定树。它的思路是：<strong>先问能不能取消，再问能不能约束，最后才是提醒</strong>：</p>
+<pre><code class="highlight mermaid">flowchart TD
+    A[&quot;一个操作存在&lt;br/&gt;多种做法，其中包含错误做法&quot;] --&gt; B&#123;&quot;错误做法&lt;br/&gt;能物理取消吗？&lt;br/&gt;（做成插不进去 / 编译不过）&quot;&#125;
+    B --&gt;|&quot;能&quot;| C[&quot;防呆设计&lt;br/&gt;错误做法数量 = 0&lt;br/&gt;★ 最强的一档&quot;]
+    B --&gt;|&quot;不能&quot;| D&#123;&quot;能加自动校验吗？&lt;br/&gt;（不依赖人的注意力）&quot;&#125;
+    D --&gt;|&quot;能&quot;| E[&quot;机器闸门&lt;br/&gt;类型系统 / Schema / 约束&lt;br/&gt;错误做法当场被拒&quot;]
+    D --&gt;|&quot;不能&quot;| F&#123;&quot;能缩小暴露面吗？&lt;br/&gt;（减少次数 / 缩小权限）&quot;&#125;
+    F --&gt;|&quot;能&quot;| G[&quot;降低 p 与 n&lt;br/&gt;最小权限 / 灰度 / 隔离&quot;]
+    F --&gt;|&quot;不能&quot;| H[&quot;最后一档：提醒 + 检查单&lt;br/&gt;依赖注意力，&lt;br/&gt;人一累就失效&quot;]
+    H --&gt; I[&quot;必须配可观测性：&lt;br/&gt;出错时一定要能知道&quot;]</code></pre>
+
+<p>两图合起来的意思：<strong>墨菲定律的工程价值是把&quot;小心一点&quot;替换成&quot;让错误做法不存在&quot;，并且明确排出了防呆、校验、缩面、提醒四档优先级。</strong> 排在前面的档位不依赖人的状态，排在最后的档位一旦人疲劳就失效——而人疲劳是一个必然事件。</p>
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 先把它算出来：概率不是修辞（本机实跑）</strong></p>
+<p>先看&quot;重复次数&quot;到底有多致命。下表是单次成功率 p 在不同重复次数下，<strong>至少失败一次</strong>的概率：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">单次成功率 p      重复 10 次        重复 100 次       重复 1000 次</span><br><span class="line">--------------------------------------------------------------------</span><br><span class="line">0.999999          0.001%            0.010%            0.100%</span><br><span class="line">0.9999            0.100%            0.995%            9.517%</span><br><span class="line">0.999             0.996%            9.521%            63.230%</span><br><span class="line">0.99              9.562%            63.397%           100.000%</span><br><span class="line">0.95              40.126%           99.408%           100.000%</span><br></pre></td></tr></table></figure>
+
+<p>读法：<strong>一个&quot;99.9% 可靠&quot;的操作，每天跑一次，一年之后至少有 30% 的概率已经出过错。</strong> 如果它是每秒跑一次的请求（一天 86400 次），失败几乎是必然的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">p = 0.999999   每秒一次、跑满一天 → 至少失败一次的概率 = 0.0828</span><br><span class="line">p = 0.9999     每秒一次、跑满一天 → 至少失败一次的概率 = 0.9998</span><br><span class="line">p = 0.999      每秒一次、跑满一天 → 至少失败一次的概率 = 1.0000（已到浮点精度上限）</span><br><span class="line">p = 0.99       每秒一次、跑满一天 → 至少失败一次的概率 = 1.0000</span><br></pre></td></tr></table></figure>
+
+<p>这就是&quot;会出错的总会出错&quot;的定量版本：<strong>它不是预测哪一次会错，而是告诉你&quot;翻车次数&quot;的期望值。</strong> 系统规模越大、运行越久，&quot;运气&quot;这一项就越接近零。</p>
+<p><strong>2. 再看&quot;错误做法的数量&quot;：这是接口设计者真正在选的参数（本机实跑）</strong></p>
+<p>同一件事可以有两种实现——一种防呆，一种不防呆——用&quot;随机尝试直到蒙对&quot;来模拟人面对陌生接口时的行为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">[不防呆] 8 引脚、无键位限制，全部接法 = 8! = 40320</span><br><span class="line">  错误接法数 = 40319 种（随机盲插&quot;很难&quot;接反）</span><br><span class="line">[危险中间态] 8 引脚、只有 1 个键位区分方向</span><br><span class="line">  选对方向概率 = 1/2，错误接法 = 1 种，但这条错路&quot;插得进去&quot;</span><br><span class="line">[完全防呆] 键位 + 不对称壳体：错误接法 = 0 种</span><br><span class="line"></span><br><span class="line">模拟 10000 次&quot;用力硬插&quot;：</span><br><span class="line">  中间态：插反 5030 次 / 10000（错误率 ≈ 50.30%）</span><br><span class="line">  防呆态：插反    0 次 / 10000（错误率 = 0.00%）</span><br></pre></td></tr></table></figure>
+
+<p>这段模拟想说明的是：<strong>危险的不是&quot;错误做法多&quot;，而是&quot;错误做法走得通&quot;。</strong> 一个 40320 分之一的方向错误几乎不会发生；一个&quot;用力就能插反&quot;的接口，错误率接近二分之一。所以防呆的判据不是&quot;减少可能性&quot;，而是：</p>
+<blockquote>
+<p><strong>让错误的那条路在物理上走不通、在编译期过不去、在数据库里写不进。</strong></p>
+</blockquote>
+<p><strong>3. 工程里的四个真实落点：错误做法的数量被压到零</strong></p>
+<ul>
+<li><strong>物理层（防呆）</strong>：SIM 卡的切角、主板供电接口的键位、PCIe 插槽的防呆缺口——<strong>装反了就装不进去</strong>。这是墨菲定律最原始的答案。</li>
+<li><strong>类型层（本机实跑，Python）</strong>：<code>Literal</code> &#x2F; <code>Enum</code> &#x2F; 新型联合类型把&quot;这个参数只允许这几个值&quot;写进类型，非法值在静态检查阶段就被拦下，而不是等到运行时才发现传了个字符串。</li>
+</ul>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Mode = Literal[&quot;read&quot;, &quot;write&quot;]</span><br><span class="line">parse_mode(&quot;read&quot;)   → READ                       （合法值，正常返回）</span><br><span class="line">parse_mode(&quot;reaad&quot;)  → 类型检查器报错             （错的那条路静态就不通）</span><br><span class="line">对比：mode.strip().lower() 手工归一化</span><br><span class="line">      → 静默接受 &quot; REAAD &quot; 之类的拼写错误，无任何提示</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><strong>驱动层（权限最小化）</strong>：把写操作做成只走一个函数、一个入口，其他所有路径一律 <code>readonly</code>。<strong>这不是&quot;提醒你别写错地方&quot;，而是&quot;没有别的地方可写&quot;。</strong></li>
+<li><strong>数据库层（约束）</strong>：<code>NOT NULL</code>、<code>CHECK</code>、<code>UNIQUE</code>、外键、SQLite 的 <strong>STRICT 表</strong>（3.37 起）——把&quot;数据不合法&quot;从应用层的自觉变成存储层的拒绝。<strong>约束一旦落到库里，绕过应用直连数据库也写不进去。</strong></li>
+</ul>
+<p><strong>4. 真实的&quot;墨菲事件&quot;通常长这样</strong></p>
+<ul>
+<li><strong>磁盘满</strong>：所有服务都会遇到一次。它的形态不是&quot;磁盘坏了&quot;，而是&quot;日志把磁盘写满，然后<strong>所有</strong>依赖写盘的服务一起挂&quot;——一个单点、一个可预见的必然事件，被预留了整整一个时代的教训。</li>
+<li><strong>时间&#x2F;时区</strong>：只要有 <code>DateTime</code> 参与，就一定会遇到夏令时切换、闰秒、跨时区边界。真正出问题的往往不是&quot;算错了&quot;，而是<strong>同一个时间在两个层里被当成两种东西</strong>（墙上时间 vs 瞬时时间）。</li>
+<li><strong>重试放大</strong>：某下游超时 → 上游重试 → 超时更多 → 重试更多。这个模式每年都会在某个公司重演一次，它的解药（退避 + 抖动 + 熔断）恰恰是&quot;假设错误一定会发生&quot;的直接产物。</li>
+<li><strong>配置漂移</strong>：手工改过的那台机器，一定会在下一次部署时被漏掉。所以&quot;配置即代码&quot;不是洁癖，是墨菲定律的必然要求。</li>
+</ul>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>它不是&quot;消极不作为&quot;的许可证</strong>。「反正会出错，那就不做了」是最常见的误读。墨菲定律的正确用法恰好相反：<strong>既然错误必然发生，那就预先设计好错误发生后的行为</strong>（降级、隔离、快速恢复），以及<strong>让错误无法发生</strong>（防呆）。它要求的是更多的设计，不是更少。</li>
+<li><strong>不是所有&quot;小概率&quot;都值得设防</strong>。设防有成本。工程上真正的判据是<strong>期望损失</strong>：<code>p × n × 单次损失</code>。一个 p 极小又便宜的错误，可以只做观测不做防护；一个 p 很小但损失是&quot;整个库被删&quot;的错误，必须防呆。<strong>墨菲定律给的是&quot;次数放大&quot;这个视角，不是&quot;什么都得防&quot;这个结论。</strong></li>
+<li><strong>它会自我实现</strong>。如果整个团队都相信&quot;我们一定会搞砸&quot;，就容易放弃投入，把失败当成&quot;本来就该发生&quot;——这时的墨菲定律已经不是预测，而是<strong>借口</strong>。区分方法很朴素：<strong>说出你在这次故障里，把哪几种&quot;错误做法&quot;从流程里删掉了。</strong> 说不出来，就是拿它当借口。</li>
+<li><strong>观测比预防更优先</strong>（在成本受限时）。因为预防依赖&quot;你想到了所有错误做法&quot;这个不可能的前提，而<strong>观测只需要你承认&quot;我可能没想到&quot;</strong>。这就是为什么日志、指标、追踪、告警的投入优先级往往高于防御性代码。</li>
+<li><strong>注意&quot;必然事件&quot;的边界</strong>：墨菲定律说的是<strong>非零概率在足够多次下必然发生</strong>。如果一个错误做法的概率是真的零（物理不可能、编译不可能、数据库不可能），那它就不在定律的管辖范围内——<strong>所以&quot;把错误做法数量压到零&quot;的工程收益是实打实的，它把这条定律从流程里彻底移除了一部分。</strong></li>
+<li><strong>别让&quot;防呆&quot;变成&quot;防人&quot;</strong>。有些团队把防呆做成了对人的不信任（层层审批、处处留痕），成本极高而错误率不降。真正有效的防呆是<strong>无感的</strong>：插头插不反、<code>mypy</code> 自动跑、CI 直接拦——<strong>需要人记住才能生效的防呆，本身就是一条墨菲定律的候选。</strong></li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>把墨菲定律当段子</th>
+<th>把墨菲定律当设计约束</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>面对失败</td>
+<td>事前自嘲，事后归因于运气</td>
+<td>事前量化 <code>p × n</code>，设计错误发生后的行为</td>
+</tr>
+<tr>
+<td>提问方式</td>
+<td>「应该没问题吧？」</td>
+<td>「有哪几种办法把它做错？」</td>
+</tr>
+<tr>
+<td>接口设计</td>
+<td>靠文档提醒、靠约定</td>
+<td>靠防呆：错误做法在物理&#x2F;编译&#x2F;存储层走不通</td>
+</tr>
+<tr>
+<td>校验位置</td>
+<td>散在业务代码里，靠人记得调</td>
+<td>集中在闸门，机器自动执行</td>
+</tr>
+<tr>
+<td>对&quot;人&quot;的假设</td>
+<td>人会小心</td>
+<td>人在重复劳动中必然疏忽（且疲劳是必然事件）</td>
+</tr>
+<tr>
+<td>失败后</td>
+<td>不知道，直到某个更大的问题暴露</td>
+<td>必被观测：指标 + 告警 + 可追溯</td>
+</tr>
+<tr>
+<td>投入优先级</td>
+<td>出过事才补</td>
+<td>按期望损失排：<code>p × n × 单次代价</code></td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>防呆档位</th>
+<th>手段</th>
+<th>错误做法数量</th>
+<th>是否依赖人的注意力</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>物理防呆</td>
+<td>键位、切角、不对称接口</td>
+<td>降到 0</td>
+<td>否</td>
+</tr>
+<tr>
+<td>编译期约束</td>
+<td>类型系统、<code>strict</code>、<code>Literal</code>&#x2F;<code>Enum</code></td>
+<td>降到 0（合法写法之外全不通）</td>
+<td>否</td>
+</tr>
+<tr>
+<td>运行时闸门</td>
+<td>Schema 校验、断言（显式 raise）、状态机</td>
+<td>大幅下降</td>
+<td>否</td>
+</tr>
+<tr>
+<td>存储层约束</td>
+<td><code>NOT NULL</code> &#x2F; <code>CHECK</code> &#x2F; 外键 &#x2F; STRICT 表</td>
+<td>大幅下降</td>
+<td>否</td>
+</tr>
+<tr>
+<td>暴露面收缩</td>
+<td>最小权限、灰度、隔离、限流</td>
+<td>降低 <code>p</code> 与 <code>n</code></td>
+<td>否</td>
+</tr>
+<tr>
+<td>流程提醒</td>
+<td>检查单、Code Review、规范文档</td>
+<td>略有下降</td>
+<td><strong>是</strong>（疲劳即失效）</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：墨菲定律常被当成一句用来提前泄气的话，但它真正的形态是一条<strong>概率陈述</strong>：非零的错误概率，乘以足够多的重复次数，就等于必然。它给出的工程动作非常具体——<strong>先问&quot;这件事有几种做法&quot;（错误做法的数量就是你的错误率），再分四档把它压下去：物理防呆 → 编译期约束 → 运行时闸门 → 存储层约束，最后才是提醒。</strong> 因为&quot;提醒&quot;这一档唯一依赖的东西（人的注意力）恰好是最先耗尽的资源。落地时问自己一个问题：<strong>「如果我现在注意力只剩一半，我做的这一步还会对吗？」</strong> 如果答案是&quot;不会&quot;，那这一步就不该只靠人守着。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-murphy/">https://hespethorn.github.io/posts/princ-murphy/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/">工程实践</a><a class="post-meta__tags" href="/tags/%E5%AE%B9%E9%94%99%E8%AE%BE%E8%AE%A1/">容错设计</a><a class="post-meta__tags" href="/tags/%E5%8F%AF%E9%9D%A0%E6%80%A7/">可靠性</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1117</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

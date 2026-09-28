@@ -1,0 +1,676 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>程序性能优化 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="写完并发再回头看性能，顺序其实是反的。按理说该先讲怎么让单线程跑快，再讲怎么把它拆到多核上去，CSAPP 第 5 章就是这个位置，夹在优化编译器和存储器层次中间。所以本篇的主线是单线程：同一份算法，换个写法，差出两三倍甚至几十倍，靠的到底是什么。 先摆一个反常的观察。我把同一个求和的三种写法放在本机跑了一遍： 123朴素双重 for      110.36 ms手工 4 路展开     180.7">
+<meta property="og:type" content="article">
+<meta property="og:title" content="程序性能优化">
+<meta property="og:url" content="https://hespethorn.github.io/posts/capp0112/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="写完并发再回头看性能，顺序其实是反的。按理说该先讲怎么让单线程跑快，再讲怎么把它拆到多核上去，CSAPP 第 5 章就是这个位置，夹在优化编译器和存储器层次中间。所以本篇的主线是单线程：同一份算法，换个写法，差出两三倍甚至几十倍，靠的到底是什么。 先摆一个反常的观察。我把同一个求和的三种写法放在本机跑了一遍： 123朴素双重 for      110.36 ms手工 4 路展开     180.7">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-01-15T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-09-28T01:55:23.484Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="局部性">
+<meta property="article:tag" content="Amdahl">
+<meta property="article:tag" content="性能优化">
+<meta property="article:tag" content="循环优化">
+<meta property="article:tag" content="分支预测">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "程序性能优化",
+  "url": "https://hespethorn.github.io/posts/capp0112/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-01-15T16:00:00.000Z",
+  "dateModified": "2026-09-28T01:55:23.484Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/capp0112/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '程序性能优化',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1117</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">程序性能优化</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">程序性能优化</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-01-15T16:00:00.000Z" title="Created 2025-01-16 00:00:00">2025-01-16</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CSAPP/">CSAPP</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>15mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>写完并发再回头看性能，顺序其实是反的。按理说该先讲怎么让单线程跑快，再讲怎么把它拆到多核上去，CSAPP 第 5 章就是这个位置，夹在优化编译器和存储器层次中间。所以本篇的主线是单线程：<strong>同一份算法，换个写法，差出两三倍甚至几十倍，靠的到底是什么。</strong></p>
+<p>先摆一个反常的观察。我把同一个求和的三种写法放在本机跑了一遍：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">朴素双重 for      110.36 ms</span><br><span class="line">手工 4 路展开     180.79 ms</span><br><span class="line">sum() 内建        19.90 ms</span><br></pre></td></tr></table></figure>
+
+<p>手工展开，教科书上正儿八经的“减少循环开销”手段，在这里<strong>比什么都不做还慢了 64%</strong>。而换成 <code>sum()</code> 之后快了 5.5 倍。</p>
+<p>这个结果把我原本准备好的叙述顺序打乱了。它说明一件事：<strong>优化不是往代码里加招式，是先搞清楚瓶颈长在哪里，再决定动不动手。</strong> 下面按“先量、再改、改完再看”的次序走一遍。</p>
+<h2 id="一、先建立度量单位"><a href="#一、先建立度量单位" class="headerlink" title="一、先建立度量单位"></a>一、先建立度量单位</h2><p>性能讨论最怕的就是含糊。所以先把两把尺子立起来。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    A[时钟周期 CPE&lt;br/&gt;Cycles Per Element] --&gt; B[每元素耗几个周期&lt;br/&gt;与数据规模无关]
+    C[加速比 S = T_old / T_new] --&gt; D[新旧耗时之比&lt;br/&gt;无量纲 可跨机器比]</code></pre>
+
+<p>**CPE（每元素周期数）**是 CSAPP 第 5 章的主尺度：处理一个元素平均花掉几个 CPU 周期。它比“总耗时”有用，因为总耗时里混着数据规模，而 CPE 是个内禀量，同一份代码在 4 核手机上和在服务器上，CPE 的差距能反映真实的微架构差异。</p>
+<p>本文的实验跑在这台机器上：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CPU</td>
+<td>Intel Core i7-14650HX</td>
+</tr>
+<tr>
+<td>逻辑处理器</td>
+<td>24</td>
+</tr>
+<tr>
+<td>L1 数据缓存</td>
+<td>48 KB &#x2F; 核</td>
+</tr>
+<tr>
+<td>L2 缓存</td>
+<td>2 MB &#x2F; 核</td>
+</tr>
+<tr>
+<td>L3 缓存</td>
+<td>30 MB</td>
+</tr>
+<tr>
+<td>缓存行</td>
+<td>64 B</td>
+</tr>
+</tbody></table>
+<p>后面所有数字都出自这台机器。<strong>换机器数字会变，但倍数关系通常保持。</strong></p>
+<p>Python 里拿不到真正的周期计数（解释器层的开销淹没了它），所以下面的数据一律用“耗时比”来表达，量级上等价于 CPE 的比。想拿真 CPE 得用 <code>perf stat</code> 这类工具去跑 C 代码。</p>
+<h2 id="二、第一刀砍向常量因子"><a href="#二、第一刀砍向常量因子" class="headerlink" title="二、第一刀砍向常量因子"></a>二、第一刀砍向常量因子</h2><p>CSAPP 把优化分成两层：<strong>减少工作量</strong>（算法层面）和<strong>减少每次工作的时间</strong>（常量因子）。前者归算法课，后者归 5.1–5.6 节。常量因子听起来寒碜，但它对循环密集的代码是最大的一块蛋糕。</p>
+<p>第 5 章把常量因子拆成两半：<strong>降低 CPE 下限</strong>（减少关键路径上的运算）与<strong>突破 CPE 下限</strong>（利用指令级并行）。</p>
+<p>先看下限这一半。同一台机器上跑三个等长循环，只换循环体内的运算：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time</span><br><span class="line"></span><br><span class="line">OPS = <span class="number">2_000_000</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">bench</span>(<span class="params">fn, n=<span class="number">5</span></span>):</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">min</span>((<span class="keyword">lambda</span> t0: (fn(), time.perf_counter() - t0)[<span class="number">1</span>])</span><br><span class="line">               (time.perf_counter()) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(n))</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">op_pure_sum</span>(<span class="params">n=OPS</span>):</span><br><span class="line">    s = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        s += i</span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">op_mul_add</span>(<span class="params">n=OPS</span>):</span><br><span class="line">    s = <span class="number">1</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        s = s * <span class="number">1</span> + i             <span class="comment"># 乘法 + 加法，串成一条依赖链</span></span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">op_div</span>(<span class="params">n=OPS</span>):</span><br><span class="line">    s = <span class="number">1.0</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(n, <span class="number">0</span>, -<span class="number">1</span>):</span><br><span class="line">        s = s / <span class="number">1.0000001</span> + i     <span class="comment"># 浮点除法</span></span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> name, fn <span class="keyword">in</span> [(<span class="string">&quot;s += i        &quot;</span>, op_pure_sum),</span><br><span class="line">                 (<span class="string">&quot;s = s*1 + i   &quot;</span>, op_mul_add),</span><br><span class="line">                 (<span class="string">&quot;浮点除法链     &quot;</span>, op_div)]:</span><br><span class="line">    t = bench(fn)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;<span class="subst">&#123;name&#125;</span>  <span class="subst">&#123;t*<span class="number">1e9</span>/OPS:<span class="number">6.2</span>f&#125;</span> ns/元素&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">s += i           19.11 ns/元素</span><br><span class="line">s = s*1 + i      32.08 ns/元素</span><br><span class="line">浮点除法链        28.79 ns/元素</span><br></pre></td></tr></table></figure>
+
+<p><code>s = s*1 + i</code> 里那个 <code>*1</code> 看着是白算的，编译器把它优化掉一点不难。可它实打实慢了 68%。</p>
+<p>原因在<strong>关键路径</strong>：<code>s</code> 的每一次新值都依赖上一次的 <code>s</code>，而乘法比加法延迟高。整条链被最长的那一步卡住，哪怕 CPU 有 6 个执行端口也插不上手——<strong>没有可并行的独立工作</strong>。</p>
+<p>浮点除法链只比乘法链快一点点，也是同一个道理：除法延迟高，但 Python 解释器自身的开销占了大头，把差距抹平了一部分。</p>
+<p>把这项记下来：<strong>CPE 的下限由关键路径决定，砍运算数量比砍指令数量更直接。</strong></p>
+<h2 id="三、内存是性能的真正瓶颈"><a href="#三、内存是性能的真正瓶颈" class="headerlink" title="三、内存是性能的真正瓶颈"></a>三、内存是性能的真正瓶颈</h2><p>第二半是突破下限。这里出场的是本篇的主角——<strong>局部性</strong>。</p>
+<p>先看一个最干净的对撞。同一块二维数据、同样的元素个数、同样的求和结果，只是循环嵌套顺序不同：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time</span><br><span class="line"></span><br><span class="line">N = <span class="number">2000</span></span><br><span class="line">a = [[<span class="number">1</span>] * N <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(N)]</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">bench</span>(<span class="params">fn, arg, n=<span class="number">5</span></span>):</span><br><span class="line">    ts = []</span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        t0 = time.perf_counter()</span><br><span class="line">        fn(arg)</span><br><span class="line">        ts.append(time.perf_counter() - t0)</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">min</span>(ts)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sum_row_major</span>(<span class="params">a</span>):</span><br><span class="line">    total = <span class="number">0</span></span><br><span class="line">    n = <span class="built_in">len</span>(a)</span><br><span class="line">    <span class="keyword">for</span> row <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        r = a[row]                <span class="comment"># 行首地址取一次，内层不再算索引</span></span><br><span class="line">        <span class="keyword">for</span> col <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">            total += r[col]</span><br><span class="line">    <span class="keyword">return</span> total</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sum_col_major</span>(<span class="params">a</span>):</span><br><span class="line">    total = <span class="number">0</span></span><br><span class="line">    n = <span class="built_in">len</span>(a)</span><br><span class="line">    <span class="keyword">for</span> col <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        <span class="keyword">for</span> row <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">            total += a[row][col]  <span class="comment"># 每步都跨一整行</span></span><br><span class="line">    <span class="keyword">return</span> total</span><br><span class="line"></span><br><span class="line">t_row = bench(sum_row_major, a)</span><br><span class="line">t_col = bench(sum_col_major, a)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;N=<span class="subst">&#123;N&#125;</span>  行优先 <span class="subst">&#123;t_row:<span class="number">.4</span>f&#125;</span>s  列优先 <span class="subst">&#123;t_col:<span class="number">.4</span>f&#125;</span>s  倍数 <span class="subst">&#123;t_col/t_row:<span class="number">.2</span>f&#125;</span>x&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(sum_row_major(a), sum_col_major(a))</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">N=2000  行优先 0.0809s  列优先 0.1640s  倍数 2.03x</span><br><span class="line">4000000 4000000</span><br></pre></td></tr></table></figure>
+
+<p><strong>结果完全一样，慢了一倍。</strong></p>
+<p>关键在那条 <strong>64 字节的缓存行</strong>。内存不是一个字节一个字节搬进 CPU 的，是整行搬。行优先遍历时，一个缓存行里的 8 个（大概）元素连着被用掉，搬一次用八次。列优先就不一样了：<code>a[0][col]</code>、<code>a[1][col]</code>、<code>a[2][col]</code> 每一个都落在不同的行、不同的缓存行上，<strong>搬一次只用一次</strong>。</p>
+<p>2000×2000 的矩阵，一行就是 2000 个元素。整个矩阵远超 2 MB 的 L2，甚至逼近 30 MB 的 L3，于是每一次跨行访问都可能去主存里捞——那正是几百个周期的量级。</p>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph RM[&quot;行优先：一次搬八次用&quot;]
+        direction LR
+        L1[加载缓存行&lt;br/&gt;含 a00..a07] --&gt; U1[用 a00]
+        U1 --&gt; U2[用 a01]
+        U2 --&gt; U3[...连续命中]
+    end
+    subgraph CM[&quot;列优先：一次搬一次用&quot;]
+        direction LR
+        L2[加载缓存行&lt;br/&gt;含 a00..a07] --&gt; V1[只用 a00]
+        V1 --&gt; V2[a10 要另起一行&lt;br/&gt;重新加载]
+    end</code></pre>
+
+<p>换成更贴近 Python 场景的随机访问，差距同样明显：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">顺序访问 200000 个元素    4.19 ms</span><br><span class="line">随机访问                 7.55 ms    1.80x</span><br></pre></td></tr></table></figure>
+
+<p>元素个数一模一样，只是访问顺序被打乱了（用固定种子的 <code>random.shuffle</code> 打乱索引），就慢了 80%。</p>
+<p>到这里可以把一句话定下来：<strong>现代 CPU 的算力早就过剩，瓶颈在“数据能不能及时送到”。所谓优化，一大半是在安排数据的移动路线。</strong></p>
+<h2 id="四、分支也有自己的预测器"><a href="#四、分支也有自己的预测器" class="headerlink" title="四、分支也有自己的预测器"></a>四、分支也有自己的预测器</h2><p>CPU 里还有个不太为人知的部件：<strong>分支预测器</strong>。</p>
+<p>它的存在理由很简单：流水线要深，就得提前把下一条指令取出来，可下一条是什么得看分支结果。等分支算完再取，流水线就得空一段。于是 CPU 干脆赌一把：猜分支走哪边，猜对了全速前进，猜错了整个流水线推倒重来。</p>
+<p>所以结论很干脆：<strong>分支本身不贵，猜错才贵。</strong></p>
+<p>拿同一份判断逻辑喂两种数据：一种随机乱序，一种排好序。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time, random</span><br><span class="line"></span><br><span class="line">SIZE = <span class="number">1_000_000</span></span><br><span class="line">data = [random.randint(<span class="number">0</span>, <span class="number">255</span>) <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(SIZE)]</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">count_if</span>(<span class="params">arr, limit=<span class="number">128</span></span>):</span><br><span class="line">    c = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> v <span class="keyword">in</span> arr:</span><br><span class="line">        <span class="keyword">if</span> v &lt; limit:              <span class="comment"># 分支就在这里</span></span><br><span class="line">            c += <span class="number">1</span></span><br><span class="line">    <span class="keyword">return</span> c</span><br><span class="line"></span><br><span class="line">t_rand   = bench(<span class="keyword">lambda</span>: count_if(data))</span><br><span class="line">t_sorted = bench(<span class="keyword">lambda</span>: count_if(<span class="built_in">sorted</span>(data)))</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;乱序 <span class="subst">&#123;t_rand*<span class="number">1e3</span>:<span class="number">.2</span>f&#125;</span> ms   有序 <span class="subst">&#123;t_sorted*<span class="number">1e3</span>:<span class="number">.2</span>f&#125;</span> ms   <span class="subst">&#123;t_rand/t_sorted:<span class="number">.2</span>f&#125;</span>x&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">乱序数组 if 计数 19.31 ms   有序数组 if 计数 14.02 ms   -&gt; 1.38x</span><br><span class="line">499908 499908</span><br></pre></td></tr></table></figure>
+
+<p><strong>同样的判断、同样的数据分布、只是顺序不同，差了 38%。</strong></p>
+<p>排序之后，前一半全长一样（都小于 128），后一半也都一样（都不小于），分支方向稳定，预测器几乎 100% 猜对。乱序数据下每个元素都是独立的抛硬币，猜对率掉到五成左右，于是每两次迭代就浪费一次流水线。</p>
+<p>这解释了一个老问题：<strong>为什么对已排序数组做二分查找比在链上乱找快那么多</strong>，答案不只在算法复杂度，也在预测器。</p>
+<p>顺带补一个更常见的坑。下面这段循环，每步做的事完全一样，只是跳的步长不同：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">stride=1  耗时  35.727 ms  每元素 35.73 ns</span><br><span class="line">stride=2  耗时  17.288 ms  每元素 34.58 ns</span><br><span class="line">stride=4  耗时   8.519 ms  每元素 34.07 ns</span><br><span class="line">stride=8  耗时   4.148 ms  每元素 33.19 ns</span><br></pre></td></tr></table></figure>
+
+<p>总耗时随步长成比例地被摊薄（处理的元素本来就在变少），可“每元素耗时”几乎不动——从 35.73 ns 只降到 33.19 ns。<strong>在 Python 里，循环自身（<code>i += stride</code>、比较、跳转、解释器分发）的开销把一切微架构层面的差异都盖住了。</strong> 这条结论对后面的展开实验同样适用。</p>
+<h2 id="五、循环展开为什么在这里失效"><a href="#五、循环展开为什么在这里失效" class="headerlink" title="五、循环展开为什么在这里失效"></a>五、循环展开为什么在这里失效</h2><p>原理课会讲：循环展开能减少循环自身的开销：<code>i++</code>、比较、跳转这些“不干正事”的指令占比降下来，CPE 就降下来了。</p>
+<p>我按这个思路手工做了 4 路展开：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">naive_sum</span>(<span class="params">a</span>):</span><br><span class="line">    total = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> row <span class="keyword">in</span> a:</span><br><span class="line">        <span class="keyword">for</span> v <span class="keyword">in</span> row:</span><br><span class="line">            total += v</span><br><span class="line">    <span class="keyword">return</span> total</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">unroll4_sum</span>(<span class="params">a</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;手工 4 路展开，把循环控制指令的占比压低&quot;&quot;&quot;</span></span><br><span class="line">    total = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> row <span class="keyword">in</span> a:</span><br><span class="line">        s = <span class="number">0</span></span><br><span class="line">        n = <span class="built_in">len</span>(row)</span><br><span class="line">        i = <span class="number">0</span></span><br><span class="line">        <span class="keyword">while</span> i + <span class="number">4</span> &lt;= n:</span><br><span class="line">            s += row[i] + row[i + <span class="number">1</span>] + row[i + <span class="number">2</span>] + row[i + <span class="number">3</span>]</span><br><span class="line">            i += <span class="number">4</span></span><br><span class="line">        <span class="keyword">while</span> i &lt; n:               <span class="comment"># 处理余数</span></span><br><span class="line">            s += row[i]</span><br><span class="line">            i += <span class="number">1</span></span><br><span class="line">        total += s</span><br><span class="line">    <span class="keyword">return</span> total</span><br></pre></td></tr></table></figure>
+
+<p>实测（3000×3000，机器上取 5 次最优）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">朴素双重 for      110.36 ms</span><br><span class="line">手工 4 路展开     180.79 ms</span><br><span class="line">sum() 内建        19.90 ms</span><br><span class="line">结果一致： 427524016 427524016 427524016</span><br></pre></td></tr></table></figure>
+
+<p>展开版慢了 <strong>64%</strong>。</p>
+<p>为什么会反着来？因为展开换来的收益是“少执行几条控制指令”，而代价是<strong>每一个元素现在都要走一遍解释器的字节码循环体</strong>，还要多做几次 <code>row[i+1]</code> 这样的下标运算。在 C 里，展开省的指令是真指令；在 Python 里，展开省的那点东西被解释器开销吃了，多出来的索引运算反而全是净亏。</p>
+<p>而 <code>sum()</code> 为什么快 5.5 倍？因为它的循环<strong>跑到 C 里去了</strong>——<code>for</code> 循环、标量累加、内存访问全在 CPython 的 C 实现里完成，一个元素都不用回到解释器的字节码分发器上。</p>
+<p>这件事的教训比前面所有数字都值钱：</p>
+<blockquote>
+<p><strong>手工微优化的收益，取决于它把工作留在了哪一层。能下沉到 C 层的，才是真收益；在解释器层挪来挪去的，大概率净亏。</strong></p>
+</blockquote>
+<p>同样的道理搬到 C 里就完全反过来。C 的循环展开、消除多余的数组边界检查、把 <code>a[i]</code> 的地址提前算好，这些是实打实的收益。CSAPP 5.9 节讲的“用指针替代数组索引”就是这个思路。</p>
+<h2 id="六、循环里的重复计算和函数调用"><a href="#六、循环里的重复计算和函数调用" class="headerlink" title="六、循环里的重复计算和函数调用"></a>六、循环里的重复计算和函数调用</h2><p>上面说的是“留错层”的亏。下面两条是最不容易踩错、收益又最稳的。</p>
+<p><strong>第一条：把循环里不变的运算提出来。</strong> 下面两个点积的结果完全相同，区别只在于一个每轮都在重复算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">循环内重复运算      4.30 us</span><br><span class="line">消除后              2.70 us</span><br></pre></td></tr></table></figure>
+
+<p>差距 1.6 倍。<code>dot_clean</code> 用 <code>zip</code> 把索引运算整个消掉了。这类改动的收益几乎无风险，它不依赖任何微架构特性。</p>
+<p><strong>第二条：减少过程调用。</strong> 每次函数调用都要压栈、传参、跳转、返回：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">每轮一次函数调用    7.60 ms    内联后    5.56 ms    1.37x</span><br></pre></td></tr></table></figure>
+
+<p>20 万次调用、每次调用只做一次平方，内联之后快 37%。这也是为什么 C 里 <code>static inline</code> 那么常用，它把调用的开销直接抹掉。</p>
+<p>在 Python 里，这条还有一层额外含义：函数调用要新建栈帧、做参数绑定，成本比 C 高一个量级。所以<strong>热循环里别放函数调用</strong>这条在 Python 里比在 C 里更值得遵守。</p>
+<h2 id="七、编译器不敢做的那些优化"><a href="#七、编译器不敢做的那些优化" class="headerlink" title="七、编译器不敢做的那些优化"></a>七、编译器不敢做的那些优化</h2><p>前面几节是“我们能改的”。还有一类优化是“编译器想改但不敢改的”，理解它们能解释很多看起来莫名其妙的性能现象。</p>
+<p>最典型的是<strong>内存别名（memory aliasing）</strong>。看这段代码的语义：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">no_alias</span>(<span class="params">a, b, n</span>):</span><br><span class="line">    s = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        s += a[i]</span><br><span class="line">        b[i] = s        <span class="comment"># 写 b</span></span><br><span class="line">    <span class="keyword">return</span> s</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">maybe_alias</span>(<span class="params">a, b, n</span>):</span><br><span class="line">    s = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(n):</span><br><span class="line">        temp = a[i]     <span class="comment"># 先把 a[i] 读出来存着</span></span><br><span class="line">        b[i] = s        <span class="comment"># 再写 b[i]</span></span><br><span class="line">        s = temp + s</span><br><span class="line">    <span class="keyword">return</span> s</span><br></pre></td></tr></table></figure>
+
+<p>两者语义完全等价，但第二个写法把 <code>a[i]</code> 的读取提前了。在 C 里，如果编译器<strong>无法证明 <code>a</code> 和 <code>b</code> 不指向同一块内存</strong>，它就不能做这个重排——因为万一是同一块，写 <code>b[i]</code> 就会改变后面 <code>a[i]</code> 的值。于是它只能老实按顺序来，每轮都重新从内存读 <code>a[i]</code>，寄存器缓存全用不上。</p>
+<p>实测对照：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">纯累加               6.48 ms</span><br><span class="line">累加并写入目标数组   17.61 ms</span><br></pre></td></tr></table></figure>
+
+<p>只是一个写回操作，慢了 2.7 倍。这里有一部分是 Python 的赋值开销，但**“写入打断了读取的流水”**这个结构在 C 里同样成立，而且后果更严重。</p>
+<p>C 里的对应手段是 <code>restrict</code> 关键字，它的意思是“我向你保证这两个指针不重叠”：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* 用 restrict 告诉编译器两个指针不重叠 —— 本机无 gcc，只给代码不给编译输出 */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">scale</span><span class="params">(<span class="type">double</span> *<span class="keyword">restrict</span> dst, <span class="type">const</span> <span class="type">double</span> *<span class="keyword">restrict</span> src, <span class="type">long</span> n)</span> &#123;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">long</span> i = <span class="number">0</span>; i &lt; n; i++)</span><br><span class="line">        dst[i] = src[i] * <span class="number">2.0</span>;   <span class="comment">/* 编译器可放心向量化 */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>没有 <code>restrict</code> 时，编译器面对同样的循环只能保守处理，向量化基本无从谈起。<strong>这是“性能是算法和编译器共同结果”最直白的一个例子：你写了同样的算法，编译器却因为无法证明一件你明知为真的事而放弃了优化。</strong></p>
+<h2 id="八、把单线程榨干之后，还剩多少"><a href="#八、把单线程榨干之后，还剩多少" class="headerlink" title="八、把单线程榨干之后，还剩多少"></a>八、把单线程榨干之后，还剩多少</h2><p>最后回到多核。CSAPP 5.12 节用 Amdahl 定律收尾，因为它是“优化天花板”的定量版：</p>
+<p>$$S &#x3D; \frac{1}{(1-f) + \frac{f}{p}}$$</p>
+<p><code>f</code> 是可并行部分占比，<code>p</code> 是并行部分的加速倍数。代入本机的 24 个逻辑处理器看看：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">可并行比例 0.5   8 核实际  1.78x   核数无穷上界   2.00x</span><br><span class="line">可并行比例 0.9   8 核实际  4.71x   核数无穷上界  10.00x</span><br><span class="line">可并行比例 0.95  8 核实际  5.93x   核数无穷上界  20.00x</span><br><span class="line">可并行比例 0.99  8 核实际  7.48x   核数无穷上界 100.00x</span><br></pre></td></tr></table></figure>
+
+<p>第一行最能说明问题：<strong>就算你有无穷多个核，只要有一半的代码没法并行，整个程序的加速比也就 2 倍封顶。</strong> 串行那部分全程都在，核再多也吃不掉它。</p>
+<p>这也是为什么真实的性能优化总是先从单线程入手。一个能并行到 90% 的程序，如果单线程部分被优化掉 30%，那 30% 是<strong>全程</strong>的 30%——比再堆一倍的核划算得多。</p>
+<h2 id="🐾-小结"><a href="#🐾-小结" class="headerlink" title="🐾 小结"></a>🐾 小结</h2><table>
+<thead>
+<tr>
+<th>手段</th>
+<th>怎么想</th>
+<th>实测收益</th>
+<th>适用层</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>砍关键路径运算</td>
+<td>串行依赖链由最慢那步卡住</td>
+<td><code>*1</code> 白算也慢 68%</td>
+<td>编译层，算法层</td>
+</tr>
+<tr>
+<td>提高局部性</td>
+<td>缓存行搬一次要用满</td>
+<td>行&#x2F;列优先差 <strong>2.03x</strong></td>
+<td>算法层（改遍历顺序）</td>
+</tr>
+<tr>
+<td>顺序 ≫ 随机</td>
+<td>跳着访问等于次次打主存</td>
+<td>顺序&#x2F;随机差 <strong>1.80x</strong></td>
+<td>算法层</td>
+</tr>
+<tr>
+<td>让分支可预测</td>
+<td>分支不贵，猜错才贵</td>
+<td>有序&#x2F;乱序差 <strong>1.38x</strong></td>
+<td>数据布局层</td>
+</tr>
+<tr>
+<td>消除循环内重复运算</td>
+<td>循环不变量提到外面</td>
+<td><strong>1.6x</strong></td>
+<td>编译层（可放心做）</td>
+</tr>
+<tr>
+<td>减少过程调用</td>
+<td>内联抹掉调用开销</td>
+<td><strong>1.37x</strong></td>
+<td>编译层</td>
+</tr>
+<tr>
+<td>打破别名</td>
+<td><code>restrict</code> 让编译器敢优化</td>
+<td>写回打断读，<strong>2.7x</strong></td>
+<td>编译层</td>
+</tr>
+<tr>
+<td>循环展开</td>
+<td><strong>要分清在哪一层</strong></td>
+<td>Python 里 <strong>反向 -64%</strong></td>
+<td>仅编译语言</td>
+</tr>
+<tr>
+<td>Amdahl</td>
+<td>加速比被串行部分封顶</td>
+<td>并行 50% → 上界 <strong>2x</strong></td>
+<td>架构层</td>
+</tr>
+</tbody></table>
+<p>三条能带走的原则：</p>
+<ol>
+<li><strong>先量再改。</strong> 本文开头那 64% 的反向收益，就是没量就改的代价。<code>perf stat</code>、<code>time.perf_counter</code>、CPE，总得有一把尺子。</li>
+<li><strong>看清工作的“层”。</strong> 把循环推进 C 层（<code>sum()</code>、<code>numpy</code>）的收益，永远大过在解释器层挪招式。这是 Python 性能优化的第一性原理。</li>
+<li><strong>局部性优先于指令数。</strong> 2.03x 和 1.80x 这两个数字说明，在现代硬件上“怎么走内存”比“少写几行代码”重要得多。</li>
+</ol>
+<p><strong>程序性能优化的本质一句话：CPU 早就不缺算力了，缺的是让数据按时到位、让流水线别被打断——所以优化的主战场是数据的移动路线和依赖关系，不是指令条数。</strong></p>
+<p>下一篇是本系列的收尾——《综合实战：实现一个 shell 与总结》，把这一路从位运算到并发的东西拼成一个能跑的程序。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/capp0112/">https://hespethorn.github.io/posts/capp0112/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%B1%80%E9%83%A8%E6%80%A7/">局部性</a><a class="post-meta__tags" href="/tags/Amdahl/">Amdahl</a><a class="post-meta__tags" href="/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/">性能优化</a><a class="post-meta__tags" href="/tags/%E5%BE%AA%E7%8E%AF%E4%BC%98%E5%8C%96/">循环优化</a><a class="post-meta__tags" href="/tags/%E5%88%86%E6%94%AF%E9%A2%84%E6%B5%8B/">分支预测</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1117</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0110/" title="并发：线程与锁">并发：线程与锁</a><time datetime="2025-01-08T16:00:00.000Z" title="Created 2025-01-09 00:00:00">2025-01-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0111/" title="并发问题：死锁与竞争">并发问题：死锁与竞争</a><time datetime="2025-01-12T16:00:00.000Z" title="Created 2025-01-13 00:00:00">2025-01-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0112/" title="程序性能优化">程序性能优化</a><time datetime="2025-01-15T16:00:00.000Z" title="Created 2025-01-16 00:00:00">2025-01-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0105/" title="处理器架构与流水线">处理器架构与流水线</a><time datetime="2024-12-22T16:00:00.000Z" title="Created 2024-12-23 00:00:00">2024-12-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0106/" title="存储器层次与 Cache">存储器层次与 Cache</a><time datetime="2024-12-25T16:00:00.000Z" title="Created 2024-12-26 00:00:00">2024-12-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0103/" title="缓冲区溢出与安全">缓冲区溢出与安全</a><time datetime="2024-12-15T16:00:00.000Z" title="Created 2024-12-16 00:00:00">2024-12-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0102/" title="机器级程序：汇编与栈帧">机器级程序：汇编与栈帧</a><time datetime="2024-12-11T16:00:00.000Z" title="Created 2024-12-12 00:00:00">2024-12-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0104/" title="链接（Linking）">链接（Linking）</a><time datetime="2024-12-18T16:00:00.000Z" title="Created 2024-12-19 00:00:00">2024-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0109/" title="网络编程基础">网络编程基础</a><time datetime="2025-01-05T16:00:00.000Z" title="Created 2025-01-06 00:00:00">2025-01-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0108/" title="系统级 I/O">系统级 I/O</a><time datetime="2025-01-01T16:00:00.000Z" title="Created 2025-01-02 00:00:00">2025-01-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0101/" title="信息表示：位、字节、整数与浮点">信息表示：位、字节、整数与浮点</a><time datetime="2024-12-08T16:00:00.000Z" title="Created 2024-12-09 00:00:00">2024-12-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/capp0107/" title="虚拟内存">虚拟内存</a><time datetime="2024-12-29T16:00:00.000Z" title="Created 2024-12-30 00:00:00">2024-12-30</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
