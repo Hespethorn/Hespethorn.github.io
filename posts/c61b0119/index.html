@@ -1,0 +1,691 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>基数排序：LSD 与 MSD | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="这一篇对应官方 Lecture 35（Radix Sorts）。计数排序用「统计取值」换掉了比较，但要求值域足够小；基数排序把这个思路用到任意大的整数和字符串上。这一篇从十进制逐趟追踪讲起，让「稳定性是前提」这件事有一个看得见的反例，再看它在规模数据上的实际代价。  一、钩子：值域太大怎么办计数排序的速度来自一个交换：不做比较，直接用一个计数器数组统计每个取值出现多少次。 但它有一个硬限制：计数">
+<meta property="og:type" content="article">
+<meta property="og:title" content="基数排序：LSD 与 MSD">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61b0119/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这一篇对应官方 Lecture 35（Radix Sorts）。计数排序用「统计取值」换掉了比较，但要求值域足够小；基数排序把这个思路用到任意大的整数和字符串上。这一篇从十进制逐趟追踪讲起，让「稳定性是前提」这件事有一个看得见的反例，再看它在规模数据上的实际代价。  一、钩子：值域太大怎么办计数排序的速度来自一个交换：不做比较，直接用一个计数器数组统计每个取值出现多少次。 但它有一个硬限制：计数">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-03-24T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.968Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="稳定性">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="计数排序">
+<meta property="article:tag" content="基数排序">
+<meta property="article:tag" content="LSD">
+<meta property="article:tag" content="MSD">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "基数排序：LSD 与 MSD",
+  "url": "https://hespethorn.github.io/posts/c61b0119/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-03-24T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.968Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61b0119/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '基数排序：LSD 与 MSD',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">基数排序：LSD 与 MSD</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">基数排序：LSD 与 MSD</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-03-24T16:00:00.000Z" title="Created 2025-03-25 00:00:00">2025-03-25</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>这一篇对应官方 Lecture 35（Radix Sorts）。<br>计数排序用「统计取值」换掉了比较，但要求值域足够小；基数排序把这个思路用到任意大的整数和字符串上。<br>这一篇从十进制逐趟追踪讲起，让「稳定性是前提」这件事有一个看得见的反例，再看它在规模数据上的实际代价。</p>
+</blockquote>
+<h2 id="一、钩子：值域太大怎么办"><a href="#一、钩子：值域太大怎么办" class="headerlink" title="一、钩子：值域太大怎么办"></a>一、钩子：值域太大怎么办</h2><p>计数排序的速度来自一个交换：<strong>不做比较，直接用一个计数器数组统计每个取值出现多少次。</strong></p>
+<p>但它有一个硬限制：计数器数组的长度必须等于值域大小。键是 <code>0..999</code> 时，开 1000 个格子就够；键是 32 位整数时，值域是 42 亿——开不出这么大的数组。</p>
+<p>基数排序的做法是把值域拆开：<strong>不一次性统计整个键，而是每次只看键的一位。</strong></p>
+<ul>
+<li>一个 32 位整数看成 4 个 8 位的「数字」，每位的值域只有 256；</li>
+<li>一个字符串看成若干个字符，每个字符的值域取决于字符集。</li>
+</ul>
+<p>于是计数器数组永远只需要 256 个（或字母表大小）格子，而总处理次数是「位数 × 元素个数」——<strong>又一个用固定位数换掉值域大小的交换。</strong></p>
+<h2 id="二、按位分桶：LSD-的逐趟追踪"><a href="#二、按位分桶：LSD-的逐趟追踪" class="headerlink" title="二、按位分桶：LSD 的逐趟追踪"></a>二、按位分桶：LSD 的逐趟追踪</h2><p>最直观的做法是<strong>从最低位开始</strong>（Least Significant Digit），一趟处理一位。用一个十进制例子看完整过程：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">lsdDecimalTrace</span><span class="params">(<span class="type">int</span>[] arr)</span> &#123;</span><br><span class="line">    <span class="type">int</span>[] a = arr.clone();</span><br><span class="line">    <span class="type">int</span>[] buf = <span class="keyword">new</span> <span class="title class_">int</span>[a.length];</span><br><span class="line">    <span class="type">int</span>[] cnt = <span class="keyword">new</span> <span class="title class_">int</span>[<span class="number">10</span>];</span><br><span class="line">    <span class="type">int</span>[] src = a;</span><br><span class="line">    <span class="type">int</span>[] dst = buf;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">p</span> <span class="operator">=</span> <span class="number">0</span>; p &lt; <span class="number">3</span>; p++) &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">div</span> <span class="operator">=</span> (<span class="type">int</span>) Math.pow(<span class="number">10</span>, p);</span><br><span class="line">        Arrays.fill(cnt, <span class="number">0</span>);</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> v : src) &#123;</span><br><span class="line">            cnt[(v / div) % <span class="number">10</span>]++;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="type">int</span> <span class="variable">sum</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">d</span> <span class="operator">=</span> <span class="number">0</span>; d &lt; <span class="number">10</span>; d++) &#123;</span><br><span class="line">            <span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> cnt[d];</span><br><span class="line">            cnt[d] = sum;</span><br><span class="line">            sum += c;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> v : src) &#123;</span><br><span class="line">            dst[cnt[(v / div) % <span class="number">10</span>]++] = v;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="type">int</span>[] t = src;</span><br><span class="line">        src = dst;</span><br><span class="line">        dst = t;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这段代码就是<strong>一个只跑一趟的计数排序，重复若干趟，每趟换一位</strong>。逐趟输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">LSD 基数排序追踪，原始序列 = 170 45 75 90 802 24 2 66</span><br><span class="line">  按个位分桶后： 170 90 802 2 24 45 75 66</span><br><span class="line">  按十位分桶后： 802 2 24 45 66 170 75 90</span><br><span class="line">  按百位分桶后： 2 24 45 66 75 90 170 802</span><br></pre></td></tr></table></figure>
+
+<p>三趟之后得到完整有序的序列。<strong>关键在于「为什么从最低位开始、往上走」。</strong></p>
+<p>正确性可以用归纳法看清楚：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">第 1 趟之后：数组按「个位」有序。即个位小的排在前面。</span><br><span class="line">第 2 趟之后：按「十位」分桶。十位相同的元素保持上一趟的相对次序，</span><br><span class="line">            也就是「个位有序」——于是它们按「十位、个位」有序。</span><br><span class="line">第 k 趟之后：数组按「后 k 位」有序。</span><br><span class="line">第 3 趟之后：按「后 3 位」有序，也就是完整有序。</span><br></pre></td></tr></table></figure>
+
+<p><strong>归纳的每一步都依赖同一句：桶内元素保持上一趟的相对次序。</strong></p>
+<h2 id="三、稳定性是前提，不是优点"><a href="#三、稳定性是前提，不是优点" class="headerlink" title="三、稳定性是前提，不是优点"></a>三、稳定性是前提，不是优点</h2><p>上面那句「保持上一趟的相对次序」，正是<strong>稳定性</strong>的定义。</p>
+<p>对一个只跑一趟的排序来说，稳定性常常被当成「锦上添花的性质」；但在基数排序里，<strong>它是正确性的前提</strong>，去掉它算法直接出错。</p>
+<p>把分桶那一步改成不稳定版本——每个桶从右端开始填，于是桶内元素的相对次序被颠倒：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span>[] end = <span class="keyword">new</span> <span class="title class_">int</span>[<span class="number">10</span>];</span><br><span class="line"><span class="type">int</span> <span class="variable">acc</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> <span class="variable">d</span> <span class="operator">=</span> <span class="number">0</span>; d &lt; <span class="number">10</span>; d++) &#123;</span><br><span class="line">    acc += raw[d];</span><br><span class="line">    end[d] = acc - <span class="number">1</span>;      <span class="comment">// 每个桶从右端开始填</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> v : src) &#123;</span><br><span class="line">    dst[end[(v / div) % <span class="number">10</span>]--] = v;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">同样的序列，把分桶改成不稳定版本（每个桶内次序被颠倒）：</span><br><span class="line">  用不稳定分桶排完： 90 75 66 45 24 2 170 802</span><br><span class="line">  对比正确结果： 2 24 45 66 75 90 170 802</span><br></pre></td></tr></table></figure>
+
+<p><strong>结果完全错了，而且错得几乎看不出规律。</strong> 这段代码的每一行都和正确版本一样，唯一的差别是「同一个桶里先写的排在前面还是后面」。</p>
+<p>这个反例说明了一件事：<strong>基数排序本身不解决排序问题，它把排序问题拆成了若干个子问题，然后依赖稳定性把子问题的结果拼起来。</strong> 拼接的粘合剂就是稳定性，胶水没了，碎片就散了。</p>
+<p>在实际实现里，这句「必须用稳定版本」落成了具体的约束：<strong>基数排序内部的子排序不能用快速排序</strong>（不稳定），只能用计数排序、桶排序，或者特意写成稳定的版本。这也是基数排序的代码看起来总在重复写一小段计数排序的原因。</p>
+<h2 id="四、二进制-LSD：把比较次数降到-0"><a href="#四、二进制-LSD：把比较次数降到-0" class="headerlink" title="四、二进制 LSD：把比较次数降到 0"></a>四、二进制 LSD：把比较次数降到 0</h2><p>整数排序用不着十进制，直接按二进制位分组更快。32 位整数按 8 位一组，只需要 4 趟，每趟 256 个桶：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="type">long</span> <span class="title function_">lsdRadix</span><span class="params">(<span class="type">int</span>[] a, <span class="type">int</span> passes)</span> &#123;</span><br><span class="line">    <span class="comment">// 每趟：统计 256 个桶 → 求前缀和 → 稳定地写回</span></span><br><span class="line">    <span class="type">int</span> <span class="variable">shift</span> <span class="operator">=</span> p * <span class="number">8</span>;</span><br><span class="line">    Arrays.fill(cnt, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> v : src) &#123;</span><br><span class="line">        cnt[(v &gt;&gt;&gt; shift) &amp; <span class="number">0xFF</span>]++;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 前缀和把「桶计数」变成「桶起始下标」</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> v : src) &#123;</span><br><span class="line">        dst[cnt[(v &gt;&gt;&gt; shift) &amp; <span class="number">0xFF</span>]++] = v;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>（完整实现里 <code>src</code> 和 <code>dst</code> 每趟交换一次，省掉反复分配数组的开销。）</p>
+<p>跑一百万个数：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">二进制 LSD 基数排序：非负整数，每趟按 8 位分 256 个桶，共 4 趟</span><br><span class="line">  N = 1000000，总操作次数 = 8001024（4 趟，每趟统计 1000000 次 + 前缀和 256 次 + 写入 1000000 次）</span><br><span class="line">  每次写入都对应一次元素搬动，累计搬动 = 4000000</span><br><span class="line">  键比较次数 = 0，已升序 = true</span><br><span class="line">  同一批数据用归并排序：键比较次数 = 18674146，已升序 = true</span><br></pre></td></tr></table></figure>
+
+<p>三个数字都有自己的含义：</p>
+<ul>
+<li><strong>总操作次数 &#x3D; 8001024，正好是 4 × (1000000 + 256 + 1000000)。</strong> 操作次数完全由「趟数 × (元素数 + 桶数)」决定，<strong>与数据的排列顺序无关</strong>——不管输入是有序、逆序还是随机，这个数字都是 8001024。这一点和归并排序的移动次数很像，但基数排序连比较都省了。</li>
+<li><strong>键比较次数 &#x3D; 0。</strong> 它真的没有比较过任何两个元素，从头到尾只做了「取数位、计数、按计数放置」这三件事。</li>
+<li><strong>对照的归并排序比较了 18674146 次。</strong> 两者不是同一个单位，但都是「元素级的基本操作」，量级差 2.3 倍。</li>
+</ul>
+<p><strong>这个差距的来源是「信息效率」，不是常数优化。</strong> 归并排序每次比较只能把候选情形一分为二，所以至少要 log₂N 次；基数排序每次取数位直接得到 256 种可能之一——<strong>一次操作取到的信息量是 log₂256 &#x3D; 8 比特，而不是 1 比特。</strong></p>
+<h2 id="五、字符串：MSD-基数排序"><a href="#五、字符串：MSD-基数排序" class="headerlink" title="五、字符串：MSD 基数排序"></a>五、字符串：MSD 基数排序</h2><p>整数用 LSD（从最低位开始）最自然，因为所有整数都是定长的。字符串不一样：它们的长度可能不同，而且<strong>区分两个字符串往往只要看前几个字符</strong>。</p>
+<p>这时候该从高位开始，也就是 <strong>MSD</strong>（Most Significant Digit）。思路是：</p>
+<pre><code class="highlight mermaid">flowchart TB
+    A[&quot;整个词表，按第 0 个字符分 27 组&quot;] --&gt; B[&quot;组 1：首字符为 a&quot;]
+    A --&gt; C[&quot;组 2：首字符为 b&quot;]
+    A --&gt; D[&quot;... 共 26 个字母组&quot;]
+    A --&gt; E[&quot;组 0：字符串已结束的组&quot;]
+    B --&gt; F[&quot;组内再按第 1 个字符分组&quot;]
+    C --&gt; F
+    F --&gt; G[&quot;递归到某个组为空或只剩一个词&quot;]
+    E --&gt; H[&quot;这一组内部天然有序，不再处理&quot;]</code></pre>
+
+<p>关键的两点是：</p>
+<ul>
+<li><strong>每个组递归时只看下一位字符</strong>，小组之间互不干扰——因为它们已经按首字符分开了；</li>
+<li><strong>「已结束」那一组不需要再递归</strong>，因为组内所有字符串完全相同，天然有序。</li>
+</ul>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> (<span class="type">int</span> <span class="variable">r</span> <span class="operator">=</span> <span class="number">1</span>; r &lt; R; r++) &#123;     <span class="comment">// r = 0 是「已结束」组，内部天然有序，不再递归</span></span><br><span class="line">    msd(a, buf, lo + start[r], lo + start[r + <span class="number">1</span>], d + <span class="number">1</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>实测 20 万个定长 8 字符的小写字母单词：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">字符串 MSD 基数排序：小写字母表，定长 8 个字符</span><br><span class="line">  单词数 = 200000，字符访问次数 = 1748818，键比较次数 = 0，已升序 = true</span><br><span class="line">  同一批单词用归并排序：字符串比较次数 = 3272864，已升序 = true</span><br></pre></td></tr></table></figure>
+
+<p><strong>20 万 × 8 &#x3D; 160 万个字符，基数的字符访问是 174.9 万次，只比「把所有字符看一遍」多出不到 10%。</strong></p>
+<p>这个比例正是 MSD 的威力所在。字母表是 26，随机单词大约在第 4 个字符处就已经区分开（26⁴ &#x3D; 456976 &gt; 200000），所以<strong>绝大多数单词只需要被看前几个字符</strong>，剩下的递归在很小的组里结束。</p>
+<p>LSD 做不到这一点：它必须把每个键的每一位都看一遍，8 个字符就是 8 趟。<strong>MSD 利用的是「前缀就能区分」这个数据特征。</strong></p>
+<p>两种顺序的选择依据很清楚：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>LSD</th>
+<th>MSD</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>处理顺序</td>
+<td>从最低位到最高位</td>
+<td>从最高位递归向下</td>
+</tr>
+<tr>
+<td>递归</td>
+<td>无，纯迭代</td>
+<td>有，按分组递归</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>定长键（整数、固定长度 ID）</td>
+<td>变长键、前缀区分度高的字符串</td>
+</tr>
+<tr>
+<td>前缀优势</td>
+<td>用不上</td>
+<td>核心优势</td>
+</tr>
+<tr>
+<td>额外开销</td>
+<td>最小</td>
+<td>每组要开一个计数器数组</td>
+</tr>
+</tbody></table>
+<h2 id="六、代价与适用边界"><a href="#六、代价与适用边界" class="headerlink" title="六、代价与适用边界"></a>六、代价与适用边界</h2><p>把两种排序的代价换算到同一个口径上，对比会更公平。<strong>一次字符串比较的代价不是一个常数</strong>：两个单词最坏要比较到第 8 个字符才分出胜负。按平均看 3 个字符估算：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">两种排序的成本单位不同，需要换算之后才能比较：</span><br><span class="line">  MSD 基数排序的每一次字符访问只看 1 个字符，代价固定；</span><br><span class="line">  归并排序的一次字符串比较，最坏要比较到两个单词的第 8 个字符才分出胜负。</span><br><span class="line">  按「一次比较平均看 3 个字符」估算，归并排序的字符读取量约为 9818592，是 MSD 的 5.6 倍</span><br></pre></td></tr></table></figure>
+
+<p><strong>归并排序实际读的字符数量约为 MSD 的 5.6 倍。</strong> 这个倍数不是常数差距，它随数据特征变化：</p>
+<table>
+<thead>
+<tr>
+<th>数据特征</th>
+<th>MSD 的相对优势</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>前缀区分度高（随机单词、UUID）</td>
+<td>大，前几个字符就能分开</td>
+</tr>
+<tr>
+<td>前缀高度重复（同前缀的网址、同前缀的编码）</td>
+<td>小，要走到很深才能区分</td>
+</tr>
+<tr>
+<td>键长很长（长文本）</td>
+<td>大，归并的每次比较成本更高</td>
+</tr>
+</tbody></table>
+<p>基数排序的代价也有明确的边界：</p>
+<table>
+<thead>
+<tr>
+<th>限制</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>需要把键拆成「位」</td>
+<td>浮点数要用位级技巧映射，复杂类型基本用不了</td>
+</tr>
+<tr>
+<td>每趟要开一个桶数组</td>
+<td>值域 2³² 时桶数会失控，所以必须按位分组</td>
+</tr>
+<tr>
+<td>趟数固定</td>
+<td>LSD 的代价与输入无关，换个角度看也是「最坏情况没有变好的余地」</td>
+</tr>
+<tr>
+<td>MSD 有额外开销</td>
+<td>每个分组都要开计数器数组，小组很多时开销显著</td>
+</tr>
+</tbody></table>
+<p><strong>所以基数排序的定位是「键结构规则、前缀区分度高时的专用武器」</strong>，而不是通用排序的替代品。真实系统里它出现在特定的位置：整数 ID 排序、IP 地址排序、固定长度编码排序、后缀数组构造——<strong>都是「键能被拆成有限位、且位数固定或前缀区分度高」的场景。</strong></p>
+<h2 id="七、小结"><a href="#七、小结" class="headerlink" title="七、小结"></a>七、小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>分桶思路</td>
+<td>每趟只看键的一位，值域被压到桶数大小</td>
+<td>32 位整数按 8 位分 4 趟、每趟 256 桶</td>
+</tr>
+<tr>
+<td>LSD 正确性</td>
+<td>第 k 趟后按「后 k 位」有序</td>
+<td>三趟追踪后完整有序</td>
+</tr>
+<tr>
+<td>稳定性</td>
+<td>是正确性前提，不是可选优化</td>
+<td>不稳定分桶的输出完全错误</td>
+</tr>
+<tr>
+<td>代价可预测</td>
+<td>操作次数 &#x3D; 趟数 × (N + 桶数)，与输入无关</td>
+<td>100 万个数恒为 8001024</td>
+</tr>
+<tr>
+<td>零比较</td>
+<td>不从「比较结果」获取信息</td>
+<td>键比较次数为 0</td>
+</tr>
+<tr>
+<td>MSD</td>
+<td>从高位递归，前缀区分度高时只看前几字符</td>
+<td>20 万单词只访问 174.9 万字符</td>
+</tr>
+<tr>
+<td>与归并的差距</td>
+<td>字符读取量约为其 1&#x2F;5.6</td>
+<td>174.9 万 vs 估算的 981.9 万</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>排序</th>
+<th>基本操作</th>
+<th>次数（N &#x3D; 1000000 整数）</th>
+<th>与输入有关</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>归并排序</td>
+<td>键比较</td>
+<td>18674146</td>
+<td>有关，有序输入减半</td>
+</tr>
+<tr>
+<td>LSD 基数排序</td>
+<td>取数位 + 放置</td>
+<td>8001024</td>
+<td>无关，恒等于 4×(2N+256)</td>
+</tr>
+<tr>
+<td>计数排序</td>
+<td>计数 + 写出</td>
+<td>2N + 值域</td>
+<td>无关，但值域不能大</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong>「不比较」不是取巧，是换了一种信息来源。</strong> 基数排序每次取一位数，一次拿到 log₂(桶数) 比特的信息，而不是比较给出的 1 比特。信息效率变了，下界的约束就不再适用。</li>
+<li><strong>稳定性在单趟排序里是性质，在多趟拼接里是前提。</strong> 同一段计数排序代码，稳定版本能排序，不稳定版本输出完全错误，而且没有任何报错——这类缺陷只能靠对算法前提的理解来防。</li>
+<li><strong>先看键的形状，再决定用哪种排序。</strong> 定长整数适合 LSD，变长字符串适合 MSD，值域小到能一次装下就直接用计数排序。<strong>这三种做法共享同一个内核，区别只在「怎么拆键」。</strong></li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0119/">https://hespethorn.github.io/posts/c61b0119/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E7%A8%B3%E5%AE%9A%E6%80%A7/">稳定性</a><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/%E8%AE%A1%E6%95%B0%E6%8E%92%E5%BA%8F/">计数排序</a><a class="post-meta__tags" href="/tags/%E5%9F%BA%E6%95%B0%E6%8E%92%E5%BA%8F/">基数排序</a><a class="post-meta__tags" href="/tags/LSD/">LSD</a><a class="post-meta__tags" href="/tags/MSD/">MSD</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0118/" title="比较排序的下界">比较排序的下界</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="并查集：加权合并与路径压缩">并查集：加权合并与路径压缩</a><time datetime="2025-02-10T16:00:00.000Z" title="Created 2025-02-11 00:00:00">2025-02-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="抽象数据类型与二叉搜索树">抽象数据类型与二叉搜索树</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="单链表封装与哨兵节点">单链表封装与哨兵节点</a><time datetime="2025-01-27T16:00:00.000Z" title="Created 2025-01-28 00:00:00">2025-01-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="动态数组与均摊复杂度">动态数组与均摊复杂度</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0111/" title="二叉堆与优先队列">二叉堆与优先队列</a><time datetime="2025-02-24T16:00:00.000Z" title="Created 2025-02-25 00:00:00">2025-02-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="哈希表：函数、冲突与装载因子">哈希表：函数、冲突与装载因子</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0120/" title="霍夫曼编码与计算复杂性">霍夫曼编码与计算复杂性</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0116/" title="基础排序：选择、插入与归并">基础排序：选择、插入与归并</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0119/" title="基数排序：LSD 与 MSD">基数排序：LSD 与 MSD</a><time datetime="2025-03-24T16:00:00.000Z" title="Created 2025-03-25 00:00:00">2025-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="渐进分析：大 O、大 Ω 与大 Θ">渐进分析：大 O、大 Ω 与大 Θ</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0117/" title="快速排序与三路切分">快速排序与三路切分</a><time datetime="2025-03-17T16:00:00.000Z" title="Created 2025-03-18 00:00:00">2025-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0115/" title="前缀树与自动补全">前缀树与自动补全</a><time datetime="2025-03-10T16:00:00.000Z" title="Created 2025-03-11 00:00:00">2025-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0112/" title="图的表示与深度优先、广度优先遍历">图的表示与深度优先、广度优先遍历</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="引用语义、递归与裸链表">引用语义、递归与裸链表</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="子类型多态与比较器">子类型多态与比较器</a><time datetime="2025-02-03T16:00:00.000Z" title="Created 2025-02-04 00:00:00">2025-02-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0113/" title="最短路径与 Dijkstra">最短路径与 Dijkstra</a><time datetime="2025-03-03T16:00:00.000Z" title="Created 2025-03-04 00:00:00">2025-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0114/" title="最小生成树：Kruskal 与 Prim">最小生成树：Kruskal 与 Prim</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="B 树与左倾红黑树">B 树与左倾红黑树</a><time datetime="2025-02-17T16:00:00.000Z" title="Created 2025-02-18 00:00:00">2025-02-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="Java 的编译运行机制与静态类型">Java 的编译运行机制与静态类型</a><time datetime="2025-01-20T16:00:00.000Z" title="Created 2025-01-21 00:00:00">2025-01-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

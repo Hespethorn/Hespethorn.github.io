@@ -1,0 +1,731 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>二叉堆与优先队列 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="这一篇对应官方 Lecture 20（Heaps and PQs）。优先队列只承诺一件事：随时能拿到当前的最小元。它不承诺整体有序。这一篇讲清这条承诺如何用一棵完全二叉树的数组表示兑现，并实测「逐个插入建堆」与「自底向上建堆」的代价差距。  一、钩子：只要最小元，为什么要维护全局有序假设有一批任务要按优先级调度，每次只取优先级最高的那个。一个很自然的想法是：把所有任务排序，然后从头取。 排序的代">
+<meta property="og:type" content="article">
+<meta property="og:title" content="二叉堆与优先队列">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61b0111/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这一篇对应官方 Lecture 20（Heaps and PQs）。优先队列只承诺一件事：随时能拿到当前的最小元。它不承诺整体有序。这一篇讲清这条承诺如何用一棵完全二叉树的数组表示兑现，并实测「逐个插入建堆」与「自底向上建堆」的代价差距。  一、钩子：只要最小元，为什么要维护全局有序假设有一批任务要按优先级调度，每次只取优先级最高的那个。一个很自然的想法是：把所有任务排序，然后从头取。 排序的代">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-02-24T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.968Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="二叉堆">
+<meta property="article:tag" content="优先队列">
+<meta property="article:tag" content="完全二叉树">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "二叉堆与优先队列",
+  "url": "https://hespethorn.github.io/posts/c61b0111/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-02-24T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.968Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61b0111/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '二叉堆与优先队列',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">二叉堆与优先队列</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">二叉堆与优先队列</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-02-24T16:00:00.000Z" title="Created 2025-02-25 00:00:00">2025-02-25</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>这一篇对应官方 Lecture 20（Heaps and PQs）。<br>优先队列只承诺一件事：随时能拿到当前的最小元。它不承诺整体有序。<br>这一篇讲清这条承诺如何用一棵完全二叉树的数组表示兑现，并实测「逐个插入建堆」与「自底向上建堆」的代价差距。</p>
+</blockquote>
+<h2 id="一、钩子：只要最小元，为什么要维护全局有序"><a href="#一、钩子：只要最小元，为什么要维护全局有序" class="headerlink" title="一、钩子：只要最小元，为什么要维护全局有序"></a>一、钩子：只要最小元，为什么要维护全局有序</h2><p>假设有一批任务要按优先级调度，每次只取优先级最高的那个。一个很自然的想法是：<strong>把所有任务排序，然后从头取。</strong></p>
+<p>排序的代价是 N log N，取一个元素是 O(1)。但如果任务在运行中会不断新增，每次新增都要重新排序，或者插入到有序数组的正确位置（挪动 O(N) 个元素），这个结构就变得笨重了。</p>
+<p>换一个角度问：<strong>我们真的需要全体有序吗？</strong></p>
+<p>不需要。只需要知道「哪个最小」。这是一个弱得多的要求，而弱要求通常能用更低的代价满足。二叉堆就是这个更低的代价：</p>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>有序数组</th>
+<th>二叉堆</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>取最小元</td>
+<td>O(1)</td>
+<td>O(1)</td>
+</tr>
+<tr>
+<td>插入新元素</td>
+<td>O(N)（挪动数组）</td>
+<td>O(log N)</td>
+</tr>
+<tr>
+<td>建堆（N 个元素）</td>
+<td>O(N log N)（排序）</td>
+<td>O(N)</td>
+</tr>
+<tr>
+<td>全部有序地取出</td>
+<td>O(N)</td>
+<td>O(N log N)</td>
+</tr>
+</tbody></table>
+<p>二叉堆把「有序」这个信息<strong>只保留到够用的程度</strong>：父节点不大于子节点，其余一概不管。这条弱约束让插入和建堆都变便宜了。</p>
+<h2 id="二、形状约束：完全二叉树用数组存"><a href="#二、形状约束：完全二叉树用数组存" class="headerlink" title="二、形状约束：完全二叉树用数组存"></a>二、形状约束：完全二叉树用数组存</h2><p>优先队列的第二个设计选择是形状。普通二叉树要用节点和指针表示，不但占内存，指针本身还会打散访问的局部性。二叉堆避开了这一点，它规定树必须是<strong>完全二叉树</strong>——除了最后一层，其余层都填满，且最后一层的节点全部靠左。</p>
+<p>这个约束的作用是：<strong>树可以直接摊进一个数组，不需要任何指针。</strong></p>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph T[&quot;完全二叉树的层序&quot;]
+        R[&quot;1&quot;] --&gt; A[&quot;2&quot;]
+        R --&gt; B[&quot;3&quot;]
+        A --&gt; C[&quot;4&quot;]
+        A --&gt; D[&quot;5&quot;]
+        B --&gt; E[&quot;6&quot;]
+        B --&gt; F[&quot;7&quot;]
+    end
+    subgraph X[&quot;数组表示（下标从 1 开始）&quot;]
+        X1[&quot;下标: 1 2 3 4 5 6 7&quot;]
+        X2[&quot;值  : 1 2 3 4 5 6 7&quot;]
+    end</code></pre>
+
+<p>对应关系是纯算术，不需要任何额外存储：</p>
+<table>
+<thead>
+<tr>
+<th>关系</th>
+<th>公式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>节点 i 的左孩子</td>
+<td>2i</td>
+</tr>
+<tr>
+<td>节点 i 的右孩子</td>
+<td>2i + 1</td>
+</tr>
+<tr>
+<td>节点 i 的父节点</td>
+<td>i &#x2F; 2（向下取整）</td>
+</tr>
+</tbody></table>
+<p><strong>完全二叉树这个形状约束，换来的正是「父子的下标关系可以用一次乘法算出来」。</strong> 节点数 N 的完全二叉树高度是 ⌊log₂ N⌋，数组里也没有空位浪费。</p>
+<h2 id="三、堆序与两个基本操作"><a href="#三、堆序与两个基本操作" class="headerlink" title="三、堆序与两个基本操作"></a>三、堆序与两个基本操作</h2><p>形状定好之后，剩下的是内容约束：<strong>每个父节点都不大于它的两个孩子。</strong></p>
+<p>注意这条约束管的是<strong>父子之间</strong>，不是兄弟之间，也不是不相干的节点之间。所以堆里除了「根是最小元」之外，别的位置并没有确定的先后关系——这也是为什么堆不唯一。</p>
+<p>维护这条约束只需要两个操作：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">swim</span><span class="params">(<span class="type">int</span> i)</span> &#123;</span><br><span class="line">    <span class="keyword">while</span> (i &gt; <span class="number">1</span>) &#123;</span><br><span class="line">        compares++;</span><br><span class="line">        <span class="keyword">if</span> (a[i / <span class="number">2</span>] &lt;= a[i]) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        swap(i, i / <span class="number">2</span>);</span><br><span class="line">        i /= <span class="number">2</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">sink</span><span class="params">(<span class="type">int</span> i)</span> &#123;</span><br><span class="line">    <span class="keyword">while</span> (<span class="number">2</span> * i &lt;= n) &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> <span class="number">2</span> * i;</span><br><span class="line">        <span class="keyword">if</span> (c + <span class="number">1</span> &lt;= n) &#123;</span><br><span class="line">            compares++;</span><br><span class="line">            <span class="keyword">if</span> (a[c + <span class="number">1</span>] &lt; a[c]) &#123;</span><br><span class="line">                c++;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        compares++;</span><br><span class="line">        <span class="keyword">if</span> (a[i] &lt;= a[c]) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        swap(i, c);</span><br><span class="line">        i = c;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>两个操作是镜像的：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>什么时候用</th>
+<th>走的方向</th>
+<th>比较对象</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>上浮 <code>swim</code></td>
+<td>新元素挂在末尾</td>
+<td>从下往上</td>
+<td>只跟父节点比</td>
+<td>O(log N)</td>
+</tr>
+<tr>
+<td>下沉 <code>sink</code></td>
+<td>根被换掉之后</td>
+<td>从上往下</td>
+<td>先跟两个孩子比出较小的，再跟它比</td>
+<td>O(log N)</td>
+</tr>
+</tbody></table>
+<p><code>sink</code> 里有一处容易写错的细节：<strong>必须先比较左右两个孩子，选出较小的那个，再拿它和当前节点比。</strong> 如果先跟左孩子比、发现要换就换，那么右孩子可能更小，堆序就破了。</p>
+<h2 id="四、建堆：逐个插入-vs-自底向上"><a href="#四、建堆：逐个插入-vs-自底向上" class="headerlink" title="四、建堆：逐个插入 vs 自底向上"></a>四、建堆：逐个插入 vs 自底向上</h2><p>有了这两个操作，把一堆无序数据变成堆就有两条路。</p>
+<p><strong>路线一：逐个插入。</strong> 从空堆开始，每个元素挂到末尾再上浮。</p>
+<p><strong>路线二：自底向上。</strong> 先把数组原样当作完全二叉树，然后<strong>从最后一个内部节点开始，逐个往前下沉</strong>。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** 自底向上建堆：从最后一个内部节点开始逐个下沉 */</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> MinHeap <span class="title function_">fromArray</span><span class="params">(<span class="type">int</span>[] data)</span> &#123;</span><br><span class="line">    <span class="type">MinHeap</span> <span class="variable">h</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">MinHeap</span>(data.length);</span><br><span class="line">    System.arraycopy(data, <span class="number">0</span>, h.a, <span class="number">1</span>, data.length);</span><br><span class="line">    h.n = data.length;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> h.n / <span class="number">2</span>; i &gt;= <span class="number">1</span>; i--) &#123;</span><br><span class="line">        h.sink(i);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> h;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 逐个插入建堆：每来一个元素就先挂到末尾再上浮 */</span></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> MinHeap <span class="title function_">byInsert</span><span class="params">(<span class="type">int</span>[] data)</span> &#123;</span><br><span class="line">    <span class="type">MinHeap</span> <span class="variable">h</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">MinHeap</span>(data.length);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> v : data) &#123;</span><br><span class="line">        h.add(v);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> h;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>路线二的起点为什么是 <code>n / 2</code>？因为下标大于 <code>n / 2</code> 的节点全是叶子，叶子天然满足堆序，不需要处理。</p>
+<p>两条路线的复杂度差别，用实测比较次数来说：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">System.out.println(<span class="string">&quot;两种建堆方式的比较次数对比（同一批数据）：&quot;</span>);</span><br><span class="line"><span class="type">Random</span> <span class="variable">rnd</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">Random</span>(<span class="number">2025</span>);</span><br><span class="line"><span class="type">int</span>[] ns = &#123;<span class="number">1000</span>, <span class="number">100000</span>, <span class="number">1000000</span>&#125;;</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> N : ns) &#123;</span><br><span class="line">    <span class="type">int</span>[] random = <span class="keyword">new</span> <span class="title class_">int</span>[N];</span><br><span class="line">    <span class="type">int</span>[] desc = <span class="keyword">new</span> <span class="title class_">int</span>[N];</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; N; i++) &#123;</span><br><span class="line">        random[i] = rnd.nextInt();</span><br><span class="line">        desc[i] = N - i;              <span class="comment">// 递减序列：每次插入的新元素都要一路升到堆顶</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="type">double</span> <span class="variable">nlogn</span> <span class="operator">=</span> N * (Math.log(N) / Math.log(<span class="number">2</span>));</span><br><span class="line">    <span class="type">MinHeap</span> <span class="variable">r1</span> <span class="operator">=</span> MinHeap.fromArray(random);</span><br><span class="line">    <span class="type">MinHeap</span> <span class="variable">r2</span> <span class="operator">=</span> MinHeap.byInsert(random);</span><br><span class="line">    <span class="type">MinHeap</span> <span class="variable">d1</span> <span class="operator">=</span> MinHeap.fromArray(desc);</span><br><span class="line">    <span class="type">MinHeap</span> <span class="variable">d2</span> <span class="operator">=</span> MinHeap.byInsert(desc);</span><br><span class="line">    System.out.println(<span class="string">&quot;N = &quot;</span> + N + <span class="string">&quot;，N*log2(N) = &quot;</span> + String.format(<span class="string">&quot;%.0f&quot;</span>, nlogn));</span><br><span class="line">    System.out.println(<span class="string">&quot;    随机数据：自底向上建堆 = &quot;</span> + r1.compares</span><br><span class="line">            + <span class="string">&quot;   逐个插入建堆 = &quot;</span> + r2.compares);</span><br><span class="line">    System.out.println(<span class="string">&quot;    递减数据：自底向上建堆 = &quot;</span> + d1.compares</span><br><span class="line">            + <span class="string">&quot;   逐个插入建堆 = &quot;</span> + d2.compares);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">两种建堆方式的比较次数对比（同一批数据）：</span><br><span class="line">N = 1000，N*log2(N) = 9966</span><br><span class="line">    随机数据：自底向上建堆 = 1837   逐个插入建堆 = 2212</span><br><span class="line">    递减数据：自底向上建堆 = 1982   逐个插入建堆 = 7987</span><br><span class="line">    四种情况的堆序校验 = true / true / true / true</span><br><span class="line">N = 100000，N*log2(N) = 1660964</span><br><span class="line">    随机数据：自底向上建堆 = 188106   逐个插入建堆 = 228058</span><br><span class="line">    递减数据：自底向上建堆 = 199978   逐个插入建堆 = 1468946</span><br><span class="line">    四种情况的堆序校验 = true / true / true / true</span><br><span class="line">N = 1000000，N*log2(N) = 19931569</span><br><span class="line">    随机数据：自底向上建堆 = 1880986   逐个插入建堆 = 2279722</span><br><span class="line">    递减数据：自底向上建堆 = 1999974   逐个插入建堆 = 17951445</span><br><span class="line">    四种情况的堆序校验 = true / true / true / true</span><br></pre></td></tr></table></figure>
+
+<p>这张表里有三条值得单独拆开的结论。</p>
+<h3 id="自底向上建堆是线性的"><a href="#自底向上建堆是线性的" class="headerlink" title="自底向上建堆是线性的"></a>自底向上建堆是线性的</h3><p>自底向上的比较次数几乎不受数据形态影响：递减数据下 N &#x3D; 1000 &#x2F; 100000 &#x2F; 1000000 分别是 1982 &#x2F; 199978 &#x2F; 1999974，<strong>始终约等于 2N</strong>。</p>
+<p>原因在下沉的距离上。下沉的代价等于「还能往下走几层」，而树里绝大多数节点都在最底层附近，它们能下沉的距离很短：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>节点数</th>
+<th>最多下沉层数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>最底层（叶）</td>
+<td>约 N&#x2F;2</td>
+<td>0</td>
+</tr>
+<tr>
+<td>倒数第二层</td>
+<td>约 N&#x2F;4</td>
+<td>1</td>
+</tr>
+<tr>
+<td>倒数第三层</td>
+<td>约 N&#x2F;8</td>
+<td>2</td>
+</tr>
+<tr>
+<td>…</td>
+<td>…</td>
+<td>…</td>
+</tr>
+</tbody></table>
+<p>把所有节点的下沉距离加起来：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Σ (节点数 × 下沉层数) = N/4 × 1 + N/8 × 2 + N/16 × 3 + …  &lt;  N</span><br></pre></td></tr></table></figure>
+
+<p>这是一个收敛的级数。<strong>节点越多的地方，每个节点要走的距离越短，两者正好相互抵消</strong>，总代价是 O(N) 而不是 O(N log N)。</p>
+<h3 id="逐个插入的代价取决于数据顺序"><a href="#逐个插入的代价取决于数据顺序" class="headerlink" title="逐个插入的代价取决于数据顺序"></a>逐个插入的代价取决于数据顺序</h3><p>逐个插入建堆在随机数据下只有 2279722 次比较，接近线性；换成递减数据立刻涨到 17951445 次，<strong>约为前者的 7.9 倍，也约为自底向上建堆的 9.0 倍</strong>。</p>
+<p>差别出在上浮距离上：</p>
+<table>
+<thead>
+<tr>
+<th>数据形态</th>
+<th>每次插入平均上浮层数</th>
+<th>总代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>随机</td>
+<td>约 1.6 层（新元素多半一进去就停住）</td>
+<td>接近 O(N)</td>
+</tr>
+<tr>
+<td>递减</td>
+<td>约 log₂ N 层（每个新元素都是新的最小值，一路升到堆顶）</td>
+<td>O(N log N)</td>
+</tr>
+</tbody></table>
+<p><strong>同一份代码，换一种输入顺序，代价差一个数量级。</strong> 这也说明了一个常见的观察偏差：如果只用随机数据测试，两条路线的比较次数看起来很接近，容易得出「两种建堆差不多」的错误结论。</p>
+<h3 id="堆不唯一"><a href="#堆不唯一" class="headerlink" title="堆不唯一"></a>堆不唯一</h3><p>最后一行还给出了两种建堆方式在小规模上的结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">递减序列 [9, 8, 7, 6, 5, 4, 3, 2, 1] 的两种建堆结果：</span><br><span class="line">  自底向上建堆层序：</span><br><span class="line">  level 0: 1</span><br><span class="line">  level 1: 2 3</span><br><span class="line">  level 2: 6 5 4 7</span><br><span class="line">  level 3: 8 9</span><br><span class="line">  逐个插入建堆层序：</span><br><span class="line">  level 0: 1</span><br><span class="line">  level 1: 2 4</span><br><span class="line">  level 2: 3 7 8 5</span><br><span class="line">  level 3: 9 6</span><br></pre></td></tr></table></figure>
+
+<p>两棵树层序完全不同，但都通过了堆序校验。<strong>这正好印证了堆序约束只作用于父子之间</strong>：只要每个父节点不大于它的孩子，树的形状和内部排布可以有多种选择。</p>
+<h2 id="五、弹出最小元与堆排序"><a href="#五、弹出最小元与堆排序" class="headerlink" title="五、弹出最小元与堆排序"></a>五、弹出最小元与堆排序</h2><p>有了堆，取最小元只剩三步：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="type">int</span> <span class="title function_">removeMin</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">int</span> <span class="variable">min</span> <span class="operator">=</span> a[<span class="number">1</span>];</span><br><span class="line">    a[<span class="number">1</span>] = a[n--];</span><br><span class="line">    sink(<span class="number">1</span>);</span><br><span class="line">    <span class="keyword">return</span> min;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>用最后一片叶子顶替根的位置，堆的大小减一，然后从根下沉一次。<strong>注意这里不能把数组末尾的元素丢掉，而是用它填补根的空位</strong>——这样数组里始终是紧凑的前 <code>n</code> 个位置，没有任何空洞。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span>[] small = &#123;<span class="number">9</span>, <span class="number">4</span>, <span class="number">7</span>, <span class="number">1</span>, <span class="number">8</span>, <span class="number">3</span>, <span class="number">6</span>, <span class="number">2</span>, <span class="number">5</span>&#125;;</span><br><span class="line"><span class="type">MinHeap</span> <span class="variable">h</span> <span class="operator">=</span> MinHeap.fromArray(small);</span><br><span class="line">System.out.println(<span class="string">&quot;原始数组 = &quot;</span> + Arrays.toString(small));</span><br><span class="line">System.out.println(<span class="string">&quot;自底向上建堆后的层序：&quot;</span>);</span><br><span class="line">System.out.print(h.levelDump());</span><br><span class="line">System.out.println(<span class="string">&quot;满足堆序 = &quot;</span> + h.isValid());</span><br><span class="line">System.out.println(<span class="string">&quot;逐个弹出最小元 = &quot;</span> + h.drain());</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">原始数组 = [9, 4, 7, 1, 8, 3, 6, 2, 5]</span><br><span class="line">自底向上建堆后的层序：</span><br><span class="line">  level 0: 1</span><br><span class="line">  level 1: 2 3</span><br><span class="line">  level 2: 4 8 7 6</span><br><span class="line">  level 3: 9 5</span><br><span class="line">满足堆序 = true</span><br><span class="line">逐个弹出最小元 = 1 2 3 4 5 6 7 8 9</span><br><span class="line"></span><br><span class="line">java.util.PriorityQueue 的弹出顺序 = 1 2 3 4 5 6 7 8 9</span><br></pre></td></tr></table></figure>
+
+<p>两点观察：</p>
+<ul>
+<li><strong>层序并不是升序。</strong> <code>level 2</code> 是 <code>4 8 7 6</code>，<code>8</code> 排在 <code>7</code> 前面——但 <code>8</code> 的父母是 <code>2</code>，<code>7</code> 的父母是 <code>3</code>，各自都满足父子约束。<strong>堆序不等同于整体有序</strong>，这一点决定了堆不能用来做范围查询或中位数查询。</li>
+<li><strong>弹出序列是严格升序的。</strong> 因为每一步取出的都是当前堆里的最小值，而堆里的最小值一定在根上。</li>
+</ul>
+<p>把弹出的元素按顺序落在数组尾部，就得到原地堆排序：<strong>建堆 O(N) + N 次弹出各 O(log N) &#x3D; O(N log N)</strong>，全程不需要额外数组。对标准库的对照也验证了这一点：用 <code>java.util.PriorityQueue</code> 处理同一份数据，弹出顺序与自己的实现完全一致。</p>
+<h2 id="六、小结"><a href="#六、小结" class="headerlink" title="六、小结"></a>六、小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>形状</td>
+<td>完全二叉树，摊进数组，下标关系靠算术</td>
+<td>父 i &#x2F; 2，孩子 2i 与 2i+1</td>
+</tr>
+<tr>
+<td>堆序</td>
+<td>只约束父子，不约束兄弟</td>
+<td>两种建堆结果层序不同但都合法</td>
+</tr>
+<tr>
+<td>取最小元</td>
+<td>根上就是，O(1)</td>
+<td>弹出序列严格升序</td>
+</tr>
+<tr>
+<td>上浮</td>
+<td>新元素挂末尾，向上修复</td>
+<td>递减数据下每次上浮约 log₂ N 层</td>
+</tr>
+<tr>
+<td>下沉</td>
+<td>根被换掉后向下修复</td>
+<td>必须先比出较小的孩子</td>
+</tr>
+<tr>
+<td>自底向上建堆</td>
+<td>从 n&#x2F;2 往前逐个下沉，O(N)</td>
+<td>三个规模都约 2N 次比较</td>
+</tr>
+<tr>
+<td>逐个插入建堆</td>
+<td>最坏 O(N log N)</td>
+<td>递减数据 17951445 次，约为前者 9.0 倍</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>建堆方式</th>
+<th>N &#x3D; 1000</th>
+<th>N &#x3D; 100000</th>
+<th>N &#x3D; 1000000</th>
+<th>复杂度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>自底向上（递减数据）</td>
+<td>1982</td>
+<td>199978</td>
+<td>1999974</td>
+<td>O(N)</td>
+</tr>
+<tr>
+<td>逐个插入（递减数据）</td>
+<td>7987</td>
+<td>1468946</td>
+<td>17951445</td>
+<td>O(N log N)</td>
+</tr>
+<tr>
+<td>逐个插入（随机数据）</td>
+<td>2212</td>
+<td>228058</td>
+<td>2279722</td>
+<td>平均接近 O(N)</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong>先问清楚到底需要多少有序性。</strong> 只要最小元，就不要排序；只要父子有序，就不要整体有序。把需求收窄到刚好够用，代价会立刻降下来——这正是堆存在的理由。</li>
+<li><strong>形状约束和数据约束要分开设计。</strong> 完全二叉树负责「怎么存」，堆序负责「怎么排」，两者互不干扰。前者让存储变成纯数组运算，后者让修复只需要两个局部操作。</li>
+<li><strong>复杂度要看最坏情况，不能只看随机数据下的实测值。</strong> 逐个插入建堆在随机数据下接近线性，在递减数据下退化到 O(N log N)；只用随机数据做基准测试，很容易把最坏情况漏掉。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0111/">https://hespethorn.github.io/posts/c61b0111/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/%E4%BA%8C%E5%8F%89%E5%A0%86/">二叉堆</a><a class="post-meta__tags" href="/tags/%E4%BC%98%E5%85%88%E9%98%9F%E5%88%97/">优先队列</a><a class="post-meta__tags" href="/tags/%E5%AE%8C%E5%85%A8%E4%BA%8C%E5%8F%89%E6%A0%91/">完全二叉树</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0118/" title="比较排序的下界">比较排序的下界</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="并查集：加权合并与路径压缩">并查集：加权合并与路径压缩</a><time datetime="2025-02-10T16:00:00.000Z" title="Created 2025-02-11 00:00:00">2025-02-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="抽象数据类型与二叉搜索树">抽象数据类型与二叉搜索树</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="单链表封装与哨兵节点">单链表封装与哨兵节点</a><time datetime="2025-01-27T16:00:00.000Z" title="Created 2025-01-28 00:00:00">2025-01-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="动态数组与均摊复杂度">动态数组与均摊复杂度</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0111/" title="二叉堆与优先队列">二叉堆与优先队列</a><time datetime="2025-02-24T16:00:00.000Z" title="Created 2025-02-25 00:00:00">2025-02-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="哈希表：函数、冲突与装载因子">哈希表：函数、冲突与装载因子</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0120/" title="霍夫曼编码与计算复杂性">霍夫曼编码与计算复杂性</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0116/" title="基础排序：选择、插入与归并">基础排序：选择、插入与归并</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0119/" title="基数排序：LSD 与 MSD">基数排序：LSD 与 MSD</a><time datetime="2025-03-24T16:00:00.000Z" title="Created 2025-03-25 00:00:00">2025-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="渐进分析：大 O、大 Ω 与大 Θ">渐进分析：大 O、大 Ω 与大 Θ</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0117/" title="快速排序与三路切分">快速排序与三路切分</a><time datetime="2025-03-17T16:00:00.000Z" title="Created 2025-03-18 00:00:00">2025-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0115/" title="前缀树与自动补全">前缀树与自动补全</a><time datetime="2025-03-10T16:00:00.000Z" title="Created 2025-03-11 00:00:00">2025-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0112/" title="图的表示与深度优先、广度优先遍历">图的表示与深度优先、广度优先遍历</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="引用语义、递归与裸链表">引用语义、递归与裸链表</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="子类型多态与比较器">子类型多态与比较器</a><time datetime="2025-02-03T16:00:00.000Z" title="Created 2025-02-04 00:00:00">2025-02-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0113/" title="最短路径与 Dijkstra">最短路径与 Dijkstra</a><time datetime="2025-03-03T16:00:00.000Z" title="Created 2025-03-04 00:00:00">2025-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0114/" title="最小生成树：Kruskal 与 Prim">最小生成树：Kruskal 与 Prim</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="B 树与左倾红黑树">B 树与左倾红黑树</a><time datetime="2025-02-17T16:00:00.000Z" title="Created 2025-02-18 00:00:00">2025-02-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="Java 的编译运行机制与静态类型">Java 的编译运行机制与静态类型</a><time datetime="2025-01-20T16:00:00.000Z" title="Created 2025-01-21 00:00:00">2025-01-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

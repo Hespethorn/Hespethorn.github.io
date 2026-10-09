@@ -1,0 +1,686 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>前缀树与自动补全 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="这一篇对应官方 Lecture 26（Prefix Operations and Tries）。哈希表能回答「这个键在不在」，但回答不了「以这几个字母开头的有哪些」。这一篇讲清前缀树为什么天然擅长后一类问题，并实测它在共享前缀上省下了什么、又在内存上花掉了什么。  一、钩子：前缀检索为什么扫描法撑不住考虑一个自动补全框。用户敲进两个字母，需要列出词表里所有以这两个字母开头的词。 最直接的做法是扫">
+<meta property="og:type" content="article">
+<meta property="og:title" content="前缀树与自动补全">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61b0115/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这一篇对应官方 Lecture 26（Prefix Operations and Tries）。哈希表能回答「这个键在不在」，但回答不了「以这几个字母开头的有哪些」。这一篇讲清前缀树为什么天然擅长后一类问题，并实测它在共享前缀上省下了什么、又在内存上花掉了什么。  一、钩子：前缀检索为什么扫描法撑不住考虑一个自动补全框。用户敲进两个字母，需要列出词表里所有以这两个字母开头的词。 最直接的做法是扫">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-03-10T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.968Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="前缀树">
+<meta property="article:tag" content="Trie">
+<meta property="article:tag" content="自动补全">
+<meta property="article:tag" content="字典序">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "前缀树与自动补全",
+  "url": "https://hespethorn.github.io/posts/c61b0115/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-03-10T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.968Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61b0115/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '前缀树与自动补全',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">前缀树与自动补全</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">前缀树与自动补全</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-03-10T16:00:00.000Z" title="Created 2025-03-11 00:00:00">2025-03-11</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>这一篇对应官方 Lecture 26（Prefix Operations and Tries）。<br>哈希表能回答「这个键在不在」，但回答不了「以这几个字母开头的有哪些」。<br>这一篇讲清前缀树为什么天然擅长后一类问题，并实测它在共享前缀上省下了什么、又在内存上花掉了什么。</p>
+</blockquote>
+<h2 id="一、钩子：前缀检索为什么扫描法撑不住"><a href="#一、钩子：前缀检索为什么扫描法撑不住" class="headerlink" title="一、钩子：前缀检索为什么扫描法撑不住"></a>一、钩子：前缀检索为什么扫描法撑不住</h2><p>考虑一个自动补全框。用户敲进两个字母，需要列出词表里所有以这两个字母开头的词。</p>
+<p>最直接的做法是扫描整个词表，逐个调用 <code>startsWith</code>：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="type">long</span> <span class="title function_">scanCompares</span><span class="params">(List&lt;String&gt; vocab, String p)</span> &#123;</span><br><span class="line">    <span class="type">long</span> <span class="variable">c</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">for</span> (String w : vocab) &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">m</span> <span class="operator">=</span> Math.min(w.length(), p.length());</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; m; i++) &#123;</span><br><span class="line">            c++;</span><br><span class="line">            <span class="keyword">if</span> (w.charAt(i) != p.charAt(i)) &#123;</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> c;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个做法的问题不在单次比较有多慢，而在于<strong>它必须看过词表里的每一个词</strong>。词表有 20 万个词，就要检查 20 万次；有 2000 万个词，就要检查 2000 万次。而用户每敲一个字母，都要重跑一遍。</p>
+<p>哈希表也帮不上忙。它能 O(1) 判断「某个完整的键在不在」，因为它把整个键压成一个散列值；而一旦压成了散列值，<strong>原本的字母顺序信息就丢掉了</strong>。剩下「以 ab 开头的所有键」这类问题，哈希表只能退化成枚举全部键。</p>
+<p>前缀树（Trie）的出发点就是：<strong>不丢掉字母顺序，把「共同前缀」这件事直接写进结构里。</strong></p>
+<h2 id="二、结构：字符挂在边上，单词挂在节点上"><a href="#二、结构：字符挂在边上，单词挂在节点上" class="headerlink" title="二、结构：字符挂在边上，单词挂在节点上"></a>二、结构：字符挂在边上，单词挂在节点上</h2><p>前缀树是一棵多叉树，每个节点代表<strong>一个前缀</strong>：</p>
+<ul>
+<li>从根到某个节点的路径，拼起来就是这个节点代表的前缀；</li>
+<li>每个节点带一个布尔标记，表示「这个前缀本身是不是一个完整单词」。</li>
+</ul>
+<p>以词表 <code>[a, an, and, ant, ante, be, bee, bell, belly]</code> 为例，树长这样：</p>
+<pre><code class="highlight mermaid">flowchart TB
+    R[&quot;根&quot;] --&gt; A[&quot;a&quot;]
+    R --&gt; B[&quot;b&quot;]
+    A --&gt; AN[&quot;an&quot;]
+    AN --&gt; AND[&quot;and&quot;]
+    AN --&gt; ANT[&quot;ant&quot;]
+    ANT --&gt; ANTE[&quot;ante&quot;]
+    B --&gt; BE[&quot;be&quot;]
+    BE --&gt; BEE[&quot;bee&quot;]
+    BE --&gt; BEL[&quot;bel&quot;]
+    BEL --&gt; BELL[&quot;bell&quot;]
+    BELL --&gt; BELLY[&quot;belly&quot;]</code></pre>
+
+<p>三个可以直接从图上读出来的性质：</p>
+<ul>
+<li><strong><code>ant</code> 与 <code>ante</code> 共用同一条路径。</strong> 从根走到 <code>ant</code> 的那个节点，再加一个字母 <code>e</code> 就是 <code>ante</code>。前缀共享不是靠额外优化，而是结构本身的形状。</li>
+<li><strong>节点存在不等于单词存在。</strong> 图里有一个表示 <code>an</code> 的节点，也有一个表示 <code>ant</code> 的节点，但它们之间那条路上还有一个表示 <code>ane</code> 的节点——这个词不在词表里。<strong>所以每个节点必须带一个「到这里是不是单词结尾」的标记，光看节点是否存在判断不了。</strong></li>
+<li><strong>每个节点恰好对应一个互异前缀。</strong> 不多不少，这条性质后面会变成一个可验证的等式。</li>
+</ul>
+<h2 id="三、四个基本操作"><a href="#三、四个基本操作" class="headerlink" title="三、四个基本操作"></a>三、四个基本操作</h2><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span> <span class="title function_">insert</span><span class="params">(String w)</span> &#123;</span><br><span class="line">    <span class="type">Node</span> <span class="variable">cur</span> <span class="operator">=</span> root;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; w.length(); i++) &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> w.charAt(i) - <span class="string">&#x27;a&#x27;</span>;</span><br><span class="line">        <span class="keyword">if</span> (cur.next[c] == <span class="literal">null</span>) &#123;</span><br><span class="line">            cur.next[c] = <span class="keyword">new</span> <span class="title class_">Node</span>();</span><br><span class="line">            nodes++;</span><br><span class="line">        &#125;</span><br><span class="line">        cur = cur.next[c];</span><br><span class="line">    &#125;</span><br><span class="line">    cur.isWord = <span class="literal">true</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">boolean</span> <span class="title function_">contains</span><span class="params">(String w)</span> &#123;</span><br><span class="line">    <span class="type">Node</span> <span class="variable">cur</span> <span class="operator">=</span> root;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; w.length(); i++) &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> w.charAt(i) - <span class="string">&#x27;a&#x27;</span>;</span><br><span class="line">        <span class="keyword">if</span> (c &lt; <span class="number">0</span> || c &gt;= <span class="number">26</span> || cur.next[c] == <span class="literal">null</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        cur = cur.next[c];</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> cur.isWord;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>insert</code> 和 <code>contains</code> 是同一个骨架：<strong>沿着单词的每个字符往下走，中途缺节点就补，走完看标记。</strong> 代价是 O(len(w))，与树里存了多少词无关。</p>
+<p>注意 <code>contains</code> 最后返回的是 <code>cur.isWord</code> 而不是 <code>true</code>。<strong>如果返回 <code>true</code>，那么在一个存了 <code>ante</code> 的树里查询 <code>ane</code> 就会错误地成功</strong>——<code>ane</code> 的路径确实存在，但它不是一个单词。</p>
+<p>前缀检索无非是把「走完再看标记」改成「走完再收集整棵子树」：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">List&lt;String&gt; <span class="title function_">keysWithPrefix</span><span class="params">(String p)</span> &#123;</span><br><span class="line">    List&lt;String&gt; out = <span class="keyword">new</span> <span class="title class_">ArrayList</span>&lt;&gt;();</span><br><span class="line">    <span class="type">Node</span> <span class="variable">cur</span> <span class="operator">=</span> descend(p);</span><br><span class="line">    <span class="keyword">if</span> (cur == <span class="literal">null</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> out;</span><br><span class="line">    &#125;</span><br><span class="line">    collect(cur, <span class="keyword">new</span> <span class="title class_">StringBuilder</span>(p), out);</span><br><span class="line">    <span class="keyword">return</span> out;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">collect</span><span class="params">(Node n, StringBuilder sb, List&lt;String&gt; out)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (n.isWord) &#123;</span><br><span class="line">        out.add(sb.toString());</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> <span class="number">0</span>; c &lt; <span class="number">26</span>; c++) &#123;</span><br><span class="line">        <span class="keyword">if</span> (n.next[c] != <span class="literal">null</span>) &#123;</span><br><span class="line">            sb.append((<span class="type">char</span>) (<span class="string">&#x27;a&#x27;</span> + c));</span><br><span class="line">            collect(n.next[c], sb, out);</span><br><span class="line">            sb.deleteCharAt(sb.length() - <span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>一次前缀检索的成本可以明确拆成两段：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    Q[&quot;查询前缀 p&quot;] --&gt; D[&quot;第一段：从根沿 p 下降&lt;br/&gt;代价 = len(p)&quot;]
+    D --&gt; N[&quot;落在前缀节点上&quot;]
+    N --&gt; C[&quot;第二段：遍历这棵子树&lt;br/&gt;代价 = 子树节点数&quot;]
+    C --&gt; O[&quot;收集到全部补全结果&quot;]</code></pre>
+
+<p><strong>第一段的代价与词表规模完全无关</strong>，第二段只和「匹配上的词有多少」有关。这两句话就是前缀树的全部价值所在。</p>
+<p>第四个操作是<strong>最长前缀词</strong>，自动补全之外的另一个常见需求（比如把输入流切成已知词）：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">String <span class="title function_">longestPrefixOf</span><span class="params">(String s)</span> &#123;</span><br><span class="line">    <span class="type">Node</span> <span class="variable">cur</span> <span class="operator">=</span> root;</span><br><span class="line">    <span class="type">String</span> <span class="variable">best</span> <span class="operator">=</span> cur.isWord ? <span class="string">&quot;&quot;</span> : <span class="literal">null</span>;</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; s.length(); i++) &#123;</span><br><span class="line">        <span class="type">int</span> <span class="variable">c</span> <span class="operator">=</span> s.charAt(i) - <span class="string">&#x27;a&#x27;</span>;</span><br><span class="line">        <span class="keyword">if</span> (c &lt; <span class="number">0</span> || c &gt;= <span class="number">26</span> || cur.next[c] == <span class="literal">null</span>) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        cur = cur.next[c];</span><br><span class="line">        <span class="keyword">if</span> (cur.isWord) &#123;</span><br><span class="line">            best = s.substring(<span class="number">0</span>, i + <span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> best;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>做法是<strong>一边下降一边记录</strong>：每经过一个 <code>isWord</code> 为真的节点，就更新一次答案。走不动了，最后一次记录的就是最长的那个。</p>
+<h2 id="四、实测：共享前缀省下了什么"><a href="#四、实测：共享前缀省下了什么" class="headerlink" title="四、实测：共享前缀省下了什么"></a>四、实测：共享前缀省下了什么</h2><p>先看小词表：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">示例词表（12 个词）= [a, an, and, ant, ante, be, bee, bell, belly, cat, cattle, catalog]</span><br><span class="line">  节点数（含根）= 22</span><br><span class="line">  前缀 an 的补全 = [an, and, ant, ante]</span><br><span class="line">  前缀 bel 的补全 = [bell, belly]</span><br><span class="line">  前缀 cat 的补全 = [cat, catalog, cattle]</span><br><span class="line">  前缀 ba 的补全 = []</span><br><span class="line">  含 and = true，含 ane = false</span><br><span class="line">  &quot;antelope&quot; 的最长前缀词 = ante</span><br><span class="line">  &quot;cattlelog&quot; 的最长前缀词 = cattle</span><br></pre></td></tr></table></figure>
+
+<p>几处对照：</p>
+<ul>
+<li><strong><code>an</code> 的补全包含它自己。</strong> <code>an</code> 既是前缀也是单词，所以出现在结果里。这依赖 <code>isWord</code> 标记，光靠路径判断不出来。</li>
+<li><strong><code>ba</code> 返回空列表。</strong> 树里根本没有以 <code>b</code> 开头的路径——<code>be</code> 走的是 <code>b → e</code>，<code>ba</code> 走的是 <code>b → a</code>，第一步就在 <code>a</code> 处卡住。</li>
+<li><strong><code>cattlelog</code> 的最长前缀词是 <code>cattle</code> 而不是 <code>cat</code>。</strong> 算法边下降边记录，遇到更长的就覆盖，所以拿到的是最长的那个而不是最先遇到的。</li>
+<li><strong><code>antelope</code> 的最长前缀词是 <code>ante</code>。</strong> 走到 <code>e</code> 之后继续找 <code>l</code> 时失败退出，答案停在 <code>ante</code>。</li>
+</ul>
+<p>12 个词用掉 22 个节点。把规模放大到 20000 个词，共享的规模效应就非常清楚了：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">大规模词表：单词数 = 20000，每词 4 个音节、共 8 个字母</span><br><span class="line">  单词字符总数 = 165127</span><br><span class="line">  互异前缀总数 = 77962</span><br><span class="line">  前缀树节点数（含根）= 77963，节点数 - 1 = 77962，与互异前缀数相等 = true</span><br></pre></td></tr></table></figure>
+
+<p>最后一行是一个<strong>可以机械验证的恒等式</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">节点数 - 1 = 互异前缀总数</span><br><span class="line">77963 - 1 = 77962</span><br></pre></td></tr></table></figure>
+
+<p>等式成立的理由很直接：树里每个非根节点都对应唯一一条从根出发的路径，也就对应唯一一个前缀；反过来每个互异前缀都有一条路径。<strong>「节点数」和「互异前缀数」在这两种数法下是同一件事。</strong></p>
+<p>这也解释了为什么节点数（77963）远小于字符总数（165127）：<strong>77962 个互异前缀里，大量前缀被多个单词共用</strong>，每个只存一次。如果换成把 20000 个单词各自存成字符串，公共前缀会被重复保存 20000 遍不同次数。</p>
+<h2 id="五、实测：检索成本与词表规模的关系"><a href="#五、实测：检索成本与词表规模的关系" class="headerlink" title="五、实测：检索成本与词表规模的关系"></a>五、实测：检索成本与词表规模的关系</h2><p>把同一个前缀放到两种规模的词表上，看成本怎么变：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">同一前缀在不同词表规模下的检索成本：</span><br><span class="line">  词表 20000 个词，前缀 &quot;al&quot;：扫描法要检查全部 20000 个词、20770 次字符比较；Trie 走 2 步索引 + 子树 2999 个节点</span><br><span class="line">  词表 20000 个词，前缀 &quot;albe&quot;：扫描法要检查全部 20000 个词、21570 次字符比较；Trie 走 4 步索引 + 子树 115 个节点</span><br><span class="line">  词表 200000 个词，前缀 &quot;al&quot;：扫描法要检查全部 200000 个词、207693 次字符比较；Trie 走 2 步索引 + 子树 18197 个节点</span><br><span class="line">  词表 200000 个词，前缀 &quot;albe&quot;：扫描法要检查全部 200000 个词、215682 次字符比较；Trie 走 4 步索引 + 子树 699 个节点</span><br></pre></td></tr></table></figure>
+
+<p>四行之间的对比给出两条结论：</p>
+<table>
+<thead>
+<tr>
+<th>对比维度</th>
+<th>扫描法</th>
+<th>前缀树</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>词表从 2 万涨到 20 万</td>
+<td>检查词数 2 万 → 20 万，字符比较 20770 → 207693，<strong>同步涨 10 倍</strong></td>
+<td><code>al</code> 的子树 2999 → 18197，<strong>只涨 6.1 倍</strong></td>
+</tr>
+<tr>
+<td>前缀从 2 个字母加到 4 个字母</td>
+<td>字符比较几乎不变（20770 → 21570，因为绝大多数词在前两个字母就失配了）</td>
+<td>子树从 2999 降到 115，<strong>降 26 倍</strong></td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>扫描法的成本下限是「词表规模」。</strong> 无论前缀多长、匹配多少个，它都必须把整个词表走一遍，字符串比较次数随 N 线性增长。</li>
+<li><strong>前缀树的成本只由「前缀长度 + 匹配数量」决定。</strong> 前缀变长，匹配数量按字母表大小指数级收缩，成本随之下降；词表变大，成本只跟着匹配数量涨，而匹配数量涨得比 N 慢（实测 6.1 倍 vs 10 倍）。</li>
+</ul>
+<p>两者的差距可以直接算出来：前缀 <code>albe</code> 在 20 万词的词表上，扫描法要做 215682 次字符比较，前缀树只走 4 步索引加 699 个节点，<strong>相差约 300 倍</strong>。而前缀越长，这个倍数还会继续拉大。</p>
+<h2 id="六、字典序是免费的"><a href="#六、字典序是免费的" class="headerlink" title="六、字典序是免费的"></a>六、字典序是免费的</h2><p><code>collect</code> 里那个 <code>for (int c = 0; c &lt; 26; c++)</code> 循环是按字母表顺序遍历的，所以<strong>收集出来的结果天然就是字典序</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">补全结果天然按字典序 = true</span><br></pre></td></tr></table></figure>
+
+<p>这一条不需要任何额外工作。对比一下：如果用一个无序的 <code>HashSet</code> 存词表，要输出有序的补全结果就得先全收集再排序，代价 O(M log M)；而前缀树的输出顺序是结构自带的。</p>
+<p><strong>这也是「不丢掉字母顺序」换来的直接好处之一。</strong></p>
+<h2 id="七、内存代价与三种改进"><a href="#七、内存代价与三种改进" class="headerlink" title="七、内存代价与三种改进"></a>七、内存代价与三种改进</h2><p>前缀树不是没有代价，而且代价不小。上面那份实现里，每个节点固定持有 26 个引用槽：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">内存代价：每个节点固定持有 26 个引用槽，共 2027038 个槽；按每槽 8 字节估算约 15.5 MB，而单词字符本身只有约 0.31 MB</span><br></pre></td></tr></table></figure>
+
+<p><strong>约 15.5 MB 换 0.31 MB 的字符数据，放大约 50 倍。</strong> 原因是绝大多数槽都是空的：<code>albe</code> 这种前缀节点只有一个子节点，剩下 25 个槽全在浪费。词表越稀疏（字符集越大、单词越短），浪费越严重。</p>
+<p>三种常见的改进方向：</p>
+<table>
+<thead>
+<tr>
+<th>改进</th>
+<th>做法</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>子节点换成哈希表</td>
+<td>每个节点只存实际存在的孩子</td>
+<td>稀疏时省内存，但常数变大、失去顺序</td>
+</tr>
+<tr>
+<td>压缩前缀树（radix &#x2F; Patricia）</td>
+<td>把只有单个孩子的连续节点压成一条边，边上存整个字符串</td>
+<td>节点数大幅下降，适合长公共前缀</td>
+</tr>
+<tr>
+<td>三叉搜索树</td>
+<td>每个节点只放一个字符 + 左中右三个指针</td>
+<td>内存接近二叉搜索树，同时保留前缀性质</td>
+</tr>
+</tbody></table>
+<p>选择取决于瓶颈在哪：</p>
+<ul>
+<li><strong>词表稠密、字母集小、查询频繁</strong> → 定长数组的常数最小，最划算；</li>
+<li><strong>词表稀疏、需要省内存</strong> → 哈希表子节点或压缩前缀树；</li>
+<li><strong>既要前缀性质又要低内存占用</strong> → 三叉搜索树。</li>
+</ul>
+<p><strong>定长数组版本是「用内存换常数」的极端选择</strong>，它在论文和教材里最常见，因为结构最简单、分析最干净；但落地到生产环境时，几乎都会换成上面三种之一。</p>
+<h2 id="八、小结"><a href="#八、小结" class="headerlink" title="八、小结"></a>八、小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>节点含义</td>
+<td>一个节点对应一个互异前缀</td>
+<td>节点数 − 1 &#x3D; 互异前缀数 &#x3D; 77962</td>
+</tr>
+<tr>
+<td>前缀共享</td>
+<td>公共前缀在树里只存一次</td>
+<td>165127 个字符 → 77963 个节点</td>
+</tr>
+<tr>
+<td><code>isWord</code> 标记</td>
+<td>节点存在不代表单词存在</td>
+<td>含 <code>and</code>，不含 <code>ane</code></td>
+</tr>
+<tr>
+<td>前缀检索成本</td>
+<td>前缀长度 + 子树规模，与词表总量无关</td>
+<td>成本随 N 只涨 6.1 倍，扫描法涨 10 倍</td>
+</tr>
+<tr>
+<td>前缀越长越快</td>
+<td>匹配数量按字母表大小收缩</td>
+<td><code>al</code> 子树 2999 → <code>albe</code> 子树 115</td>
+</tr>
+<tr>
+<td>字典序输出</td>
+<td>按字母顺序遍历子树，无需排序</td>
+<td>结果天然有序</td>
+</tr>
+<tr>
+<td>内存代价</td>
+<td>定长 26 槽的稀疏浪费</td>
+<td>15.5 MB 存 0.31 MB 字符</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>结构</th>
+<th>完整键查找</th>
+<th>前缀枚举</th>
+<th>有序输出</th>
+<th>内存</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>无序数组</td>
+<td>O(N)</td>
+<td>O(N)</td>
+<td>需排序</td>
+<td>紧凑</td>
+</tr>
+<tr>
+<td>哈希表</td>
+<td>均摊 O(1)</td>
+<td>不支持</td>
+<td>需排序</td>
+<td>中等</td>
+</tr>
+<tr>
+<td>平衡 BST</td>
+<td>O(log N)</td>
+<td>O(log N + M)</td>
+<td>天然有序</td>
+<td>中等</td>
+</tr>
+<tr>
+<td>前缀树</td>
+<td>O(len)</td>
+<td>O(len + M)</td>
+<td>天然有序</td>
+<td>定长数组版本偏大</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong>数据结构的形状决定了它能回答哪类问题。</strong> 哈希表把键压成一个数，于是彻底失去了顺序；前缀树把键摊成一条路径，于是顺序和前缀关系都被完整保留。<strong>能答什么，是由「信息被保留成什么形状」决定的。</strong></li>
+<li><strong>共享是结构自带的，不是额外优化。</strong> 前缀树不存单词，只存前缀；公共前缀只存一次不是压缩的结果，而是「一个节点一个前缀」这条定义的自然推论——节点数等于互异前缀数这条恒等式就是它的表达式。</li>
+<li><strong>省下来的时间往往要用内存去换。</strong> 定长 26 槽的实现在检索上常数最小，代价是 50 倍的内存放大。工程上真正要做的不是选「最优解」，而是先看清瓶颈在时间还是内存，再决定用哪一种变体。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0115/">https://hespethorn.github.io/posts/c61b0115/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/%E5%89%8D%E7%BC%80%E6%A0%91/">前缀树</a><a class="post-meta__tags" href="/tags/Trie/">Trie</a><a class="post-meta__tags" href="/tags/%E8%87%AA%E5%8A%A8%E8%A1%A5%E5%85%A8/">自动补全</a><a class="post-meta__tags" href="/tags/%E5%AD%97%E5%85%B8%E5%BA%8F/">字典序</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0118/" title="比较排序的下界">比较排序的下界</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="并查集：加权合并与路径压缩">并查集：加权合并与路径压缩</a><time datetime="2025-02-10T16:00:00.000Z" title="Created 2025-02-11 00:00:00">2025-02-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="抽象数据类型与二叉搜索树">抽象数据类型与二叉搜索树</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="单链表封装与哨兵节点">单链表封装与哨兵节点</a><time datetime="2025-01-27T16:00:00.000Z" title="Created 2025-01-28 00:00:00">2025-01-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="动态数组与均摊复杂度">动态数组与均摊复杂度</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0111/" title="二叉堆与优先队列">二叉堆与优先队列</a><time datetime="2025-02-24T16:00:00.000Z" title="Created 2025-02-25 00:00:00">2025-02-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="哈希表：函数、冲突与装载因子">哈希表：函数、冲突与装载因子</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0120/" title="霍夫曼编码与计算复杂性">霍夫曼编码与计算复杂性</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0116/" title="基础排序：选择、插入与归并">基础排序：选择、插入与归并</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0119/" title="基数排序：LSD 与 MSD">基数排序：LSD 与 MSD</a><time datetime="2025-03-24T16:00:00.000Z" title="Created 2025-03-25 00:00:00">2025-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="渐进分析：大 O、大 Ω 与大 Θ">渐进分析：大 O、大 Ω 与大 Θ</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0117/" title="快速排序与三路切分">快速排序与三路切分</a><time datetime="2025-03-17T16:00:00.000Z" title="Created 2025-03-18 00:00:00">2025-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0115/" title="前缀树与自动补全">前缀树与自动补全</a><time datetime="2025-03-10T16:00:00.000Z" title="Created 2025-03-11 00:00:00">2025-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0112/" title="图的表示与深度优先、广度优先遍历">图的表示与深度优先、广度优先遍历</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="引用语义、递归与裸链表">引用语义、递归与裸链表</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="子类型多态与比较器">子类型多态与比较器</a><time datetime="2025-02-03T16:00:00.000Z" title="Created 2025-02-04 00:00:00">2025-02-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0113/" title="最短路径与 Dijkstra">最短路径与 Dijkstra</a><time datetime="2025-03-03T16:00:00.000Z" title="Created 2025-03-04 00:00:00">2025-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0114/" title="最小生成树：Kruskal 与 Prim">最小生成树：Kruskal 与 Prim</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="B 树与左倾红黑树">B 树与左倾红黑树</a><time datetime="2025-02-17T16:00:00.000Z" title="Created 2025-02-18 00:00:00">2025-02-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="Java 的编译运行机制与静态类型">Java 的编译运行机制与静态类型</a><time datetime="2025-01-20T16:00:00.000Z" title="Created 2025-01-21 00:00:00">2025-01-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

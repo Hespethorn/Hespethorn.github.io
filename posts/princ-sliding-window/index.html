@@ -1,0 +1,656 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>停等与滑动窗口：让管道不空转 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="先看三个真实场面：  一个文件传到一半突然变慢，抓包发现发送方每发一个包就停下来等 ACK——不是网络差，是窗口开得太小； 一个跨机房接口，明明两边都是千兆网，实测吞吐只有几 Mbps，排查半天发现瓶颈是RTT 太大而窗口没跟着调； 面试时被问「TCP 怎么保证可靠传输」，答了「超时重传」，对方追问「那如果每一段都要等确认，网络岂不是白买了一半」——答不上来。  这三个场面指向同一条规律：只要一条">
+<meta property="og:type" content="article">
+<meta property="og:title" content="停等与滑动窗口：让管道不空转">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-sliding-window/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="先看三个真实场面：  一个文件传到一半突然变慢，抓包发现发送方每发一个包就停下来等 ACK——不是网络差，是窗口开得太小； 一个跨机房接口，明明两边都是千兆网，实测吞吐只有几 Mbps，排查半天发现瓶颈是RTT 太大而窗口没跟着调； 面试时被问「TCP 怎么保证可靠传输」，答了「超时重传」，对方追问「那如果每一段都要等确认，网络岂不是白买了一半」——答不上来。  这三个场面指向同一条规律：只要一条">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-10-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.972Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="网络">
+<meta property="article:tag" content="协议">
+<meta property="article:tag" content="可靠传输">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "停等与滑动窗口：让管道不空转",
+  "url": "https://hespethorn.github.io/posts/princ-sliding-window/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-10-08T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.972Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-sliding-window/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '停等与滑动窗口：让管道不空转',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">停等与滑动窗口：让管道不空转</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">停等与滑动窗口：让管道不空转</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.6k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>先看三个真实场面：</p>
+<ul>
+<li>一个文件传到一半突然变慢，抓包发现发送方每发一个包就停下来等 ACK——不是网络差，是<strong>窗口开得太小</strong>；</li>
+<li>一个跨机房接口，明明两边都是千兆网，实测吞吐只有几 Mbps，排查半天发现瓶颈是<strong>RTT 太大而窗口没跟着调</strong>；</li>
+<li>面试时被问「TCP 怎么保证可靠传输」，答了「超时重传」，对方追问「那如果每一段都要等确认，网络岂不是白买了一半」——答不上来。</li>
+</ul>
+<p>这三个场面指向同一条规律：<strong>只要一条链路上「只有一份数据在飞」，那么链路的实际吞吐就由 RTT 决定，而不是由带宽决定</strong>。而滑走这条限制的方法，叫<strong>滑动窗口</strong>。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>这一切要从<strong>自动重传请求（ARQ, Automatic Repeat reQuest）<strong>说起：发送方发出数据后，如果超时没收到确认，就重发。最早的方案叫</strong>停等（Stop-and-Wait）</strong>——<strong>发一帧，等一个 ACK，收到再发下一帧</strong>。</p>
+<p>它的实现极其简单，所以被早期链路协议广泛使用：<strong>IBM 的 BSC（二进制同步通信）</strong>、<strong>1977 年的 XMODEM</strong>（那个年代拨号上网传文件用的协议）都是停等式的。<strong>实现的简单，换来的是效率的灾难</strong>——后面会用具体数字说明。</p>
+<p><strong>滑动窗口（Sliding Window）</strong> 是在 1970 年代随着更高速的链路出现的，并在两处固化下来：</p>
+<ul>
+<li><strong>HDLC（高级数据链路控制）</strong>——ISO 在 1970 年代标准化的链路层协议，用滑动窗口做流量控制；</li>
+<li><strong>TCP</strong>——<strong>1974 年 Cerf 和 Kahn 的 TCP 论文</strong>提出了端到端的可靠传输框架，<strong>1981 年的 RFC 793</strong> 正式把滑动窗口作为 TCP 的核心机制。今天你在内核参数里调的 <code>net.ipv4.tcp_window_scaling</code>、<code>tcp_rmem</code>，源头都在这里。</li>
+</ul>
+<p>窗口机制之后还分出了两种重传策略（经典教材里成对出现）：</p>
+<ul>
+<li><strong>回退 N（Go-Back-N, GBN）</strong>：确认是累积的，一旦超时，<strong>从丢失的那一帧开始，把后面已发的全部重发</strong>；</li>
+<li><strong>选择重传（Selective Repeat, SR）</strong>：<strong>只重传丢失的那一帧</strong>，接收端要缓存乱序到达的帧。</li>
+</ul>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为**「确认」这个机制本身有延迟，而链路上的数据一旦「只有一份在途」，这条链路的带宽就被浪费了**。</p>
+<p>先看因果链：</p>
+<ol>
+<li>发送方发一帧，必须等 ACK 回来才能发下一帧；</li>
+<li>ACK 回来需要<strong>一个往返时延（RTT）</strong>；</li>
+<li>所以在这一个 RTT 里，链路上<strong>只有一帧数据</strong>；</li>
+<li>于是<strong>实际吞吐 &#x3D; 帧大小 &#x2F; RTT</strong>——<strong>和链路带宽毫无关系</strong>。</li>
+</ol>
+<p>这引出一个关键概念：<strong>时延带宽积（Bandwidth-Delay Product, BDP）</strong>——<strong>一条链路在「回程时间」内最多能容纳多少数据</strong>。它就是管道里的「水量」：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">BDP = 带宽 × RTT</span><br></pre></td></tr></table></figure>
+
+<p><strong>一节管子的容量，等于它的横截面积乘以长度。</strong> 如果传输的东西比管子容量少，管子就空着。停等协议的问题就是「一次只放一帧进管子」。</p>
+<p>滑动窗口的做法很直接：<strong>允许「同时在途」多帧</strong>。「窗口」就是<strong>当前允许在途、还没被确认的帧的集合</strong>；收到一个 ACK，窗口向前滑一格，这就是「滑动」二字的来历。</p>
+<p>它换来了什么，是有硬上限的：<strong>当窗口字节数 ≥ BDP 时，管道被打满，吞吐就触到带宽上限</strong>。再开大窗口只会白占内存。<strong>所以滑动窗口的工程问题不是「开不开」，而是「开多大」——这个量的答案就是 BDP。</strong></p>
+<p><strong>本质一句话：停等把「链路容量」浪费在「等待」上，滑动窗口用「同时在途」把等待填满，判据只有一条：在途数据量（窗口）能不能覆盖一个 RTT 内的链路容量（BDP）。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看停等和滑动窗口在时间轴上的差别。这是「管道空转」最直观的画面：</p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant S as 发送方
+    participant R as 接收方
+    Note over S,R: 停等：每帧之后必等一个 RTT
+    S-&gt;&gt;R: 帧1
+    Note over S: 链路空转 1 个 RTT
+    R--&gt;&gt;S: ACK1
+    S-&gt;&gt;R: 帧2
+    Note over S: 链路空转 1 个 RTT
+    R--&gt;&gt;S: ACK2
+    Note over S,R: 滑动窗口：W 帧同时在途
+    S-&gt;&gt;R: 帧3
+    S-&gt;&gt;R: 帧4
+    S-&gt;&gt;R: 帧5
+    S-&gt;&gt;R: 帧6
+    R--&gt;&gt;S: ACK3
+    R--&gt;&gt;S: ACK4
+    S-&gt;&gt;R: 帧7（窗口滑动）
+    R--&gt;&gt;S: ACK5
+    S-&gt;&gt;R: 帧8</code></pre>
+
+<p>再看「窗口该开多大」这个问题的答案。横轴是窗口大小，纵轴是链路利用率——<strong>分水岭就是 BDP</strong>：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    A[&quot;窗口 W 很小&quot;] --&gt; A1[&quot;在途数据 远小于 BDP&lt;br/&gt;★ 带宽被等待浪费&quot;]
+    B[&quot;窗口 W ≈ BDP/帧&quot;] --&gt; B1[&quot;在途数据 = BDP&lt;br/&gt;★ 管道刚好打满&quot;]
+    C[&quot;窗口 W 远大于 BDP&quot;] --&gt; C1[&quot;在途数据 远大于 BDP&lt;br/&gt;吞吐不再涨，只多占内存&quot;]
+    A1 --&gt; D[&quot;对策：增大窗口&quot;]
+    C1 --&gt; E[&quot;对策：不用再加，该看别的瓶颈了&quot;]
+    style B1 fill:#e6ffe6,stroke:#009900
+    style A1 fill:#ffe6e6,stroke:#cc0000</code></pre>
+
+<p>两张图合起来就是一句话：<strong>滑动窗口的本质不是「快」，而是「别让管子空着」；而管子有多大，由 BDP 决定。</strong></p>
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 先算停等协议到底浪费了多少（本机实跑计算）</strong></p>
+<p>设一条 100 Mbps、RTT 50ms 的链路，帧大小取以太网 MTU 1500 字节：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">链路带宽        : 100 Mbps</span><br><span class="line">往返时延 RTT    : 50 ms</span><br><span class="line">帧大小           : 1500 字节</span><br><span class="line">时延带宽积 BDP   : 625,000 字节 （= 在途数据量）</span><br><span class="line">填满管道所需帧数 : 417 帧</span><br><span class="line"></span><br><span class="line">停等协议：每发 1 帧就停下等 ACK，一个 RTT 只送 1 帧</span><br><span class="line">  吞吐 = 帧大小 / RTT = 12000 bit / 0.05s = 240.0 kbps</span><br><span class="line">  链路利用率 = 0.240 %  ★ 99.76% 的链路在空转</span><br></pre></td></tr></table></figure>
+
+<p><strong>一条 100 Mbps 的链路，停等协议只用到了 240 kbps，利用率 0.24%，99.76% 在空转。</strong> 这个数字比直觉夸张得多，也解释了为什么「拨号时代的 XMODEM 慢得让人绝望」：<strong>链路是瓶颈，但协议自己成了更大的瓶颈</strong>。</p>
+<p><strong>2. 窗口开多大才够：一张表看完（本机实跑计算）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">    窗口 W |         在途字节 |             吞吐 |      链路利用率 | 判断</span><br><span class="line">---------+--------------+----------------+------------+------</span><br><span class="line">       1 |        1,500 |        0.24 Mbps |      0.24% | 停等</span><br><span class="line">       4 |        6,000 |        0.96 Mbps |      0.96% | 管道半空</span><br><span class="line">       8 |       12,000 |        1.92 Mbps |      1.92% | 管道半空</span><br><span class="line">      16 |       24,000 |        3.84 Mbps |      3.84% | 管道半空</span><br><span class="line">      64 |       96,000 |       15.36 Mbps |     15.36% | 管道半空</span><br><span class="line">     128 |      192,000 |       30.72 Mbps |     30.72% | 管道半空</span><br><span class="line">     256 |      384,000 |       61.44 Mbps |     61.44% | 接近打满</span><br><span class="line">     417 |      625,500 |      100.00 Mbps |    100.00% | ★ 打满，再加窗也无用</span><br><span class="line">     512 |      768,000 |      100.00 Mbps |    100.00% | ★ 打满，再加窗也无用</span><br><span class="line">    1024 |    1,536,000 |      100.00 Mbps |    100.00% | ★ 打满，再加窗也无用</span><br></pre></td></tr></table></figure>
+
+<p><strong>注意几个反直觉的地方</strong>：</p>
+<ul>
+<li><strong>窗口 128 时，利用率才 30%</strong>。开到这个「感觉很大」的值，链路仍有 70% 空着；</li>
+<li><strong>分水岭在 417</strong>（&#x3D; BDP &#x2F; 帧大小）。低于它，吞吐随窗口线性涨；高于它，<strong>吞吐一条直线不再动</strong>；</li>
+<li><strong>417 到 1024，配置开了 2.5 倍，吞吐一模一样</strong>。多出来的那 600 KB 窗口，纯粹是白占内存。</li>
+</ul>
+<p><strong>这就是「高 BDP 链路」的调优核心</strong>：跨机房、跨洲际的链路 RTT 可能是 200ms 甚至更大，BDP 随之放大 4~10 倍，默认窗口往往远远不够——<strong>这也解释了为什么 <code>tcp_window_scaling</code> 是长肥管道（Long Fat Network）上第一个要开的参数</strong>。</p>
+<p><strong>3. 丢一个包，两种重传策略差多少（本机实跑计算）</strong></p>
+<p>窗口机制还要解决「丢了怎么办」。两种策略的代价差得很明显：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">设定：窗口 W = 8，一次传送 1000 帧，其中恰好 1 帧丢失</span><br><span class="line"></span><br><span class="line">          丢失帧在窗口内的位置 |     GBN 重传帧数 |     SR 重传帧数</span><br><span class="line">---------------------+--------------+------------</span><br><span class="line">         第 1 帧（偏移 0） |            8 |           1</span><br><span class="line">         第 2 帧（偏移 1） |            7 |           1</span><br><span class="line">         第 4 帧（偏移 3） |            5 |           1</span><br><span class="line">         第 8 帧（偏移 7） |            1 |           1</span><br></pre></td></tr></table></figure>
+
+<p><strong>最坏情况（丢窗口第 1 帧）：GBN 要重发 8 帧，SR 只重发 1 帧，差 8 倍。</strong> 但代价没有消失，只是换了地方：</p>
+<ul>
+<li><strong>GBN</strong>：发送端只需要<strong>一个计时器</strong>（给最老的未确认帧），实现简单；代价是<strong>丢一个包，白传一窗</strong>。</li>
+<li><strong>SR</strong>：带宽省了，但接收端要<strong>缓存乱序帧</strong>，发送端要<strong>给每一帧维护计时器</strong>——<strong>状态数量从 O(1) 变成 O(W)</strong>。</li>
+</ul>
+<p><strong>省带宽还是省状态</strong>，这是协议设计里永恒的一对。真实系统里往往取折中：比如 TCP 的 <strong>SACK（选择性确认）</strong> 就是把 SR 的思路引入 TCP——接收端告诉发送方「我收到了哪些不连续的块」，从而避免整窗重传，但不需要发送端维护逐帧计时器。</p>
+<p><strong>4. 窗口不是想开多大就多大：序号空间是硬约束（本机实跑计算）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">    序号位数 k |     序号空间 2^k |     GBN 最大窗口 2^k-1 |      SR 最大窗口 2^(k-1)</span><br><span class="line">-----------+--------------+--------------------+---------------------</span><br><span class="line">         3 |            8 |                  7 |                    4</span><br><span class="line">         4 |           16 |                 15 |                    8</span><br><span class="line">         8 |          256 |                255 |                  128</span><br><span class="line">        16 |        65536 |              65535 |                32768</span><br></pre></td></tr></table></figure>
+
+<p><strong>为什么 GBN 的窗口不能等于序号空间？</strong> 假设窗口 &#x3D; 8、序号也是 8 个（0<del>7）：发送方把 0</del>7 全发出去，接收方确认了全部，窗口滑回 0。此时发出去的新帧 0 和上一轮的旧帧 0 序号相同，如果这时收到一个<strong>延迟的旧 ACK</strong>，发送方会误以为新帧 0 已被确认。<strong>序号必须能区分「在途的帧」，这是滑动窗口的数学下限。</strong></p>
+<p><strong>5. 顺带澄清：此「滑动窗口」不是 LeetCode 的那个</strong></p>
+<p>这个同名问题坑过很多人，值得单独说清：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">协议层（本文）  ：滑动窗口 = 允许同时在途、尚未确认的帧的集合</span><br><span class="line">                  → 解决「链路空转」，度量是吞吐 / 利用率</span><br><span class="line">算法题里的      ：滑动窗口 = 用双指针维护一个满足条件的连续子区间</span><br><span class="line">                  → 解决「O(n²) 枚举子数组」，度量是时间复杂度</span><br></pre></td></tr></table></figure>
+
+<p><strong>两者共享的只是一个名字和「窗口会移动」的直觉</strong>：一个管的是「<strong>同时能有多少在途</strong>」，一个管的是「<strong>当前的候选区间</strong>」。同名不同源，别被词汇骗了。这也是「缓存一致性一秒三义」之外，计算机领域里另一个典型的<strong>术语超载</strong>。</p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>窗口开大不是万能的，它有维护成本。</strong> 窗口越大，发送端要维护的发送缓冲区越大，重传的语义越复杂，内存开销也越高。<strong>窗口是「用内存换带宽」——在内存受限的嵌入式设备上，这个交换可能不划算。</strong></li>
+<li><strong>窗口解决「链路空转」，不解决「链路拥塞」。</strong> 这是两个不同的问题：<strong>流量控制</strong>（滑动窗口）防的是<strong>接收方来不及处理</strong>，<strong>拥塞控制</strong>（AIMD、慢启动）防的是<strong>中间链路被压垮</strong>。TCP 里两者叠加：发送窗口取「接收窗口 rwnd」和「拥塞窗口 cwnd」的<strong>较小值</strong>。<strong>只调大窗口而不看拥塞控制，可能直接把网络打崩。</strong></li>
+<li><strong>BDP 是「最优窗口」的下界，不是充分条件。</strong> 达到 BDP 只保证「管道填满」，但真实吞吐还受<strong>接收端处理能力、内核缓冲区大小、丢包率</strong>影响。<strong>「窗口够大但还是慢」时，该换去查这些。</strong></li>
+<li><strong>别把「滑动窗口」和「拥塞窗口」混为一谈。</strong> 前者是接收方广播的（「我还能收多少」），后者是发送方自己估的（「网络还能塞多少」）。<strong>搞混这两个，会得出「调大 rwnd 就能提速」这种只在特定情况下成立的结论。</strong></li>
+<li><strong>SR 是「理论上更优」，工程上不总是更优。</strong> 逐帧计时器在几十万条连接的内核里是实打实的开销；<strong>这正是为什么 TCP 长期用累积确认 + GBN 语义，直到 SACK 才部分引入 SR 的好处。</strong></li>
+<li><strong>它和「背压」是同一件事的两个视角。</strong> <strong>背压</strong>讲的是「慢消费者会反向施压，让生产者减速」；滑动窗口讲的是「接收方用窗口公告自己还能收多少」。<strong>接收窗口就是背压机制在协议层的具体实现</strong>，两者是一体两面。</li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>停等（Stop-and-Wait）</th>
+<th>滑动窗口（Sliding Window）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>在途数据</td>
+<td>1 帧</td>
+<td>最多 W 帧</td>
+</tr>
+<tr>
+<td>吞吐上界</td>
+<td>帧大小 &#x2F; RTT</td>
+<td>min(带宽, W·帧&#x2F;RTT)</td>
+</tr>
+<tr>
+<td>链路利用率</td>
+<td>极低（本机算例：0.24%）</td>
+<td>可达 100%</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>最低</td>
+<td>需要窗口管理、序号回绕处理</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>极小</td>
+<td>需要 W 帧缓冲区</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>简单链路、低速设备</td>
+<td>高速链路、长肥管道</td>
+</tr>
+<tr>
+<td>代表协议</td>
+<td>XMODEM、BSC</td>
+<td>TCP、HDLC</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>GBN（回退 N）</th>
+<th>SR（选择重传）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>丢包后重传</td>
+<td>从丢失处重发整窗</td>
+<td>只重发丢失帧</td>
+</tr>
+<tr>
+<td>最坏重传量（W&#x3D;8）</td>
+<td>8 帧</td>
+<td>1 帧</td>
+</tr>
+<tr>
+<td>接收端缓冲</td>
+<td>不需要（丢弃乱序帧）</td>
+<td>需要缓存乱序帧</td>
+</tr>
+<tr>
+<td>发送端计时器</td>
+<td>1 个</td>
+<td>W 个</td>
+</tr>
+<tr>
+<td>最大窗口</td>
+<td>2^k − 1</td>
+<td>2^(k−1)</td>
+</tr>
+<tr>
+<td>现代对应</td>
+<td>TCP 累积确认</td>
+<td>TCP SACK</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：停等和滑动窗口讲的是同一件事的两面——<strong>「确认」这个机制一旦引入，链路上就会出现「等待」，而有等待就会有空转</strong>。停等把简单做到极致，代价是 99% 以上的链路被浪费；滑动窗口用一个「在途集合」把等待填满，代价是多一个需要管理的窗口。判据只有一条：<strong>在途数据量能不能覆盖一个 RTT 的链路容量（BDP）</strong>——小于它，带宽白买；大于它，内存白占。最后留一句提醒：计算机领域里同名不同义的东西太多了，「滑动窗口」既是一个协议机制、也是一道算法题模板；<strong>下次听到一个熟悉的词，先花两秒确认大家说的是不是同一件事。</strong></p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-backpressure/">背压：慢消费者的保护机制</a></li>
+<li><a href="/posts/princ-end-to-end/">端到端原则：TCP 为什么把可靠性放在两端</a></li>
+<li><a href="/posts/princ-postel/">鲁棒性原则（Postel）：接收要宽松，发送要严格</a></li>
+<li><a href="/posts/princ-idempotency/">幂等性：让重试变得安全</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-sliding-window/">https://hespethorn.github.io/posts/princ-sliding-window/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E7%BD%91%E7%BB%9C/">网络</a><a class="post-meta__tags" href="/tags/%E5%8D%8F%E8%AE%AE/">协议</a><a class="post-meta__tags" href="/tags/%E5%8F%AF%E9%9D%A0%E4%BC%A0%E8%BE%93/">可靠传输</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

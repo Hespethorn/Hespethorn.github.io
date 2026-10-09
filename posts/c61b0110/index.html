@@ -1,27 +1,27 @@
-<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>算法复杂度实战与收尾 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="十篇走到最后。前面我们学了数组、链表、栈队列、树与平衡树、哈希、堆、图、并查集、排序——每一个都挂着一串 O(...)。可&quot;复杂度&quot;不是背结论，而是拿到一段代码或一道题，能亲手算出来、能选对数据结构。本篇把散落的工具收拢：怎么解递归式（主定理）、均摊分析回顾、以及一个&quot;看到需求就选结构&quot;的决策表。这是 CS61B 的收官，也是把前面九篇拧成肌肉记忆的一课。">
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>哈希表：函数、冲突与装载因子 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="这一篇对应官方 Lecture 19（Hashing）。哈希表把查找的代价从「比较了多少次」换成了「定位到哪个桶」，代价则转移到散列函数和扩容上。这一篇沿着一次 put 的完整路径走一遍，并用实测数据说明散列函数质量、装载因子和 equals&#x2F;hashCode 契约各自会带来什么后果。  一、钩子：一次查找要花在哪一步想在一堆键里找一个键，已知的最快方式是二分查找：每比较一次丢掉一半，">
 <meta property="og:type" content="article">
-<meta property="og:title" content="算法复杂度实战与收尾">
+<meta property="og:title" content="哈希表：函数、冲突与装载因子">
 <meta property="og:url" content="https://hespethorn.github.io/posts/c61b0110/">
 <meta property="og:site_name" content="HespethornのBlog">
-<meta property="og:description" content="十篇走到最后。前面我们学了数组、链表、栈队列、树与平衡树、哈希、堆、图、并查集、排序——每一个都挂着一串 O(...)。可&quot;复杂度&quot;不是背结论，而是拿到一段代码或一道题，能亲手算出来、能选对数据结构。本篇把散落的工具收拢：怎么解递归式（主定理）、均摊分析回顾、以及一个&quot;看到需求就选结构&quot;的决策表。这是 CS61B 的收官，也是把前面九篇拧成肌肉记忆的一课。">
+<meta property="og:description" content="这一篇对应官方 Lecture 19（Hashing）。哈希表把查找的代价从「比较了多少次」换成了「定位到哪个桶」，代价则转移到散列函数和扩容上。这一篇沿着一次 put 的完整路径走一遍，并用实测数据说明散列函数质量、装载因子和 equals&#x2F;hashCode 契约各自会带来什么后果。  一、钩子：一次查找要花在哪一步想在一堆键里找一个键，已知的最快方式是二分查找：每比较一次丢掉一半，">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
-<meta property="article:published_time" content="2024-10-30T16:00:00.000Z">
-<meta property="article:modified_time" content="2026-09-29T04:04:32.568Z">
+<meta property="article:published_time" content="2025-02-19T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.968Z">
 <meta property="article:author" content="Hespethorn">
-<meta property="article:tag" content="均摊分析">
-<meta property="article:tag" content="算法复杂度">
-<meta property="article:tag" content="主定理">
-<meta property="article:tag" content="CS61B收官">
+<meta property="article:tag" content="哈希表">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="散列函数">
+<meta property="article:tag" content="装载因子">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "BlogPosting",
-  "headline": "算法复杂度实战与收尾",
+  "headline": "哈希表：函数、冲突与装载因子",
   "url": "https://hespethorn.github.io/posts/c61b0110/",
   "image": "https://hespethorn.github.io/img/butterfly-icon.png",
-  "datePublished": "2024-10-30T16:00:00.000Z",
-  "dateModified": "2026-09-29T04:04:32.568Z",
+  "datePublished": "2025-02-19T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.968Z",
   "author": [
     {
       "@type": "Person",
@@ -183,159 +183,210 @@ btf.addGlobalFn('pjaxComplete', () => {
   },
   autoDarkmode: true
 }</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
-  title: '算法复杂度实战与收尾',
+  title: '哈希表：函数、冲突与装载因子',
   isHighlightShrink: false,
   isToc: false,
   pageType: 'post'
 }</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
-</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">822</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1122</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">算法复杂度实战与收尾</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">算法复杂度实战与收尾</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.2k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>4mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>十篇走到最后。前面我们学了数组、链表、栈队列、树与平衡树、哈希、堆、图、并查集、排序——每一个都挂着一串 <code>O(...)</code>。可&quot;复杂度&quot;不是背结论，而是<strong>拿到一段代码或一道题，能亲手算出来、能选对数据结构</strong>。本篇把散落的工具收拢：怎么解递归式（主定理）、均摊分析回顾、以及一个&quot;看到需求就选结构&quot;的决策表。这是 CS61B 的收官，也是把前面九篇拧成肌肉记忆的一课。</p>
-<hr>
-<h2 id="一、实战：看到代码，算出复杂度"><a href="#一、实战：看到代码，算出复杂度" class="headerlink" title="一、实战：看到代码，算出复杂度"></a>一、实战：看到代码，算出复杂度</h2><h3 id="1-1-循环套循环"><a href="#1-1-循环套循环" class="headerlink" title="1.1 循环套循环"></a>1.1 循环套循环</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; n; i++)        <span class="comment">// n 次</span></span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">j</span> <span class="operator">=</span> <span class="number">0</span>; j &lt; n; j++)    <span class="comment">// 每次 n 次</span></span><br><span class="line">        sum += a[i] * b[j];</span><br></pre></td></tr></table></figure>
-<p>外层 <code>n</code>、内层 <code>n</code> → <strong><code>O(n²)</code></strong>。</p>
-<h3 id="1-2-循环减半（二分、堆下沉）"><a href="#1-2-循环减半（二分、堆下沉）" class="headerlink" title="1.2 循环减半（二分、堆下沉）"></a>1.2 循环减半（二分、堆下沉）</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> n; i &gt; <span class="number">0</span>; i /= <span class="number">2</span>) process(i);   <span class="comment">// 每次规模 /2</span></span><br></pre></td></tr></table></figure>
-<p><code>i</code> 走 <code>n → n/2 → n/4 → … → 1</code>，共 <code>log₂ n</code> 步 → <strong><code>O(log n)</code></strong>。</p>
-<p><strong>坑①</strong>：<code>log</code> 的底数在 <code>O</code> 记号里<strong>不重要</strong>——<code>log₂ n</code>、<code>log₁₀ n</code> 只差常数倍，统一写作 <code>O(log n)</code>。别纠结底数是 2 还是 e。</p>
-<hr>
-<h2 id="二、主定理（Master-Theorem）：一眼看穿分治"><a href="#二、主定理（Master-Theorem）：一眼看穿分治" class="headerlink" title="二、主定理（Master Theorem）：一眼看穿分治"></a>二、主定理（Master Theorem）：一眼看穿分治</h2><p>对形如 <code>T(n) = a·T(n/b) + f(n)</code> 的递归（<code>a</code> 个子问题、规模 <code>n/b</code>、合并代价 <code>f(n)</code>），比较 <code>f(n)</code> 与 <code>n^(log_b a)</code>：</p>
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">哈希表：函数、冲突与装载因子</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">哈希表：函数、冲突与装载因子</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>这一篇对应官方 Lecture 19（Hashing）。<br>哈希表把查找的代价从「比较了多少次」换成了「定位到哪个桶」，代价则转移到散列函数和扩容上。<br>这一篇沿着一次 put 的完整路径走一遍，并用实测数据说明散列函数质量、装载因子和 equals&#x2F;hashCode 契约各自会带来什么后果。</p>
+</blockquote>
+<h2 id="一、钩子：一次查找要花在哪一步"><a href="#一、钩子：一次查找要花在哪一步" class="headerlink" title="一、钩子：一次查找要花在哪一步"></a>一、钩子：一次查找要花在哪一步</h2><p>想在一堆键里找一个键，已知的最快方式是二分查找：每比较一次丢掉一半，代价是 log N 次比较。但它有前提——<strong>数据必须有序</strong>，而且插入新键要挪动数组。</p>
+<p>哈希表换了个思路：<strong>不算比较次数，直接算出这个键应该在哪。</strong> 如果算得足够均匀，一次定位就能找到目标所在的格子，查找代价从 O(log N) 降到 O(1)。</p>
+<p>代价也随之转移了：</p>
 <table>
 <thead>
 <tr>
-<th>情形</th>
-<th>条件</th>
-<th>结论</th>
+<th>环节</th>
+<th>承担后果</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>①</td>
-<td><code>f(n) = O(n^(log_b a − ε))</code></td>
-<td><code>T(n) = Θ(n^(log_b a))</code></td>
+<td>散列函数不够均匀</td>
+<td>大量键挤进同一个桶，退化成链表</td>
 </tr>
 <tr>
-<td>②</td>
-<td><code>f(n) = Θ(n^(log_b a) · log^k n)</code></td>
-<td><code>T(n) = Θ(n^(log_b a) · log^(k+1) n)</code></td>
+<td>装载因子过高</td>
+<td>链变长，查找退化</td>
 </tr>
 <tr>
-<td>③</td>
-<td><code>f(n) = Ω(n^(log_b a + ε))</code> 且正则</td>
-<td><code>T(n) = Θ(f(n))</code></td>
+<td>键的相等语义和散列值不一致</td>
+<td>明明在表里却查不到</td>
 </tr>
 </tbody></table>
-<p>实战速查：</p>
-<ul>
-<li><strong>归并排序</strong>：<code>a=2, b=2, f(n)=Θ(n)</code> → <code>n^(log₂2)=n</code>，情形② → <strong><code>Θ(n log n)</code></strong>。</li>
-<li><strong>二分查找</strong>：<code>a=1, b=2, f(n)=Θ(1)</code> → <code>n^(log₂1)=1</code>，情形② → <strong><code>Θ(log n)</code></strong>。</li>
-<li><strong>普通矩阵乘法分治</strong>（strassen 之前）：<code>a=8,b=2,f=Θ(n²)</code> → <code>n³</code> vs <code>n²</code>，情形① → <strong><code>Θ(n³)</code></strong>。</li>
-</ul>
-<p><strong>坑②</strong>：主定理只覆盖&quot;子问题规模相等&quot;的规整分治。像快排（规模不固定）就不直接适用，要用期望分析或递归树。</p>
-<hr>
-<h2 id="三、均摊分析：单次贵，长期便宜"><a href="#三、均摊分析：单次贵，长期便宜" class="headerlink" title="三、均摊分析：单次贵，长期便宜"></a>三、均摊分析：单次贵，长期便宜</h2><p>动态数组插入、斐波那契堆，都靠&quot;偶尔花大钱、平时几乎免费&quot;来摊薄。回顾<strong>记账法</strong>看动态数组翻倍：</p>
-<ul>
-<li>每次 <code>add</code> 收 3 元：1 元付&quot;写入自己&quot;，1 元留给&quot;未来被拷贝时搬自己&quot;，1 元帮&quot;最老那个曾填满的数组&quot;付搬迁费。</li>
-<li>这样每次操作&quot;预付&quot;的余额永远够付下一次扩容，<strong>均摊 <code>O(1)</code></strong>——尽管某次扩容本身是 <code>O(n)</code>。</li>
-</ul>
-<p><strong>本质一句话</strong>：均摊分析算的是&quot;一连串操作的平均单价&quot;，不是单次最坏。哈希扩容、splay 树都靠它站得住。</p>
-<hr>
-<h2 id="四、决策表：看到需求，选对结构"><a href="#四、决策表：看到需求，选对结构" class="headerlink" title="四、决策表：看到需求，选对结构"></a>四、决策表：看到需求，选对结构</h2><p>这是 CS61B 全篇的&quot;总纲&quot;——把十篇拧成一张查表：</p>
-<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:8px;margin:16px 0">
-<svg viewBox="0 0 520 260" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
-  <rect x="0" y="0" width="520" height="260" fill="#fff"/>
-  <rect x="200" y="10" width="120" height="34" rx="6" fill="#f1f0ff" stroke="#7048e8"/>
-  <text x="260" y="32" text-anchor="middle" fill="#3b2a8c">遇到什么需求？</text>
-  <!-- branches -->
-  <line x1="200" y1="44" x2="90" y2="80" stroke="#57606a"/>
-  <line x1="260" y1="44" x2="260" y2="80" stroke="#57606a"/>
-  <line x1="320" y1="44" x2="430" y2="80" stroke="#57606a"/>
-  <rect x="20" y="80" width="140" height="30" rx="6" fill="#e7f5ff" stroke="#1971c2"/><text x="90" y="100" text-anchor="middle" fill="#0b4a8a">要键→值快查？</text>
-  <rect x="190" y="80" width="140" height="30" rx="6" fill="#e7f5ff" stroke="#1971c2"/><text x="260" y="100" text-anchor="middle" fill="#0b4a8a">要优先级极值？</text>
-  <rect x="360" y="80" width="140" height="30" rx="6" fill="#e7f5ff" stroke="#1971c2"/><text x="430" y="100" text-anchor="middle" fill="#0b4a8a">要连通/有序？</text>
-  <line x1="90" y1="110" x2="90" y2="140" stroke="#57606a"/>
-  <line x1="260" y1="110" x2="260" y2="140" stroke="#57606a"/>
-  <line x1="430" y1="110" x2="430" y2="140" stroke="#57606a"/>
-  <rect x="20" y="140" width="140" height="30" rx="6" fill="#ddf4e4" stroke="#2da44e"/><text x="90" y="160" text-anchor="middle" fill="#1a4731">哈希表(无序)</text>
-  <rect x="190" y="140" width="140" height="30" rx="6" fill="#ddf4e4" stroke="#2da44e"/><text x="260" y="160" text-anchor="middle" fill="#1a4731">堆/优先队列</text>
-  <rect x="360" y="140" width="140" height="30" rx="6" fill="#ddf4e4" stroke="#2da44e"/><text x="430" y="160" text-anchor="middle" fill="#1a4731">BST/并查集</text>
-  <line x1="90" y1="170" x2="90" y2="200" stroke="#57606a"/>
-  <line x1="260" y1="170" x2="260" y2="200" stroke="#57606a"/>
-  <line x1="430" y1="170" x2="430" y2="200" stroke="#57606a"/>
-  <rect x="20" y="200" width="140" height="30" rx="6" fill="#fff4e6" stroke="#e8590c"/><text x="90" y="220" text-anchor="middle" fill="#9a4a00">图/最短路?</text>
-  <rect x="190" y="200" width="140" height="30" rx="6" fill="#fff4e6" stroke="#e8590c"/><text x="260" y="220" text-anchor="middle" fill="#9a4a00">要全序?</text>
-  <rect x="360" y="200" width="140" height="30" rx="6" fill="#fff4e6" stroke="#e8590c"/><text x="430" y="220" text-anchor="middle" fill="#9a4a00">动态连通?</text>
-  <text x="90" y="252" text-anchor="middle" fill="#57606a">→ 图/BFS/DFS/Dijkstra</text>
-  <text x="260" y="252" text-anchor="middle" fill="#57606a">→ 排序/平衡BST</text>
-  <text x="430" y="252" text-anchor="middle" fill="#57606a">→ 并查集</text>
-</svg>
-</div>
+<p>这一篇的核心结论可以提前说：<strong>哈希表能不能达到 O(1)，不取决于表本身，取决于上面这三件事有没有处理对。</strong></p>
+<h2 id="二、一次-put-的完整路径"><a href="#二、一次-put-的完整路径" class="headerlink" title="二、一次 put 的完整路径"></a>二、一次 put 的完整路径</h2><p>一次 <code>put(key, value)</code> 分两步，一步都不能少。</p>
+<pre><code class="highlight mermaid">flowchart TB
+    A[&quot;put(key, value)&quot;] --&gt; B[&quot;计算 h = hashCode(key)&quot;]
+    B --&gt; C[&quot;定位桶：i = h 压缩到 [0, 表长)&quot;]
+    C --&gt; D[&quot;取出 buckets[i] 这条链&quot;]
+    D --&gt; E&#123;&quot;沿链逐个比较&lt;br/&gt;equals(existing, key)?&quot;&#125;
+    E --&gt;|相等| F[&quot;覆盖该条目的值&quot;]
+    E --&gt;|都不相等| G[&quot;在链头插入新条目，size++&quot;]
+    F --&gt; H[&quot;size / 表长 &gt; 装载因子？&quot;]
+    G --&gt; H
+    H --&gt;|是| I[&quot;扩容并重新散列全部条目&quot;]
+    H --&gt;|否| J[&quot;结束&quot;]
+    I --&gt; J</code></pre>
 
-<hr>
-<h2 id="五、CS61B-全篇回顾：一条主线"><a href="#五、CS61B-全篇回顾：一条主线" class="headerlink" title="五、CS61B 全篇回顾：一条主线"></a>五、CS61B 全篇回顾：一条主线</h2><p>把十篇串起来，CS61B 其实只回答一个问题：<strong>&quot;怎么组织数据，让操作足够快？&quot;</strong></p>
+<p>图里有两处细节值得单独说：</p>
+<ul>
+<li><strong>散列不参与判断「是不是同一个键」，只有 equals 参与。</strong> 散列值只用来决定「去哪个桶里找」。所以散列值相同不等于键相等，这是后面所有契约问题的根源。</li>
+<li><strong>扩容是整个表一起动的。</strong> 表长变了，原来算出来的桶下标全部失效，必须把每个条目重新散列一遍。</li>
+</ul>
+<h2 id="三、散列函数：从直接取模到混合"><a href="#三、散列函数：从直接取模到混合" class="headerlink" title="三、散列函数：从直接取模到混合"></a>三、散列函数：从直接取模到混合</h2><p>最朴素的散列函数是取模：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** 直接取模：表长与键共享因子时分布会塌陷 */</span></span><br><span class="line"><span class="keyword">static</span> <span class="type">int</span> <span class="title function_">naiveIndex</span><span class="params">(<span class="type">int</span> key, <span class="type">int</span> cap)</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> key % cap;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/** 先做一步乘法混合，再取高位，把低位规律打散 */</span></span><br><span class="line"><span class="keyword">static</span> <span class="type">int</span> <span class="title function_">mixedIndex</span><span class="params">(<span class="type">int</span> key, <span class="type">int</span> cap)</span> &#123;</span><br><span class="line">    <span class="type">long</span> <span class="variable">h</span> <span class="operator">=</span> key * <span class="number">2654435761L</span>;</span><br><span class="line">    <span class="keyword">return</span> ((<span class="type">int</span>) (h &gt;&gt;&gt; <span class="number">32</span>)) &amp; (cap - <span class="number">1</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>取模看起来已经很好了，只要键是随机的，它就能把键均匀撒开。问题在于<strong>真实的键往往不是随机的</strong>，它们常常带着规律，而取模会把规律原样保留下来。</p>
+<p>实测：表长 1024，插入 4096 个键，每个键都是 1024 的整数倍。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> &#123;</span><br><span class="line">    <span class="keyword">final</span> <span class="type">int</span> <span class="variable">cap</span> <span class="operator">=</span> <span class="number">1024</span>;</span><br><span class="line">    <span class="keyword">final</span> <span class="type">int</span> <span class="variable">n</span> <span class="operator">=</span> <span class="number">4096</span>;</span><br><span class="line">    <span class="type">int</span>[] keys = <span class="keyword">new</span> <span class="title class_">int</span>[n];</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; n; i++) &#123;</span><br><span class="line">        keys[i] = (i + <span class="number">1</span>) * cap;         <span class="comment">// 每个键都是表长的整数倍</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="type">int</span>[] naiveBuckets = <span class="keyword">new</span> <span class="title class_">int</span>[cap];</span><br><span class="line">    <span class="type">int</span>[] mixedBuckets = <span class="keyword">new</span> <span class="title class_">int</span>[cap];</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> k : keys) &#123;</span><br><span class="line">        naiveBuckets[naiveIndex(k, cap)]++;</span><br><span class="line">        mixedBuckets[mixedIndex(k, cap)]++;</span><br><span class="line">    &#125;</span><br><span class="line">    System.out.println(<span class="string">&quot;表长 = &quot;</span> + cap + <span class="string">&quot;，插入 &quot;</span> + n + <span class="string">&quot; 个键（每个键都是 &quot;</span> + cap + <span class="string">&quot; 的整数倍）&quot;</span>);</span><br><span class="line">    System.out.println(<span class="string">&quot;  键值直接取模    ：被占用的桶数 = &quot;</span> + countNonZero(naiveBuckets)</span><br><span class="line">            + <span class="string">&quot;，最长链 = &quot;</span> + max(naiveBuckets));</span><br><span class="line">    System.out.println(<span class="string">&quot;  乘法混合后取高位：被占用的桶数 = &quot;</span> + countNonZero(mixedBuckets)</span><br><span class="line">            + <span class="string">&quot;，最长链 = &quot;</span> + max(mixedBuckets));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">表长 = 1024，插入 4096 个键（每个键都是 1024 的整数倍）</span><br><span class="line">  键值直接取模    ：被占用的桶数 = 1，最长链 = 4096</span><br><span class="line">  乘法混合后取高位：被占用的桶数 = 1024，最长链 = 5</span><br></pre></td></tr></table></figure>
+
+<p>差距是碾压性的：</p>
 <table>
 <thead>
 <tr>
-<th>篇</th>
-<th>结构</th>
-<th>解决的核心矛盾</th>
+<th>散列方式</th>
+<th>被占用的桶数</th>
+<th>最长链</th>
+<th>一次失败查找要比较的条目数</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>01 数据结构导论</td>
-<td>ADT</td>
-<td>接口与实现的分离</td>
+<td>键值直接取模</td>
+<td>1</td>
+<td>4096</td>
+<td>4096</td>
 </tr>
 <tr>
-<td>02 数组与动态数组</td>
-<td>动态数组</td>
-<td>定长 vs 可增长，均摊</td>
-</tr>
-<tr>
-<td>03 链表</td>
-<td>单&#x2F;双链表、哨兵</td>
-<td>连续内存 vs 灵活插入</td>
-</tr>
-<tr>
-<td>04 栈与队列</td>
-<td>线性结构</td>
-<td>LIFO vs FIFO</td>
-</tr>
-<tr>
-<td>05 树与平衡</td>
-<td>BST&#x2F;AVL&#x2F;红黑&#x2F;B树</td>
-<td>有序 + <code>O(log n)</code> 插入</td>
-</tr>
-<tr>
-<td>06 哈希表</td>
-<td>散列 + 冲突处理</td>
-<td>任意键 <code>O(1)</code> 查找</td>
-</tr>
-<tr>
-<td>07 堆</td>
-<td>完全二叉树</td>
-<td>只取极值 <code>O(1)</code>  peek</td>
-</tr>
-<tr>
-<td>08 图</td>
-<td>邻接表&#x2F;矩阵 + 遍历</td>
-<td>网络关系与最短路</td>
-</tr>
-<tr>
-<td>09 并查集与排序</td>
-<td>集合 + <code>O(n log n)</code></td>
-<td>连通性 + 全序</td>
-</tr>
-<tr>
-<td>10 复杂度与收官</td>
-<td>主定理&#x2F;均摊&#x2F;决策</td>
-<td>会算、会选</td>
+<td>乘法混合后取高位</td>
+<td>1024</td>
+<td>5</td>
+<td>5</td>
 </tr>
 </tbody></table>
-<p><strong>本质一句话（CS61B 收官）</strong>：数据结构不是死记的清单，而是一组&quot;用某种代价换另一种代价&quot;的权衡工具箱——<strong>先看清你要的是&quot;查找 &#x2F; 极值 &#x2F; 有序 &#x2F; 连通 &#x2F; 全序&quot;哪一种，再按决策表取对应的那一件</strong>。</p>
-<hr>
-<h2 id="六、小结"><a href="#六、小结" class="headerlink" title="六、小结"></a>六、小结</h2><ul>
-<li><strong>是什么</strong>：复杂度是&quot;能算出来&quot;的技能（循环计数、主定理、均摊），不是背答案。</li>
-<li><strong>坑</strong>：<code>O(log n)</code> 不关心底数；主定理只管规整分治；均摊看长期单价而非单次最坏。</li>
-<li><strong>本质一句话</strong>：CS61B 的全部努力，都是为了让你在写代码前先问一句&quot;我的操作主要是什么、希望能多快&quot;——然后选对那一个结构。十篇到此收官，但&quot;权衡&quot;这条主线会贯穿你之后的每一门课。</li>
+<p><strong>直接取模的结果是「整张表退化成一个桶」。</strong> 原因很直白：每个键都等于 1024 的整数倍，<code>key % 1024</code> 恒等于 0，4096 个键全部挤进 0 号桶，查找变成在这条 4096 长的链上线性扫描。</p>
+<p>乘法混合的做法是先乘一个大奇数把结果打散到 64 位空间，再取<strong>高位</strong>——低位里的规律被乘法扩散到了整条链上，取高位拿到的是混合之后的比特，不再保留「都是 1024 的倍数」这个特征。</p>
+<p>真实的哈希表实现里，<code>java.util.HashMap</code> 就是先调用 <code>key.hashCode()</code>，再做一次异或移位把高低位混合，最后按位与取低位。<strong>原因和这里一样：不能让键里原有的规律直接决定落桶位置。</strong></p>
+<h2 id="四、实测：坏散列函数下的真实代价"><a href="#四、实测：坏散列函数下的真实代价" class="headerlink" title="四、实测：坏散列函数下的真实代价"></a>四、实测：坏散列函数下的真实代价</h2><p>把上面的键真的插进一张链地址法的表，然后逐个查询，统计每次查询沿链走过多少个节点：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">put</span><span class="params">(<span class="type">int</span> key, <span class="type">int</span> value)</span> &#123;</span><br><span class="line">    <span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> naiveIndex(key, buckets.length);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">Entry</span> <span class="variable">e</span> <span class="operator">=</span> buckets[i]; e != <span class="literal">null</span>; e = e.next) &#123;</span><br><span class="line">        <span class="keyword">if</span> (e.key == key) &#123;</span><br><span class="line">            e.value = value;</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    buckets[i] = <span class="keyword">new</span> <span class="title class_">Entry</span>(key, value, buckets[i]);</span><br><span class="line">    size++;</span><br><span class="line">    <span class="keyword">if</span> ((<span class="type">double</span>) size / buckets.length &gt; <span class="number">0.75</span>) &#123;</span><br><span class="line">        resize();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">resize</span><span class="params">()</span> &#123;</span><br><span class="line">    Entry[] old = buckets;</span><br><span class="line">    buckets = <span class="keyword">new</span> <span class="title class_">Entry</span>[old.length * <span class="number">2</span>];</span><br><span class="line">    resizes++;</span><br><span class="line">    <span class="keyword">for</span> (Entry head : old) &#123;</span><br><span class="line">        <span class="type">Entry</span> <span class="variable">e</span> <span class="operator">=</span> head;</span><br><span class="line">        <span class="keyword">while</span> (e != <span class="literal">null</span>) &#123;</span><br><span class="line">            <span class="type">Entry</span> <span class="variable">nxt</span> <span class="operator">=</span> e.next;</span><br><span class="line">            <span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> naiveIndex(e.key, buckets.length);</span><br><span class="line">            e.next = buckets[i];</span><br><span class="line">            buckets[i] = e;</span><br><span class="line">            e = nxt;</span><br><span class="line">            rehashMoves++;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">用「键值直接取模」建表并查询 4096 个键：</span><br><span class="line">  最终桶数 = 8192，元素数 = 4096，扩容次数 = 3</span><br><span class="line">  被占用的桶数 = 8，最长链 = 512</span><br><span class="line">  查询走过 1050624 个节点，平均每次 256.50 个</span><br></pre></td></tr></table></figure>
+
+<p>这张表最终有 8192 个桶、4096 个元素，按均匀分布每桶应该只挂 0 到 1 个。实际情况是：</p>
+<ul>
+<li><strong>被占用的桶只有 8 个。</strong> 所有元素挤在这 8 条链上。原因是扩容只是把表长翻倍，而键始终是 1024 的倍数，翻倍之后仍然是表长的整数倍，取模依然是 0——<strong>扩容救不了坏散列函数。</strong></li>
+<li><strong>4096 ÷ 8 &#x3D; 512</strong>，正好是实测的最长链长度。</li>
+<li><strong>平均每次查询走 256.50 个节点</strong>，也就是每次查找都在做 256 次比较。查找复杂度从预期的 O(1) 变成了 O(N)。</li>
 </ul>
-</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0110/">https://hespethorn.github.io/posts/c61b0110/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%9D%87%E6%91%8A%E5%88%86%E6%9E%90/">均摊分析</a><a class="post-meta__tags" href="/tags/%E7%AE%97%E6%B3%95%E5%A4%8D%E6%9D%82%E5%BA%A6/">算法复杂度</a><a class="post-meta__tags" href="/tags/%E4%B8%BB%E5%AE%9A%E7%90%86/">主定理</a><a class="post-meta__tags" href="/tags/CS61B%E6%94%B6%E5%AE%98/">CS61B收官</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">822</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1122</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">42</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+<p>这一条实证很重要：<strong>很多人以为哈希表变慢是因为「撞了」几个键，实测给出的量级是慢了 256 倍。</strong> 冲突不是小概率的偶然事件，散列函数选错会让它变成常态。</p>
+<h2 id="五、扩容与装载因子：均摊-O-1-的来源"><a href="#五、扩容与装载因子：均摊-O-1-的来源" class="headerlink" title="五、扩容与装载因子：均摊 O(1) 的来源"></a>五、扩容与装载因子：均摊 O(1) 的来源</h2><p>装载因子是已存元素数与桶数的比值。它越高，链越长；它越低，内存越浪费。实践中常见的阈值是 0.75。</p>
+<p>扩容本身是一次 O(N) 的重活，那为什么哈希表的插入还能算 O(1)？用实测数据回答：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">System.out.println(<span class="string">&quot;顺序键下的扩容代价（键 = 1..N，表长按 2 倍增长）：&quot;</span>);</span><br><span class="line"><span class="type">int</span>[] ns = &#123;<span class="number">10000</span>, <span class="number">100000</span>, <span class="number">1000000</span>&#125;;</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span> nn : ns) &#123;</span><br><span class="line">    <span class="type">HashTable</span> <span class="variable">x</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">HashTable</span>(<span class="number">4</span>);</span><br><span class="line">    <span class="keyword">for</span> (<span class="type">int</span> <span class="variable">k</span> <span class="operator">=</span> <span class="number">1</span>; k &lt;= nn; k++) &#123;</span><br><span class="line">        x.put(k, k);</span><br><span class="line">    &#125;</span><br><span class="line">    System.out.println(<span class="string">&quot;N = &quot;</span> + nn + <span class="string">&quot;   扩容次数 = &quot;</span> + x.resizes</span><br><span class="line">            + <span class="string">&quot;   最终桶数 = &quot;</span> + x.capacity()</span><br><span class="line">            + <span class="string">&quot;   累计搬迁元素 = &quot;</span> + x.rehashMoves</span><br><span class="line">            + <span class="string">&quot;   平均每元素搬迁 = &quot;</span> + String.format(<span class="string">&quot;%.3f&quot;</span>, x.rehashMoves / (<span class="type">double</span>) nn));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">顺序键下的扩容代价（键 = 1..N，表长按 2 倍增长）：</span><br><span class="line">N = 10000   扩容次数 = 12   最终桶数 = 16384   累计搬迁元素 = 12297   平均每元素搬迁 = 1.230</span><br><span class="line">N = 100000   扩容次数 = 16   最终桶数 = 262144   累计搬迁元素 = 196621   平均每元素搬迁 = 1.966</span><br><span class="line">N = 1000000   扩容次数 = 19   最终桶数 = 2097152   累计搬迁元素 = 1572880   平均每元素搬迁 = 1.573</span><br></pre></td></tr></table></figure>
+
+<p><strong>平均每元素搬迁次数始终小于 2，而且不随 N 增长。</strong> 这就是均摊 O(1) 的实证。</p>
+<p>推导也很短：表长按 2 倍增长，第 k 次扩容时表里有约 2^(k-1) 个元素，把它们全部搬到 2^k 的桶里。到 N 个元素时累计搬迁次数是</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">1 + 2 + 4 + … + N/2  &lt;  N</span><br></pre></td></tr></table></figure>
+
+<p>再加上每次插入本身的那一次，总工作量小于 2N，平均到每个元素不到 2 次。<strong>扩容的 O(N) 代价被「次数很少」平摊掉了</strong>——最后一行扩容次数只有 19 次，这就是全部。</p>
+<p>三点工程结论：</p>
+<ul>
+<li><strong>扩容的代价取决于「元素少的时候扩容得频繁」还是「元素多的时候才扩容」。</strong> 按 2 倍增长意味着早期扩容很频繁但很便宜，后期扩容很贵但很少，两者正好抵消。</li>
+<li><strong>装载因子是时间与空间的旋钮。</strong> 调低它链更短、更快、更费内存；调高它省内存但变慢。</li>
+<li><strong>扩容无法修复坏散列函数。</strong> 前面那 4096 个键扩容了 3 次，被占用的桶数依然是 8 个。</li>
+</ul>
+<h2 id="六、equals-与-hashCode-的契约"><a href="#六、equals-与-hashCode-的契约" class="headerlink" title="六、equals 与 hashCode 的契约"></a>六、equals 与 hashCode 的契约</h2><p>到这里还有一个前提没被验证：<strong>散列值必须与相等语义一致。</strong></p>
+<p>契约只有一条：<strong>如果两个对象相等，它们的散列值必须相同。</strong> 反过来说不成立——散列值相同不代表相等。</p>
+<h3 id="违反契约：只写-equals-不写-hashCode"><a href="#违反契约：只写-equals-不写-hashCode" class="headerlink" title="违反契约：只写 equals 不写 hashCode"></a>违反契约：只写 equals 不写 hashCode</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** 只覆盖 equals、遗漏 hashCode 的键 */</span></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">class</span> <span class="title class_">BadKey</span> &#123;</span><br><span class="line">    <span class="keyword">final</span> <span class="type">int</span> id;</span><br><span class="line"></span><br><span class="line">    BadKey(<span class="type">int</span> id) &#123;</span><br><span class="line">        <span class="built_in">this</span>.id = id;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="type">boolean</span> <span class="title function_">equals</span><span class="params">(Object o)</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> o <span class="keyword">instanceof</span> BadKey b &amp;&amp; b.id == id;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 故意不覆盖 hashCode，于是走 Object 的身份散列</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">只覆盖 equals 的键：</span><br><span class="line">  b1.equals(b2)            = true</span><br><span class="line">  b1.hashCode() == b2.hashCode() = false</span><br><span class="line">  用 b1 自己取回        = 值</span><br><span class="line">  用相等的 b2 取回      = null</span><br><span class="line">  表里实际条目数        = 1</span><br></pre></td></tr></table></figure>
+
+<p><code>b1.equals(b2)</code> 是 <code>true</code>，两个对象逻辑上是同一个键，但散列值不同，于是 <code>get(b2)</code> 去了另一个桶，什么也找不到。把 <code>hashCode</code> 一起写上，结果立刻正确：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">equals 与 hashCode 成对覆盖后：</span><br><span class="line">  用相等的 GoodKey(7) 取回 = 值</span><br><span class="line">  表里实际条目数           = 1</span><br></pre></td></tr></table></figure>
+
+<p>有一点值得单独说明——<strong>散列值相同的不同键是完全正常的</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">不同字符串可能共享散列值：</span><br><span class="line">  &quot;Aa&quot;.hashCode() = 2112，&quot;BB&quot;.hashCode() = 2112，相等？ = true</span><br><span class="line">  &quot;Aa&quot;.equals(&quot;BB&quot;) = false，因此它们落进同一个桶但仍是两个不同的键</span><br></pre></td></tr></table></figure>
+
+<p><code>&quot;Aa&quot;</code> 和 <code>&quot;BB&quot;</code> 的散列值都是 2112，它们落进同一个桶，但 <code>equals</code> 判定它们不相等，所以是两条并存于同一链上的条目。这不是 bug，而是哈希表的正常工作方式：<strong>散列负责快速定位，equals 负责最终判决。</strong></p>
+<h3 id="违反契约：让参与散列的字段可变"><a href="#违反契约：让参与散列的字段可变" class="headerlink" title="违反契约：让参与散列的字段可变"></a>违反契约：让参与散列的字段可变</h3><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/** 参与散列的字段是可变的 */</span></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">class</span> <span class="title class_">Point</span> &#123;</span><br><span class="line">    <span class="type">int</span> x;</span><br><span class="line">    <span class="type">int</span> y;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// equals 比较 (x, y)，hashCode 由 (x, y) 算出</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">把可变对象放进集合之后修改它：</span><br><span class="line">  修改前 contains((1, 2)) = true</span><br><span class="line">  修改后 contains((1, 2)) = false</span><br><span class="line">  修改后 contains(被改的那个对象) = false</span><br><span class="line">  集合里仍然写着 [(100, 2)]，size = 1，但已经取不出来了</span><br></pre></td></tr></table></figure>
+
+<p>对象在加入集合之后字段被改，散列值随之变化，但它在表里的位置<strong>早就固定了</strong>。结果就是：集合里明明有一条 <code>(100, 2)</code>，<code>size</code> 也还是 1，却既不能用相等的对象查到，也不能用它自己查到。集合不做任何报错，这个条目变成了一个不可达的幽灵。</p>
+<p><strong>结论是把参与散列的字段设为不可变。</strong> 这也是为什么 <code>HashMap</code> 的键在实践中几乎都用 <code>String</code>、<code>Integer</code> 这类不可变类型——<code>String</code> 内部还缓存了散列值，让重复计算变成一次读取。</p>
+<h2 id="七、小结"><a href="#七、小结" class="headerlink" title="七、小结"></a>七、小结</h2><table>
+<thead>
+<tr>
+<th>环节</th>
+<th>正确做法</th>
+<th>出错时的实测后果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>散列函数</td>
+<td>幂等、均匀，且不与表长共享因子</td>
+<td>直接取模：4096 个键全进 1 个桶</td>
+</tr>
+<tr>
+<td>冲突处理</td>
+<td>链地址法或开放寻址，配合 equals</td>
+<td>平均每次查询走 256.50 个节点</td>
+</tr>
+<tr>
+<td>装载因子</td>
+<td>超过阈值就扩容</td>
+<td>链变长；但扩容修不了坏散列函数</td>
+</tr>
+<tr>
+<td>equals&#x2F;hashCode</td>
+<td>相等则散列值必须相同</td>
+<td>相等的键查不到，返回 <code>null</code></td>
+</tr>
+<tr>
+<td>键的可变性</td>
+<td>参与散列的字段不可变</td>
+<td>条目留在表里但永久不可达</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>落桶位置</td>
+<td>由散列值决定，不由 equals 决定</td>
+<td>只写 equals 时 <code>get</code> 返回 <code>null</code></td>
+</tr>
+<tr>
+<td>散列碰撞</td>
+<td>不同键可以共享散列值，属正常现象</td>
+<td><code>&quot;Aa&quot;</code> 与 <code>&quot;BB&quot;</code> 都是 2112</td>
+</tr>
+<tr>
+<td>扩容代价</td>
+<td>累计搬迁次数小于 N，均摊后小于 2</td>
+<td>三个规模实测 1.230 &#x2F; 1.966 &#x2F; 1.573</td>
+</tr>
+<tr>
+<td>散列质量</td>
+<td>决定了哈希表是 O(1) 还是 O(N)</td>
+<td>坏函数下平均 256.50 次比较</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong>哈希表的 O(1) 是「散列均匀」这个前提换来的，不是表结构本身给的。</strong> 换成有规律的键，O(1) 立刻退回 O(N)，而扩容救不回来。</li>
+<li><strong>equals 与 hashCode 必须成对覆盖，并且语义要一致。</strong> 只写一半的系统不会报错，只会在某些查询上悄悄返回 <code>null</code>——这类缺陷排查成本极高。</li>
+<li><strong>让参与散列的字段不可变。</strong> 可变键会造成「条目还在、但永远取不出来」的状态，这是哈希表里最难定位的一类问题。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0110/">https://hespethorn.github.io/posts/c61b0110/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%93%88%E5%B8%8C%E8%A1%A8/">哈希表</a><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/%E6%95%A3%E5%88%97%E5%87%BD%E6%95%B0/">散列函数</a><a class="post-meta__tags" href="/tags/%E8%A3%85%E8%BD%BD%E5%9B%A0%E5%AD%90/">装载因子</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
   const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
   let intervalId;
 
@@ -396,7 +447,7 @@ function updateLoveTime() {
 // 初始调用
 updateLoveTime();
 // 每秒更新一次
-setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="并查集与排序（归并、快排、堆排）">并查集与排序（归并、快排、堆排）</a><time datetime="2024-10-27T16:00:00.000Z" title="Created 2024-10-28 00:00:00">2024-10-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="堆与优先队列（二叉堆）">堆与优先队列（二叉堆）</a><time datetime="2024-10-20T16:00:00.000Z" title="Created 2024-10-21 00:00:00">2024-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="哈希表：散列函数、冲突解决与扩容">哈希表：散列函数、冲突解决与扩容</a><time datetime="2024-10-16T16:00:00.000Z" title="Created 2024-10-17 00:00:00">2024-10-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="链表（单/双）与哨兵">链表（单/双）与哨兵</a><time datetime="2024-10-06T16:00:00.000Z" title="Created 2024-10-07 00:00:00">2024-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="树：BST、平衡树（AVL/红黑简介）与 B 树">树：BST、平衡树（AVL/红黑简介）与 B 树</a><time datetime="2024-10-13T16:00:00.000Z" title="Created 2024-10-14 00:00:00">2024-10-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="数据结构导论：从数组到抽象数据类型（ADT）">数据结构导论：从数组到抽象数据类型（ADT）</a><time datetime="2024-09-29T16:00:00.000Z" title="Created 2024-09-30 00:00:00">2024-09-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="数组与动态数组（ArrayList）及均摊分析">数组与动态数组（ArrayList）及均摊分析</a><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="算法复杂度实战与收尾">算法复杂度实战与收尾</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="图：表示、DFS、BFS 与 Dijkstra">图：表示、DFS、BFS 与 Dijkstra</a><time datetime="2024-10-23T16:00:00.000Z" title="Created 2024-10-24 00:00:00">2024-10-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="栈与队列：LIFO 与 FIFO 的两种世界观">栈与队列：LIFO 与 FIFO 的两种世界观</a><time datetime="2024-10-09T16:00:00.000Z" title="Created 2024-10-10 00:00:00">2024-10-10</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-drogon-pr2598/" title="给 Drogon 提第一个 PR：从一行 curl 到 255 行合并">给 Drogon 提第一个 PR：从一行 curl 到 255 行合并</a><time datetime="2026-09-28T16:00:00.000Z" title="Created 2026-09-29 00:00:00">2026-09-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0118/" title="比较排序的下界">比较排序的下界</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="并查集：加权合并与路径压缩">并查集：加权合并与路径压缩</a><time datetime="2025-02-10T16:00:00.000Z" title="Created 2025-02-11 00:00:00">2025-02-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="抽象数据类型与二叉搜索树">抽象数据类型与二叉搜索树</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="单链表封装与哨兵节点">单链表封装与哨兵节点</a><time datetime="2025-01-27T16:00:00.000Z" title="Created 2025-01-28 00:00:00">2025-01-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="动态数组与均摊复杂度">动态数组与均摊复杂度</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0111/" title="二叉堆与优先队列">二叉堆与优先队列</a><time datetime="2025-02-24T16:00:00.000Z" title="Created 2025-02-25 00:00:00">2025-02-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="哈希表：函数、冲突与装载因子">哈希表：函数、冲突与装载因子</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0120/" title="霍夫曼编码与计算复杂性">霍夫曼编码与计算复杂性</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0116/" title="基础排序：选择、插入与归并">基础排序：选择、插入与归并</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0119/" title="基数排序：LSD 与 MSD">基数排序：LSD 与 MSD</a><time datetime="2025-03-24T16:00:00.000Z" title="Created 2025-03-25 00:00:00">2025-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="渐进分析：大 O、大 Ω 与大 Θ">渐进分析：大 O、大 Ω 与大 Θ</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0117/" title="快速排序与三路切分">快速排序与三路切分</a><time datetime="2025-03-17T16:00:00.000Z" title="Created 2025-03-18 00:00:00">2025-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0115/" title="前缀树与自动补全">前缀树与自动补全</a><time datetime="2025-03-10T16:00:00.000Z" title="Created 2025-03-11 00:00:00">2025-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0112/" title="图的表示与深度优先、广度优先遍历">图的表示与深度优先、广度优先遍历</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="引用语义、递归与裸链表">引用语义、递归与裸链表</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="子类型多态与比较器">子类型多态与比较器</a><time datetime="2025-02-03T16:00:00.000Z" title="Created 2025-02-04 00:00:00">2025-02-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0113/" title="最短路径与 Dijkstra">最短路径与 Dijkstra</a><time datetime="2025-03-03T16:00:00.000Z" title="Created 2025-03-04 00:00:00">2025-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0114/" title="最小生成树：Kruskal 与 Prim">最小生成树：Kruskal 与 Prim</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="B 树与左倾红黑树">B 树与左倾红黑树</a><time datetime="2025-02-17T16:00:00.000Z" title="Created 2025-02-18 00:00:00">2025-02-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="Java 的编译运行机制与静态类型">Java 的编译运行机制与静态类型</a><time datetime="2025-01-20T16:00:00.000Z" title="Created 2025-01-21 00:00:00">2025-01-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
   const showKatex = () => {
     document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
   }

@@ -1,0 +1,672 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>ACID 与 BASE：两种一致性契约 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="先看三个真实场面：  转账扣了钱但没到账，用户投诉——排查发现是「扣款成功、入账失败」，中间那一步没人负责回滚； 「秒杀超卖」在单库上从不发生，一拆成三个库就冒出来了； 同一个商品页面，用户刷新两次看到两个价格，过几秒又统一了——谁都没错，只是「读到了一个还没同步完的中间态」。  这三件事的共同点：它们都不是「代码写错了」，而是「一致性的契约没签清楚」。同一份数据在几个地方各存了一份，那么「写完之">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ACID 与 BASE：两种一致性契约">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-acid-base/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="先看三个真实场面：  转账扣了钱但没到账，用户投诉——排查发现是「扣款成功、入账失败」，中间那一步没人负责回滚； 「秒杀超卖」在单库上从不发生，一拆成三个库就冒出来了； 同一个商品页面，用户刷新两次看到两个价格，过几秒又统一了——谁都没错，只是「读到了一个还没同步完的中间态」。  这三件事的共同点：它们都不是「代码写错了」，而是「一致性的契约没签清楚」。同一份数据在几个地方各存了一份，那么「写完之">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-10-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.972Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="分布式">
+<meta property="article:tag" content="数据库">
+<meta property="article:tag" content="事务">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "ACID 与 BASE：两种一致性契约",
+  "url": "https://hespethorn.github.io/posts/princ-acid-base/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-10-08T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.972Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-acid-base/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'ACID 与 BASE：两种一致性契约',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">ACID 与 BASE：两种一致性契约</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">ACID 与 BASE：两种一致性契约</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>13mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>先看三个真实场面：</p>
+<ul>
+<li>转账扣了钱但没到账，用户投诉——排查发现是「扣款成功、入账失败」，中间那一步没人负责回滚；</li>
+<li>「秒杀超卖」在单库上从不发生，一拆成三个库就冒出来了；</li>
+<li>同一个商品页面，用户刷新两次看到两个价格，过几秒又统一了——谁都没错，只是「读到了一个还没同步完的中间态」。</li>
+</ul>
+<p>这三件事的共同点：<strong>它们都不是「代码写错了」，而是「一致性的契约没签清楚」</strong>。同一份数据在几个地方各存了一份，那么「写完之后别人什么时候能看到」这件事，必须有人负责——而 ACID 和 BASE，就是两种完全不同签法的契约。</p>
+<p>本文不从「ACID 是哪五个单词」讲起——那部分背一下就行。这里讲的是这两种契约各自<strong>承诺了什么、为此付出了什么代价</strong>，以及在真实系统里它们各自被用在哪个位置。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p><strong>ACID 这个词是 1983 年造出来的。</strong> 1983 年，德国学者 <strong>Theo Härder</strong> 和 <strong>Andreas Reuter</strong> 在论文《Principles of Transaction-Oriented Database Recovery》里，把当时已经积累起来的一堆「事务应该满足什么」的共识，归纳成了一个缩写。但真正把事务做成工业标准的，是 IBM 的 <strong>Jim Gray</strong>——他在 1970 到 1980 年代关于原子性、隔离级别、恢复系统的一系列工作，构成了现代数据库事务的理论地基（1998 年图灵奖）。</p>
+<p>四个字母各指一件事：</p>
+<ul>
+<li><strong>A（Atomicity，原子性）</strong>：一组操作要么全做，要么全不做；</li>
+<li><strong>C（Consistency，一致性）</strong>：事务前后，数据库的约束（主键、外键、CHECK）都成立；</li>
+<li><strong>I（Isolation，隔离性）</strong>：并发事务之间互相看不见对方未提交的中间态；</li>
+<li><strong>D（Durability，持久性）</strong>：提交之后，即使断电，数据也不能丢。</li>
+</ul>
+<p><strong>BASE 这个词则是 2008 年造的，晚 25 年。</strong> 2008 年，eBay 的架构师 <strong>Dan Pritchett</strong> 在《ACM Queue》上发表《BASE: An Acid Alternative》，提出在互联网规模下，用另一种契约去换可用性：</p>
+<ul>
+<li><strong>BA（Basically Available，基本可用）</strong>：允许部分功能降级、响应变慢，但不整体不可用；</li>
+<li><strong>S（Soft state，软状态）</strong>：允许系统存在中间态，中间态对外可见；</li>
+<li><strong>E（Eventually consistent，最终一致）</strong>：不再要求立刻一致，只要求「停止写入后，最终收敛到一致」。</li>
+</ul>
+<p>这个时间差本身就是一段历史：<strong>ACID 诞生在单机数据库时代，BASE 诞生在分布式系统时代</strong>。前者要解决的是「一台机器上，多个事务怎么不互相踩」；后者要解决的是「多台机器上，一次写怎么在有网络分区、机器会挂的情况下活下来」。问题变了，答案自然跟着变。</p>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为**「一致性」不是免费的，它和「可用性」和「延迟」是同一笔预算里的三个科目**。</p>
+<p>先说没有契约的后果：</p>
+<ul>
+<li><strong>没有 A</strong>：扣款和入账之间程序崩了，钱就悬在中间，没人知道该不该补。这是最原始也最常见的问题。</li>
+<li><strong>没有 I</strong>：两个事务同时读同一个余额、各自扣一次，最后少了钱——这就是经典的丢失更新。</li>
+<li><strong>没有 D</strong>：提交返回成功，用户以为落定了，重启之后数据没了。<strong>这是最伤信任的一种失败</strong>，因为「成功」这个信号撒了谎。</li>
+<li><strong>没有 BASE</strong>：想跨三个机房做一次严格事务，那就必须让所有节点在写的时候达成一致——任何一个节点慢或不可达，整次写都得等或失败。这就是 CAP 里「牺牲可用性换一致性」的那条路。</li>
+</ul>
+<p>所以这两种契约服务的其实是<strong>两个不同的目标函数</strong>：</p>
+<ul>
+<li><strong>ACID 优化的是「正确性」</strong>：宁可拒绝这次请求，也不能让数据进入一个不合法或不可恢复的状态。它适合钱、库存、订单这类<strong>错了要命</strong>的数据。</li>
+<li><strong>BASE 优化的是「可用性」</strong>：宁可暂时看到旧值，也要让请求能被受理。它适合点赞数、浏览计数、个性化推荐、CDN 内容这类<strong>晚几秒正确没关系</strong>的数据。</li>
+</ul>
+<p><strong>本质一句话：ACID 和 BASE 不是「好方案」和「差方案」，而是两份取舍不同的合同——ACID 承诺「任何时刻读到的都是唯一正确的值，代价是可能拒绝服务」；BASE 承诺「服务永远接受请求，代价是读到的答案在一段时间内没有唯一值」。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看 ACID 的四条各自在防什么。它们不是四个并列的口号，而是四道针对不同故障的闸门：</p>
+<pre><code class="highlight mermaid">flowchart TD
+    T[&quot;一次事务：A 转账给 B&quot;] --&gt; A[&quot;A 原子性&lt;br/&gt;防：执行到一半崩溃&quot;]
+    T --&gt; C[&quot;C 一致性&lt;br/&gt;防：约束被破坏（余额为负）&quot;]
+    T --&gt; I[&quot;I 隔离性&lt;br/&gt;防：并发事务互相读到中间态&quot;]
+    T --&gt; D[&quot;D 持久性&lt;br/&gt;防：提交后断电丢数据&quot;]
+    A --&gt; R1[&quot;实现：回滚日志 / undo&quot;]
+    C --&gt; R2[&quot;实现：约束 + 触发器 + 外键&quot;]
+    I --&gt; R3[&quot;实现：锁 / MVCC 快照&quot;]
+    D --&gt; R4[&quot;实现：WAL + fsync&quot;]</code></pre>
+
+<p>再看这两种契约在「一致性强度」这条轴上的位置。它们不是二选一，而是一条连续谱上的两端：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    S[&quot;强一致&quot;] --&gt; M[&quot;线性一致&lt;br/&gt;（读总能读到最新写）&quot;]
+    M --&gt; N[&quot;顺序一致&quot;]
+    N --&gt; O[&quot;可串行化事务&lt;br/&gt;★ ACID 的落点&quot;]
+    O --&gt; P[&quot;快照隔离&quot;]
+    P --&gt; Q[&quot;读己之写&quot;]
+    Q --&gt; R[&quot;最终一致&lt;br/&gt;★ BASE 的落点&quot;]
+    R --&gt; W[&quot;弱一致&lt;br/&gt;（不保证收敛）&quot;]
+    style O fill:#ffe6e6,stroke:#cc0000
+    style R fill:#e6f0ff,stroke:#0055cc</code></pre>
+
+<p>两张图合起来：<strong>ACID 把赌注押在「一致性」上，BASE 把赌注押在「可用性」上。位置选在哪，取决于这份数据「错了的代价」有多大。</strong></p>
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. ACID 的四条，用 sqlite3 逐条实跑（本机实跑）</strong></p>
+<p>先说明环境：<strong>sqlite 3.53.1，WAL 日志模式</strong>。它不是分布式系统，但它是把 ACID 四条都实现得很干净的最小样本。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[0] 环境</span><br><span class="line">  sqlite3 版本 : 3.53.1</span><br><span class="line">  日志模式     : wal</span><br><span class="line">  初始状态     : 账户1 = 1000, 账户2 = 1000, 总额 = 2000</span><br></pre></td></tr></table></figure>
+
+<p><strong>A —— 原子性：中间态必须能被完整抹掉</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[A] Atomicity（原子性）：要么全做，要么全不做</span><br><span class="line">  事务内：账户1 扣 800 后，事务内可见总额 = 1200（已破坏 2000）</span><br><span class="line">  ROLLBACK 后：总额 = 2000  → 中间态被完整抹掉</span><br><span class="line">  违反约束（CHECK constraint failed: balance &gt;= 0）→ 整个事务回滚</span><br><span class="line">  最终总额 = 2000  ★ 守恒，中间态没有泄漏</span><br></pre></td></tr></table></figure>
+
+<p>第二段才是重点：一次违背 <code>CHECK</code> 的更新让<strong>整个事务</strong>回滚，总额停在 2000。<strong>原子性的价值不在于「能回滚」，而在于「回滚的粒度是整个事务，而不是一条语句」</strong>——这才是转账能安全的原因。</p>
+<p><strong>C —— 一致性：约束由数据库把守，不靠应用自觉</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[C] Consistency（一致性）：约束在任何时刻都成立</span><br><span class="line">  尝试更新不存在的账户 3：affected = 0</span><br><span class="line">  INSERT 负余额被 CHECK 拒绝：CHECK constraint failed: balance &gt;= 0</span><br><span class="line">  负余额行数 = 0  ★ 约束由数据库把守，不靠应用自觉</span><br></pre></td></tr></table></figure>
+
+<p>注意 <code>affected = 0</code>：更新一个不存在的账户<strong>不会报错，只会影响 0 行</strong>。这是很多人踩过的坑——<strong>应用如果不检查影响行数，就会把「什么都没做」当成「做成功了」</strong>。一致性这一条里，最容易漏的从来不是数据库，是应用层没看返回值。</p>
+<p><strong>I —— 隔离性：读不到「别人改了但没提交」的值</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[I] Isolation（隔离性）：并发事务互相看不见未提交的中间态</span><br><span class="line">  已提交的余额            : 1000</span><br><span class="line">  写事务内改成的值(未提交) : 100</span><br><span class="line">  另一个连接此刻读到      : 1000（等待 1 ms）</span><br><span class="line">  ★ WAL 模式下 sqlite 允许「一写多读」：读事务不阻塞写事务，</span><br><span class="line">    但它看到的仍是写事务开始前的已提交快照——这就是隔离（快照读）。</span><br></pre></td></tr></table></figure>
+
+<p>这里有一个细节值得展开：<strong>读事务没有阻塞，它读到了 1000（旧值），而不是 100（未提交的新值）</strong>。这体现的是「快照隔离」——读者拿到的是一份<strong>一致的旧快照</strong>，而不是最新值。所以严格来说，隔离性保护的不是「读到最新的正确值」，而是「读到一个<strong>不掺假的</strong>值」。</p>
+<p><strong>D —— 持久性：COMMIT 之后数据活在日志里</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[D] Durability（持久性）：COMMIT 返回后，数据必须活过崩溃</span><br><span class="line">  COMMIT 后主库文件 4096 字节，WAL 文件 16512 字节</span><br><span class="line">  ★ 先写 WAL（顺序追加）再返回成功；主库文件甚至还没更新——</span><br><span class="line">    这就是「先记账、后落库」，崩溃后靠 WAL 重放恢复。</span><br></pre></td></tr></table></figure>
+
+<p><code>COMMIT</code> 返回之后，<strong>数据其实还在 WAL 里，主库文件还是 4096 字节的原始大小</strong>。这个观察解释了为什么「持久性」和「性能」永远在打架：如果每次提交都去改主库文件并 <code>fsync</code>，代价是<strong>随机写 + 一次磁盘同步</strong>，慢得多；而追加 WAL 是<strong>顺序写</strong>，快得多。<strong>这就是「写前日志 WAL」那条母题在事务里的落点</strong>——把随机的、分散的写，换成顺序的、集中的写。</p>
+<p><strong>2. 同样一次转账，放到 BASE 的 3 个副本上（本机实跑）</strong></p>
+<p>现在把「转账」搬到一个最终一致的模型上，看同样四条是怎么被逐条放宽的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[BASE 对照] 把「转账」放到 3 个最终一致的副本上：ACID 的四条被逐条放宽</span><br><span class="line">  t0 在副本0 扣款 800 后，各副本余额 = [200, 1000, 1000]</span><br><span class="line">      → 同一逻辑值，三个副本读到三个答案：这是 BASE 的「软状态」</span><br><span class="line">  反熵推进后余额 = [1000, 1000, 1000]</span><br><span class="line">  第 8 轮收敛  → 「最终一致」</span><br></pre></td></tr></table></figure>
+
+<p>三个副本读到三个答案 <code>[200, 1000, 1000]</code>——<strong>这不是 bug，这是 BASE 明确写进合同的条款</strong>。然后在反熵（anti-entropy）推进下，第 8 轮收敛回 <code>[1000, 1000, 1000]</code>。</p>
+<p>把四条放宽一一对上：</p>
+<table>
+<thead>
+<tr>
+<th>ACID 的条款</th>
+<th>BASE 里的对应放宽</th>
+<th>放掉的代价</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>原子性：全做或全不做</td>
+<td><strong>局部提交</strong>：先扣一边，另一边稍后补偿</td>
+<td>中间态可能在系统里存在一段时间</td>
+</tr>
+<tr>
+<td>一致性：约束时刻成立</td>
+<td><strong>软状态</strong>：允许中间态对外可见</td>
+<td>读到「不合逻辑」的值是允许的</td>
+</tr>
+<tr>
+<td>隔离性：并发互不可见</td>
+<td><strong>无全局隔离</strong>：读到的可能是旧值</td>
+<td>需要业务能容忍陈旧读</td>
+</tr>
+<tr>
+<td>持久性：提交即落定</td>
+<td><strong>最终持久</strong>：靠反熵 &#x2F; 补偿达成</td>
+<td>收敛时间无硬上限（只有工程上限）</td>
+</tr>
+</tbody></table>
+<p><strong>这里最需要注意的是「补偿」这个词</strong>：BASE 不是「不保证正确」，而是把保证从「数据库事务」搬到了<strong>业务逻辑</strong>里。转账在 ACID 里靠 <code>ROLLBACK</code> 撤销，在 BASE 里得靠<strong>对账 + 冲正</strong>去修。<strong>工作量没有消失，只是从数据库挪到了应用层——而且从「自动」变成了「你要自己写」。</strong></p>
+<p><strong>3. 那实际系统里到底该选哪个</strong></p>
+<p>答案不是二选一，而是<strong>按数据类型分线</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">  数据类型              契约            典型实现              为什么</span><br><span class="line">--------------------------------------------------------------------------------</span><br><span class="line">  钱 / 库存 / 订单       ACID            单库事务 + 唯一索引    错了要赔</span><br><span class="line">  用户账号 / 权限        ACID            单库事务              安全边界</span><br><span class="line">  商品详情 / 配置        BASE            缓存 + 失效            晚几秒无所谓</span><br><span class="line">  点赞 / 浏览 / 计数      BASE            本地计数 + 异步归并    近似值可接受</span><br><span class="line">  搜索索引 / 推荐        BASE            CDC / 消息队列         追求吞吐</span><br><span class="line">  跨机房主数据           ACID(局部) + 对账 同城强一致 + 异地异步  分区时保可用</span><br></pre></td></tr></table></figure>
+
+<p>这张表的读法是：<strong>先问「这份数据错了会怎样」，再决定签哪份合同</strong>。而不是先选技术栈，再想办法圆回来。</p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>ACID 的「C」其实是应用的责任。</strong> 数据库能保证的只是一部分约束（主键、外键、CHECK）。「每个订单必须属于一个有效用户」「库存不能被两个订单同时占用」这类业务一致性，靠的是<strong>事务 + 正确的隔离级别 + 应用逻辑</strong>三者合力。把 C 全甩给数据库，是最常见的误解。</li>
+<li><strong>隔离级别不是「有&#x2F;无」，是四档。</strong> 从「读未提交」到「可串行化」，中间还有「读已提交」「可重复读」。<strong>级别越高，越安全，也越容易阻塞或产生冲突重试</strong>。选错级别（比如在电商扣库存时用了「读已提交」）会引进幻读和丢失更新。</li>
+<li><strong>BASE 不等于「随便不一致」。</strong> 它承诺的是<strong>最终</strong>一致，前提是「没有新的写入」。如果写入永不停歇、或者补偿逻辑有 bug，系统可能<strong>永远收敛不了</strong>——那就不是 BASE，是「不一致」。<strong>BASE 需要能度量收敛时间（lag），否则它只是一句口号。</strong></li>
+<li><strong>BASE 的代价被低估得最狠。</strong> ACID 的成本（锁、日志、同步）是<strong>在数据库里</strong>，会被压测暴露出来；BASE 的成本（对账、补偿、幂等、去重）是<strong>在业务代码里</strong>，要等到真出问题才暴露。<strong>所以「看起来更简单的方案」，往往是把复杂度藏到了更晚的地方。</strong></li>
+<li><strong>别把 CAP 和 ACID 混着谈。</strong> CAP 说的是<strong>网络分区时</strong>在一致性（C，指线性一致）和可用性（A）之间取舍；ACID 的 C 是<strong>事务约束</strong>，两者根本不是同一个 C。这是分布式领域最经典的术语陷阱。</li>
+<li><strong>同城强一致 + 异地最终一致，是当下最常见的折中。</strong> 它不是「ACID 派」或「BASE 派」，而是<strong>按距离分层</strong>：同一机房内做到强一致（延迟低、能接受同步开销），跨地域用异步复制收尾。<strong>一致性强度不必全局统一，可以按故障域分段。</strong></li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>ACID</th>
+<th>BASE</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>一致性强度</td>
+<td>强（事务级唯一值）</td>
+<td>弱 → 最终收敛</td>
+</tr>
+<tr>
+<td>可用性</td>
+<td>分区时可能拒绝服务</td>
+<td>优先接受请求</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>高（锁 + 同步 + fsync）</td>
+<td>低（本地提交，异步传播）</td>
+</tr>
+<tr>
+<td>复杂度位置</td>
+<td>在数据库内部</td>
+<td>在业务代码里（对账 &#x2F; 补偿 &#x2F; 幂等）</td>
+</tr>
+<tr>
+<td>出错时谁负责</td>
+<td>数据库回滚</td>
+<td>业务补偿逻辑</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>钱、库存、订单、权限</td>
+<td>计数、缓存、推荐、搜索索引</td>
+</tr>
+<tr>
+<td>代表实现</td>
+<td>单机 ACID 数据库 &#x2F; 分布式事务</td>
+<td>多副本 + 反熵 &#x2F; CDC &#x2F; 消息队列</td>
+</tr>
+<tr>
+<td>失败模式</td>
+<td>请求被拒（用户重试）</td>
+<td>读到旧值（业务容忍）</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>你要写的一段逻辑</th>
+<th>选 ACID 会怎样</th>
+<th>选 BASE 会怎样</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>「扣库存 + 建订单」</td>
+<td>一个事务，要么都成要么都不成</td>
+<td>先扣后建，失败了对账冲正</td>
+</tr>
+<tr>
+<td>「加一次阅读量」</td>
+<td>每次都要写库，热点竞争</td>
+<td>本地计数 + 定时归并，快得多</td>
+</tr>
+<tr>
+<td>「改密码」</td>
+<td>事务提交后才返回成功</td>
+<td>不适用（安全边界必须强一致）</td>
+</tr>
+<tr>
+<td>「同步用户资料到搜索」</td>
+<td>不现实（跨系统无法事务）</td>
+<td>CDC &#x2F; 消息队列，最终一致</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：ACID 和 BASE 常被讲成「传统 vs 现代」「优 vs 劣」，这个框架从一开始就错了。它们是<strong>两份取舍不同的合同</strong>：ACID 拿可用性和延迟，换「任何时刻都只有一个正确答案」；BASE 拿「暂时没有唯一答案」，换「请求永远被受理」。真正要练的能力不是背四个字母，而是<strong>在看到一份数据时，先问一句「它错了会怎样」</strong>——答案决定了你该签哪份合同。至于「BASE 更简单」这个错觉，只要记住一句话就够了：<strong>事务的回滚是数据库替你写的，BASE 的补偿得你自己写。</strong></p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-wal/">写前日志 WAL：先记账、后落库</a></li>
+<li><a href="/posts/princ-cap/">CAP 定理：分布式的取舍三角</a></li>
+<li><a href="/posts/princ-eventual-consistency/">最终一致性：不一致是常态，收敛才是目标</a></li>
+<li><a href="/posts/princ-idempotency/">幂等性：让重试变得安全</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-acid-base/">https://hespethorn.github.io/posts/princ-acid-base/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/">分布式</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E5%BA%93/">数据库</a><a class="post-meta__tags" href="/tags/%E4%BA%8B%E5%8A%A1/">事务</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

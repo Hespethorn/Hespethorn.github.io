@@ -1,0 +1,683 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>缓存一致性：多核与多副本的同一个问题 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="先看三个真实场面：  一段多线程代码，把两个线程各改一个计数器，逻辑上互不相干，实测却比单线程还慢——把两个变量之间塞几个没用到的字节进去，反而快了好几倍； volatile 明明只是为了禁止编译器优化，为什么在多核上还能保证可见性； 一个热点商品缓存，两个业务共用了同一个 key，一个业务高频刷新，另一个业务的命中率莫名其妙掉到底。  第三个场面看起来是「Redis 用错了」，第一个看起来是「C">
+<meta property="og:type" content="article">
+<meta property="og:title" content="缓存一致性：多核与多副本的同一个问题">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-cache-coherence/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="先看三个真实场面：  一段多线程代码，把两个线程各改一个计数器，逻辑上互不相干，实测却比单线程还慢——把两个变量之间塞几个没用到的字节进去，反而快了好几倍； volatile 明明只是为了禁止编译器优化，为什么在多核上还能保证可见性； 一个热点商品缓存，两个业务共用了同一个 key，一个业务高频刷新，另一个业务的命中率莫名其妙掉到底。  第三个场面看起来是「Redis 用错了」，第一个看起来是「C">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-10-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.972Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="缓存">
+<meta property="article:tag" content="并发">
+<meta property="article:tag" content="系统">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "缓存一致性：多核与多副本的同一个问题",
+  "url": "https://hespethorn.github.io/posts/princ-cache-coherence/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-10-08T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.972Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-cache-coherence/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '缓存一致性：多核与多副本的同一个问题',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">缓存一致性：多核与多副本的同一个问题</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">缓存一致性：多核与多副本的同一个问题</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.8k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>12mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>先看三个真实场面：</p>
+<ul>
+<li>一段多线程代码，把两个线程各改一个计数器，逻辑上互不相干，实测却比单线程还慢——把两个变量之间塞几个没用到的字节进去，反而快了好几倍；</li>
+<li><code>volatile</code> 明明只是为了禁止编译器优化，为什么在多核上还能保证可见性；</li>
+<li>一个热点商品缓存，两个业务共用了同一个 key，一个业务高频刷新，另一个业务的命中率莫名其妙掉到底。</li>
+</ul>
+<p>第三个场面看起来是「Redis 用错了」，第一个看起来是「CPU 微架构」，中间那个看起来是「Java 内存模型」。但这三件事是<strong>同一个问题</strong>：<strong>同一份数据存在多份拷贝，写了一份之后，谁负责让其它拷贝知道？</strong></p>
+<p>本文讲的这条原则就是回答这个问题的——它不叫「Redis 缓存一致性」，它的本名是 <strong>cache coherence（缓存一致性）</strong>，是几十年前多核处理器为了共享内存而发明的一整套协议。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>要让多个核共享内存，缓存就必须解决一个矛盾：<strong>缓存的意义是「让每个核都有一份副本，各自快速访问」，但副本一多，「谁的是最新的」就成了问题</strong>。</p>
+<p>这个问题在 1960 年代末就已经出现（<strong>1967 年 Maurice Wilkes</strong> 提出 cache 的概念时，就在论文里讨论了多处理器的缓存问题），但真正成为工程焦点是 <strong>1980 年代初的多处理器时代</strong>：</p>
+<ul>
+<li><strong>1983 年</strong>，<strong>James R. Goodman</strong> 发表《Using Cache Memory to Reduce Processor-Memory Traffic》，提出 <strong>write-once</strong> 协议——第一次系统地用「总线监听（snooping）+ 让其它副本失效」来解决多核缓存的一致性；</li>
+<li><strong>1984 年</strong>，<strong>Mark Papamarcos 和 Janak Patel</strong> 提出 <strong>Illinois 协议</strong>，把缓存行分成四个状态，这就是后来被广泛实现的 <strong>MESI</strong> 的雏形；</li>
+<li>之后的几十年里，MESI 及它的各种变体（<strong>MOESI</strong>、<strong>MESIF</strong>，分别被 AMD 和 Intel 采用）成了几乎所有多核 CPU 的一致性方案。</li>
+</ul>
+<p>四个状态的名字就是它们要表达的意思：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>含义</th>
+<th>内存里的是不是最新</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>M</strong>（Modified，修改）</td>
+<td>本核改过，和内存不一致，只有本核有</td>
+<td>否，内存是旧的</td>
+</tr>
+<tr>
+<td><strong>E</strong>（Exclusive，独占）</td>
+<td>只有本核有，且和内存一致</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>S</strong>（Shared，共享）</td>
+<td>多个核都有，都和内存一致</td>
+<td>是</td>
+</tr>
+<tr>
+<td><strong>I</strong>（Invalid，无效）</td>
+<td>本地副本作废，不能用</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<p><strong>注意这里有个非常关键的设计选择：MESI 走的是「写失效（write-invalidate）」，不是「写更新（write-update）」。</strong> 一个核要写某行，做法是<strong>广播一条 Invalidate，把别人的副本直接作废</strong>，而不是把新值推给别人。这个选择决定了后面所有性能特征。</p>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为**「缓存」和「共享」这两个词放在一起，就自动产生了不一致**。</p>
+<p>先看没有一致性协议的后果：</p>
+<ul>
+<li><strong>读到脏数据</strong>：核 A 改了自己缓存里的 <code>x</code>，核 B 的缓存里还是旧 <code>x</code>，B 读到的值是错的。<strong>这不是「暂时旧一点」，是「永远错」</strong>——因为 A 永远不会主动告诉 B。</li>
+<li><strong>写丢失</strong>：两个核各自的缓存里都有 <code>cnt</code>，同时加一，各自写回内存——最后内存里的值是 1，而不是 2。<strong>两次加一的结果，比一次加一还少。</strong></li>
+<li><strong>编译器与 CPU 的重排</strong>：即使硬件做了一致性，编译器和 CPU 还可能把访存顺序重排，让「先写标志位再写数据」变成「先写数据再写标志位」——另一个核就可能看到「标志位已置位但数据还没写」的状态。</li>
+</ul>
+<p>更根本的动机是<strong>性能预算</strong>：CPU 访问寄存器是 1 个周期，访问 L1 是几到十几个周期，访问内存是上百个周期。<strong>如果每次读写都要锁总线、强制走内存，那么加缓存带来的收益会被一致性开销吃光。</strong> 所以一致性协议要解决的不是「要不要一致」，而是**「怎样用尽可能少的通信，维持足够的一致」**——这才有了 MESI 的四态，把「独占可写」「只读共享」「已改待写回」这些情况分开处理。</p>
+<p><strong>本质一句话：缓存一致性解决的是「同一份数据的多份拷贝，写发生后如何让其它拷贝失效或同步」——它不是缓存本身的属性，而是「多副本」这个结构必然要交的税。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看 MESI 的状态流转。重点观察一条：<strong>「写」的代价取决于当前状态，而不是写本身</strong>——这是伪共享问题的根源。</p>
+<pre><code class="highlight mermaid">flowchart TD
+    I[&quot;I 无效&quot;] --&gt;|&quot;本核读，其它核都没有&quot;| E[&quot;E 独占&quot;]
+    I --&gt;|&quot;本核读，其它核也有&quot;| S[&quot;S 共享&quot;]
+    I --&gt;|&quot;本核写&quot;| M[&quot;M 修改&quot;]
+    E --&gt;|&quot;本核写（无需通信）&quot;| M
+    E --&gt;|&quot;其它核读&quot;| S
+    S --&gt;|&quot;本核写：广播 Invalidate&lt;br/&gt;把其它副本置 I&quot;| M
+    M --&gt;|&quot;其它核读：先把脏行写回&lt;br/&gt;再共享&quot;| S
+    S --&gt;|&quot;其它核写：本副本置 I&quot;| I
+    M --&gt;|&quot;其它核写：本副本置 I&lt;br/&gt;（脏行写回）&quot;| I
+    style M fill:#ffe6e6,stroke:#cc0000
+    style E fill:#e6ffe6,stroke:#009900</code></pre>
+
+<p>再看「伪共享」为什么是「伪」的。两个核改的是<strong>完全不同的变量</strong>，逻辑上没有任何交互，但只要它们落在同一行 cache line（通常是 64 字节），就会互相踢副本：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    A[&quot;核0 反复改 counter0&quot;] --&gt; L[&quot;同一行 cache line&lt;br/&gt;counter0 | counter1 | ...&quot;]
+    B[&quot;核1 反复改 counter1&quot;] --&gt; L
+    L --&gt; C[&quot;核0 写 → 广播 Invalidate → 核1 的副本作废&quot;]
+    C --&gt; D[&quot;核1 再写 → 未命中 → 重新取整行 → 核0 的副本作废&quot;]
+    D --&gt; C
+    C --&gt; E[&quot;结果：两个核心全程在抢同一行&lt;br/&gt;真数据毫无关系&quot;]
+    F[&quot;解法：把两个变量填充到各自 cache line&lt;br/&gt;（padding / alignas）&quot;] --&gt; G[&quot;各写各的，零一致性流量&quot;]</code></pre>
+
+<p>两张图合起来说明：<strong>一致性的单位不是「变量」，是「cache line」</strong>。这一个粒度差异，就制造出了「伪共享」这个纯性能陷阱。</p>
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 先看真共享：同一变量的跨核读写（本机模拟）</strong></p>
+<p>先说清一件事：<strong>本机没有 gcc，也没法在 Python&#x2F;Node 里直接测 CPU 的 cache line 行为</strong>（Python 有 GIL，Node 无法控制内存布局）。所以我写了一个 <strong>MESI 状态机模拟器</strong>，逐条执行协议规则并统计一致性流量。它模拟的是协议逻辑，不是硬件实测——<strong>下面的数字是「协议会走多少步」的计数，不是纳秒级性能</strong>。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">场景 A：两个核访问【同一个】变量（真共享）</span><br><span class="line">    核0 R 行X         未命中 → 总线读，本核置 E</span><br><span class="line">    核1 R 行X         未命中 → 总线读，本核置 S</span><br><span class="line">    核0 W 行X         busRdX → 无效化 1 个副本，本核置 M  ★流量+1</span><br><span class="line">    核1 R 行X         未命中 → 总线读（含脏行写回），本核置 S</span><br><span class="line">    核1 W 行X         busRdX → 无效化 1 个副本，本核置 M  ★流量+1</span><br><span class="line">    → 命中 0 / 未命中 3 / 总线事务 5 / 无效化 2</span><br></pre></td></tr></table></figure>
+
+<p>两次读先建立 E 和 S，一次写把对方打回 I，再读又要重新取（还要等脏行写回）。<strong>这是「真共享」的代价：数据本来就有关，这个代价躲不掉</strong>——你要么用锁把它串行化，要么用无锁 + 正确的内存序保证可见性。</p>
+<p><strong>2. 再看伪共享：代码逻辑完全一样，只是变量地址不同（本机模拟）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">场景 B：两个核各改【自己的】变量，但两者同处一行 cache line</span><br><span class="line">    核0 W 行L         busRdX → 无效化 0 个副本，本核置 M  ★流量+1</span><br><span class="line">    核1 W 行L         busRdX → 无效化 1 个副本，本核置 M  ★流量+1</span><br><span class="line">    核0 W 行L         busRdX → 无效化 1 个副本，本核置 M  ★流量+1</span><br><span class="line">    ...（此后每一次写都重复这条）</span><br><span class="line">    → 命中 0 / 未命中 0 / 总线事务 12 / 无效化 11</span><br><span class="line"></span><br><span class="line">场景 C：把两个计数器各自填充到独立 cache line</span><br><span class="line">    核0 W 行L0        busRdX → 无效化 0 个副本，本核置 M  ★流量+1</span><br><span class="line">    核1 W 行L1        busRdX → 无效化 0 个副本，本核置 M  ★流量+1</span><br><span class="line">    核0 W 行L0        命中（已是 M），零流量</span><br><span class="line">    ...（此后全部命中）</span><br><span class="line">    → 命中 10 / 未命中 0 / 总线事务 2 / 无效化 0</span><br></pre></td></tr></table></figure>
+
+<p>对比结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">伪共享（紧挨） : 总线事务 12 次，无效化 11 次</span><br><span class="line">填充隔离后     : 总线事务  2 次，无效化  0 次</span><br><span class="line">★ 一致性流量相差 6 倍，变的只是两个变量的地址</span><br></pre></td></tr></table></figure>
+
+<p><strong>这就是那个著名陷阱的全貌</strong>：两个线程干着毫不相干的事，却因为内存布局挨在一起，全程在抢同一行 cache line。这不是理论推演——<code>java.util.concurrent</code> 里大量用了 <code>@Contended</code> 注解（把字段填充到独立 cache line），<code>Disruptor</code> 框架给每个 <code>Sequence</code> 加了好几十字节的 padding，都是同一个目的。</p>
+<p><strong>3. 放大到分布式缓存：名字换了，模式没换</strong></p>
+<p>前面说过，「缓存一致性」在 CPU 语境下指核间一致性（MESI）。但在业务里说「缓存一致性」，往往指<strong>缓存与数据库之间的一致性</strong>——那是另一条线（先更新 DB 还是先删缓存、延迟双删），本站有专文讲过，这里不重复。真正值得放在一起看的，是<strong>这两个尺度上的同构性</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>CPU 侧（多核）</th>
+<th>分布式侧（多副本）</th>
+<th>对应关系</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>cache line 失效广播</td>
+<td>缓存失效通知（Pub&#x2F;Sub 或删除消息）</td>
+<td>都是「让别人的副本作废」</td>
+</tr>
+<tr>
+<td>MESI 四态协议</td>
+<td>先更新 DB 后删缓存 &#x2F; 延迟双删</td>
+<td>都是一套「写后怎么办」的策略</td>
+</tr>
+<tr>
+<td>write-invalidate</td>
+<td>更新 DB → 删缓存 → 下次读回填</td>
+<td>写失效而非写更新</td>
+</tr>
+<tr>
+<td>write-update</td>
+<td>更新 DB → 同步刷缓存</td>
+<td>写更新，代价是写放大</td>
+</tr>
+<tr>
+<td>false sharing 伪共享</td>
+<td>多个业务挤在一个 key &#x2F; 一个大 key</td>
+<td>无关数据共用一份副本</td>
+</tr>
+<tr>
+<td>总线争用 &#x2F; 总线风暴</td>
+<td>热点 key 打到同一个分片</td>
+<td>多副本结构的共同瓶颈</td>
+</tr>
+</tbody></table>
+<p><strong>★ 同一个约束：只要同一份数据存在多份拷贝，写发生后就必须有人让其它拷贝失效或同步。</strong> 缓存一致性不是 CPU 的专利，它是「多副本」这个结构本身的税。</p>
+<p><strong>4. 工程上怎么用这条原则</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">  问题                          对策                      代价</span><br><span class="line">--------------------------------------------------------------------------------</span><br><span class="line">  多核抢同一行（伪共享）          padding / @Contended      内存膨胀</span><br><span class="line">  核间可见性                     volatile / 内存屏障 / atomic  编译器优化受限</span><br><span class="line">  高竞争计数器                  每核一份 + 定期归并        读到的值是近似</span><br><span class="line">  缓存与 DB 不一致               先更 DB 后删缓存 + 延迟双删  中间态窗口</span><br><span class="line">  热点 key 打爆分片              本地缓存 / 分片 / 预热      复杂度上升</span><br></pre></td></tr></table></figure>
+
+<p><strong>共同思路只有一条：不要试图消灭「多副本」，而是设计「写之后如何失效」的机制，并把失效的代价控制在可接受范围内。</strong></p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>「一致性」这个词严重超载。</strong> 至少有三层含义：CPU 核间一致性（本文）、缓存与数据库一致性（业务语境，见 Seckill 系列）、分布式副本一致性（见 CAP）。<strong>同一个词，三个完全不同的问题</strong>——讨论前先对齐说的是哪一个，否则十有八九在鸡同鸭讲。</li>
+<li><strong>一致性协议不是「越强越好」。</strong> 协议越强，通信越多，扩展性越差。这也是为什么业界没有「最强协议」，只有「在某个核数规模下够用的协议」；核数上去之后，MESI 的总线监听本身就成瓶颈，这直接催生了 NUMA 和非共享架构。</li>
+<li><strong>伪共享的</strong>止损<strong>要看实测。</strong> padding 会让结构体变大、破坏原有局部性，滥用反而更慢。<strong>正确的做法是先 profile</strong>（看 CPU 的 HITM &#x2F; cache-to-cache 指标，Linux 下用 <code>perf c2c</code>），确认真的是伪共享再改，而不是「听起来像伪共享就加 padding」。</li>
+<li><strong><code>volatile</code> 不是万能的。</strong> 它解决的是<strong>可见性和重排</strong>，不解决<strong>原子性</strong>。<code>volatile int</code> 做 <code>++</code> 依然是「读-改-写」三步，多个线程同时执行照样丢更新。<strong>要原子性得用 <code>atomic</code> &#x2F; <code>fetch_add</code>。</strong></li>
+<li><strong>写失效不是永远最优。</strong> 如果某行会被频繁读写，或者有大量核共享只读副本，那么「失效 + 重新取」的成本可能高于「直接把新值推给持有者」（写更新）。<strong>协议选型取决于访问模式，没有普适最优解</strong>——这也是 MOESI、MESIF 存在的理由。</li>
+<li><strong>伪共享不是只在多线程里出现。</strong> 单个线程访问跨 cache line 的数据结构（比如链表节点、哈希桶里的链表）也会有类似的「每次访问都多取一行」问题，只是没有跨核流量那么刺眼。<strong>这时候它叫「缓存不友好」，本质是同一件事：访问模式和硬件粒度对不上。</strong></li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>状态</th>
+<th>本地是否有副本</th>
+<th>内存是否最新</th>
+<th>本核可读</th>
+<th>本核可写（是否要通信）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>M 修改</td>
+<td>有</td>
+<td>否</td>
+<td>✅</td>
+<td>✅ 直接写</td>
+</tr>
+<tr>
+<td>E 独占</td>
+<td>有</td>
+<td>是</td>
+<td>✅</td>
+<td>✅ 直接写（无需通信）</td>
+</tr>
+<tr>
+<td>S 共享</td>
+<td>有</td>
+<td>是</td>
+<td>✅</td>
+<td>⚠️ 需广播 Invalidate</td>
+</tr>
+<tr>
+<td>I 无效</td>
+<td>无</td>
+<td>—</td>
+<td>❌ 未命中</td>
+<td>⚠️ 需总线取行</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>真共享（同一变量）</th>
+<th>伪共享（同一行不同变量）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>数据是否有关</td>
+<td>有关</td>
+<td><strong>无关</strong></td>
+</tr>
+<tr>
+<td>一致性流量</td>
+<td>必需</td>
+<td><strong>纯浪费</strong></td>
+</tr>
+<tr>
+<td>能否消除</td>
+<td>不能（只能换机制）</td>
+<td>能（padding 到独立行）</td>
+</tr>
+<tr>
+<td>典型表现</td>
+<td>锁竞争、原子操作热点</td>
+<td>计数器、状态数组、线程局部标志</td>
+</tr>
+<tr>
+<td>排查手段</td>
+<td>看锁统计、争用指标</td>
+<td><code>perf c2c</code> 看 HITM</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：缓存一致性最容易被误解的地方，是把它当成某个具体产品（Redis、MESI、CAP）的专属名词。它其实是一条<strong>结构性的约束</strong>：只要你为了性能而复制了数据，就必然要面对「写完之后其它副本怎么办」。CPU 用 MESI 回答它，分布式系统用失效通知和反熵回答它，业务系统用「先更 DB 后删缓存」回答它——<strong>三次回答，同一个问题</strong>。而它带来的最反直觉的工程后果，是「伪共享」：<strong>两段逻辑上毫不相干的代码，会因为物理上靠得太近而互相拖慢</strong>。所以下次给多线程程序调优时，除了问「有没有锁竞争」，也该问一句：「我这两个热点变量，是不是躺在同一行里？」</p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-locality/">局部性原理：缓存体系的地基</a></li>
+<li><a href="/posts/princ-space-time/">空间换时间：哈希、缓存与索引的共同母题</a></li>
+<li><a href="/posts/princ-cap/">CAP 定理：分布式的取舍三角</a></li>
+<li><a href="/posts/princ-pareto/">二八定律（Pareto）：热点总是集中</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-cache-coherence/">https://hespethorn.github.io/posts/princ-cache-coherence/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E7%BC%93%E5%AD%98/">缓存</a><a class="post-meta__tags" href="/tags/%E5%B9%B6%E5%8F%91/">并发</a><a class="post-meta__tags" href="/tags/%E7%B3%BB%E7%BB%9F/">系统</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

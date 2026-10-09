@@ -1,0 +1,637 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>数据流水线与数据表 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="这一篇对应官方 Lecture 33（Applications）与 Lecture 34（Tables）：前半段看函数式编程怎么把「一串转换」拼成流水线，后半段换上第四种范式——声明式：只说「需要什么结果」，不说「怎么一步步算」。 本机有 Python 标准库的 sqlite3，所以下面所有 SQL 都是真跑的。  一、钩子：同一件事，两种说法给三个城市，选出位于加州的两个。命令式思维会这样展开">
+<meta property="og:type" content="article">
+<meta property="og:title" content="数据流水线与数据表">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61a0117/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这一篇对应官方 Lecture 33（Applications）与 Lecture 34（Tables）：前半段看函数式编程怎么把「一串转换」拼成流水线，后半段换上第四种范式——声明式：只说「需要什么结果」，不说「怎么一步步算」。 本机有 Python 标准库的 sqlite3，所以下面所有 SQL 都是真跑的。  一、钩子：同一件事，两种说法给三个城市，选出位于加州的两个。命令式思维会这样展开">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-10-27T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.967Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="函数式编程">
+<meta property="article:tag" content="SQL">
+<meta property="article:tag" content="声明式">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "数据流水线与数据表",
+  "url": "https://hespethorn.github.io/posts/c61a0117/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-10-27T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.967Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61a0117/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '数据流水线与数据表',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">数据流水线与数据表</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">数据流水线与数据表</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-27T16:00:00.000Z" title="Created 2024-10-28 00:00:00">2024-10-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61A/">CS61A</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">1.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>7mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>这一篇对应官方 Lecture 33（Applications）与 Lecture 34（Tables）：<br>前半段看函数式编程怎么把「一串转换」拼成流水线，后半段换上<strong>第四种范式</strong>——<strong>声明式</strong>：只说「需要什么结果」，不说「怎么一步步算」。</p>
+<p>本机有 Python 标准库的 <code>sqlite3</code>，所以下面所有 SQL 都是<strong>真跑</strong>的。</p>
+</blockquote>
+<h2 id="一、钩子：同一件事，两种说法"><a href="#一、钩子：同一件事，两种说法" class="headerlink" title="一、钩子：同一件事，两种说法"></a>一、钩子：同一件事，两种说法</h2><p>给三个城市，选出位于加州的两个。命令式思维会这样展开：</p>
+<blockquote>
+<p>遍历列表 → 逐个判断 <code>state == &#39;CA&#39;</code> → 通过就放进结果</p>
+</blockquote>
+<p>而 SQL 只写一句：<code>select name from cities where state = &#39;CA&#39;</code>。</p>
+<p><strong>没有循环、没有变量、没有「先做什么再做什么」</strong>。这就是<strong>声明式</strong>。这一篇的重点就是把这两种思维钉在一起对照，因为这是初学者最难过的一道门槛。</p>
+<h2 id="二、函数式的水管：pipeline"><a href="#二、函数式的水管：pipeline" class="headerlink" title="二、函数式的水管：pipeline"></a>二、函数式的水管：<code>pipeline</code></h2><p>函数式的思路是「把一串转换接成水管」：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">pipeline</span>(<span class="params">*fns</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">run</span>(<span class="params">x</span>):</span><br><span class="line">        <span class="keyword">for</span> f <span class="keyword">in</span> fns:</span><br><span class="line">            x = f(x)          <span class="comment"># 上一个的输出 = 下一个的输入</span></span><br><span class="line">        <span class="keyword">return</span> x</span><br><span class="line">    <span class="keyword">return</span> run</span><br><span class="line"></span><br><span class="line">clean = pipeline(</span><br><span class="line">    <span class="keyword">lambda</span> xs: [x <span class="keyword">for</span> x <span class="keyword">in</span> xs <span class="keyword">if</span> x <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>],       <span class="comment"># 第 1 步：去空</span></span><br><span class="line">    <span class="keyword">lambda</span> xs: [<span class="built_in">str</span>(x).strip() <span class="keyword">for</span> x <span class="keyword">in</span> xs],           <span class="comment"># 第 2 步：去空白</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(clean([<span class="literal">None</span>, <span class="string">&#x27; a &#x27;</span>, <span class="string">&#x27;b&#x27;</span>, <span class="literal">None</span>]))</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[&#x27;a&#x27;, &#x27;b&#x27;]</span><br></pre></td></tr></table></figure>
+
+<p><strong><code>pipeline</code> 自己不知道任何业务逻辑</strong>，它只负责「把上一个函数的输出喂给下一个」。要加一步、减一步，改的都是外面那串 <code>lambda</code>，<code>pipeline</code> 一个字不动。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    I[&quot;[None, &#x27; a &#x27;, &#x27;b&#x27;, None]&quot;] --&gt; S1[&quot;去 None&quot;]
+    S1 --&gt; M[&quot;[&#x27; a &#x27;, &#x27;b&#x27;]&quot;]
+    M --&gt; S2[&quot;strip 去空白&quot;]
+    S2 --&gt; O[&quot;[&#x27;a&#x27;, &#x27;b&#x27;]&quot;]</code></pre>
+
+<p>数据流水线的三个动作，本质上就是这一句话：</p>
+<table>
+<thead>
+<tr>
+<th>动作</th>
+<th>做什么</th>
+<th>Python</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>map</td>
+<td>每个元素都变一下</td>
+<td>推导式 &#x2F; <code>map</code></td>
+</tr>
+<tr>
+<td>filter</td>
+<td>筛出一部分</td>
+<td>推导式带 <code>if</code></td>
+</tr>
+<tr>
+<td>fold</td>
+<td>压成一个值</td>
+<td><code>sum</code> &#x2F; 自己写循环</td>
+</tr>
+</tbody></table>
+<h2 id="三、把规则写成数据：迷你-DSL"><a href="#三、把规则写成数据：迷你-DSL" class="headerlink" title="三、把规则写成数据：迷你 DSL"></a>三、把规则写成数据：迷你 DSL</h2><p>把「解释器」这个抽象落到实际系统里，就是<strong>DSL（领域特定语言）</strong>：把<strong>规则存成数据</strong>，把<strong>执行</strong>写成一个小 <code>eval</code>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">run_rule</span>(<span class="params">rule, row</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;rule 是 (&#x27;操作符&#x27;, &#x27;列名&#x27;, 阈值) 这样的数据。&quot;&quot;&quot;</span></span><br><span class="line">    op, col, value = rule</span><br><span class="line">    <span class="keyword">if</span> op == <span class="string">&#x27;==&#x27;</span>:</span><br><span class="line">        <span class="keyword">return</span> row[col] == value</span><br><span class="line">    <span class="keyword">if</span> op == <span class="string">&#x27;&gt;&#x27;</span>:</span><br><span class="line">        <span class="keyword">return</span> row[col] &gt; value</span><br><span class="line">    <span class="keyword">raise</span> ValueError(<span class="string">f&quot;unknown op: <span class="subst">&#123;op&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">rows = [</span><br><span class="line">    &#123;<span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;Jo&#x27;</span>, <span class="string">&#x27;gpa&#x27;</span>: <span class="number">3.9</span>&#125;,</span><br><span class="line">    &#123;<span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;Yu&#x27;</span>, <span class="string">&#x27;gpa&#x27;</span>: <span class="number">3.2</span>&#125;,</span><br><span class="line">]</span><br><span class="line"></span><br><span class="line">rules = [(<span class="string">&#x27;&gt;&#x27;</span>, <span class="string">&#x27;gpa&#x27;</span>, <span class="number">3.5</span>)]</span><br><span class="line"><span class="built_in">print</span>([r[<span class="string">&#x27;name&#x27;</span>] <span class="keyword">for</span> r <span class="keyword">in</span> rows <span class="keyword">if</span> <span class="built_in">all</span>(run_rule(ru, r) <span class="keyword">for</span> ru <span class="keyword">in</span> rules)])</span><br><span class="line"></span><br><span class="line">rules = [(<span class="string">&#x27;==&#x27;</span>, <span class="string">&#x27;name&#x27;</span>, <span class="string">&#x27;Yu&#x27;</span>)]</span><br><span class="line"><span class="built_in">print</span>([r[<span class="string">&#x27;name&#x27;</span>] <span class="keyword">for</span> r <span class="keyword">in</span> rows <span class="keyword">if</span> <span class="built_in">all</span>(run_rule(ru, r) <span class="keyword">for</span> ru <span class="keyword">in</span> rules)])</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[&#x27;Jo&#x27;]</span><br><span class="line">[&#x27;Yu&#x27;]</span><br></pre></td></tr></table></figure>
+
+<p>注意 <code>rules</code> 是什么——<strong>它只是一个列表，装着一堆元组</strong>。换一组规则不用改 <code>run_rule</code> 一行代码，因为它压根不知道规则内容，它只是「按规则查表」。</p>
+<p><strong>配置引擎、查询语言、风控规则引擎，都属于同一个思路。</strong> 规则存入数据库或配置中心，执行逻辑只写一次。这也是「越来越会描述自己」那条演化线的终点。</p>
+<h2 id="四、换范式：声明式"><a href="#四、换范式：声明式" class="headerlink" title="四、换范式：声明式"></a>四、换范式：声明式</h2><p>现在换到表格的世界。SQL 的核心只有一件事：<strong>描述所需要的结果</strong>。</p>
+<p>用 Python 的 <code>sqlite3</code> 开一个内存数据库：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table cities (name text, state text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> n, s <span class="keyword">in</span> [(<span class="string">&#x27;Berkeley&#x27;</span>, <span class="string">&#x27;CA&#x27;</span>), (<span class="string">&#x27;Boston&#x27;</span>, <span class="string">&#x27;MA&#x27;</span>), (<span class="string">&#x27;San Jose&#x27;</span>, <span class="string">&#x27;CA&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into cities values (?, ?)&#x27;</span>, (n, s))</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;SQL   :&quot;</span>, <span class="built_in">sorted</span>(c.execute(<span class="string">&quot;select name from cities where state = &#x27;CA&#x27;&quot;</span>).fetchall()))</span><br><span class="line"></span><br><span class="line">rows = c.execute(<span class="string">&#x27;select name, state from cities&#x27;</span>).fetchall()</span><br><span class="line">result = []</span><br><span class="line"><span class="keyword">for</span> name, state <span class="keyword">in</span> rows:</span><br><span class="line">    <span class="keyword">if</span> state == <span class="string">&#x27;CA&#x27;</span>:</span><br><span class="line">        result.append((name,))</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;Python:&quot;</span>, <span class="built_in">sorted</span>(result))</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">SQL   : [(&#x27;Berkeley&#x27;,), (&#x27;San Jose&#x27;,)]</span><br><span class="line">Python: [(&#x27;Berkeley&#x27;,), (&#x27;San Jose&#x27;,)]</span><br></pre></td></tr></table></figure>
+
+<p>同一个结果，两条完全不同的路：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>SQL（声明式）</th>
+<th>Python（命令式）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>表达内容</td>
+<td><strong>要什么</strong></td>
+<td><strong>怎么算</strong></td>
+</tr>
+<tr>
+<td>有循环吗</td>
+<td>没有</td>
+<td>有</td>
+</tr>
+<tr>
+<td>有中间变量吗</td>
+<td>没有</td>
+<td>有 <code>rows</code>、<code>result</code>、<code>state</code></td>
+</tr>
+<tr>
+<td>优化由谁完成</td>
+<td>数据库自己决定</td>
+<td>使用者自己</td>
+</tr>
+</tbody></table>
+<p>两边都用了 <code>sorted(...)</code>，这一步不是多余的——下面说明原因。</p>
+<h2 id="五、SQL-查的是集合，不保证顺序"><a href="#五、SQL-查的是集合，不保证顺序" class="headerlink" title="五、SQL 查的是集合，不保证顺序"></a>五、SQL 查的是集合，不保证顺序</h2><p><code>select</code> 回来的<strong>是一堆行，不是一个有序列表</strong>。不加 <code>ORDER BY</code>，顺序就是实现细节，换个数据库版本就可能变。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table cities (name text, state text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> n, s <span class="keyword">in</span> [(<span class="string">&#x27;Berkeley&#x27;</span>, <span class="string">&#x27;CA&#x27;</span>), (<span class="string">&#x27;Boston&#x27;</span>, <span class="string">&#x27;MA&#x27;</span>), (<span class="string">&#x27;San Jose&#x27;</span>, <span class="string">&#x27;CA&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into cities values (?, ?)&#x27;</span>, (n, s))</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;不排序:&quot;</span>, c.execute(<span class="string">&#x27;select name from cities&#x27;</span>).fetchall())</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;排序后:&quot;</span>, c.execute(<span class="string">&#x27;select name from cities order by name&#x27;</span>).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">不排序: [(&#x27;Berkeley&#x27;,), (&#x27;Boston&#x27;,), (&#x27;San Jose&#x27;,)]</span><br><span class="line">排序后: [(&#x27;Berkeley&#x27;,), (&#x27;Boston&#x27;,), (&#x27;San Jose&#x27;,)]</span><br></pre></td></tr></table></figure>
+
+<p>这里两条刚好一样（数据少、插入顺序恰好相同），<strong>但这不代表 SQL 保证顺序</strong>。要顺序，就必须显式写 <code>ORDER BY</code>——当成契约写在查询里，而不是指望数据库心情好。</p>
+<p>还有个小细节：<code>execute</code> 回来的<strong>是一个迭代器</strong>（<code>iterator</code>）。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table cities (name text, state text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> n, s <span class="keyword">in</span> [(<span class="string">&#x27;Berkeley&#x27;</span>, <span class="string">&#x27;CA&#x27;</span>), (<span class="string">&#x27;Boston&#x27;</span>, <span class="string">&#x27;MA&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into cities values (?, ?)&#x27;</span>, (n, s))</span><br><span class="line"></span><br><span class="line">cur = c.execute(<span class="string">&#x27;select name from cities&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;类型:&quot;</span>, <span class="built_in">type</span>(cur).__name__)</span><br><span class="line"><span class="built_in">print</span>(<span class="built_in">next</span>(cur))</span><br><span class="line"><span class="built_in">print</span>(<span class="built_in">next</span>(cur))</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">类型: Cursor</span><br><span class="line">(&#x27;Berkeley&#x27;,)</span><br><span class="line">(&#x27;Boston&#x27;,)</span><br></pre></td></tr></table></figure>
+
+<p><code>next(cur)</code> 能一行一行拿——<strong>这个 <code>Cursor</code> 就是一个迭代器</strong>。所以「SQL 查什么、Python 拿结果干什么」这套分工，中间那座桥就是迭代器协议。</p>
+<h2 id="六、引号语义：单引号与双引号"><a href="#六、引号语义：单引号与双引号" class="headerlink" title="六、引号语义：单引号与双引号"></a>六、引号语义：单引号与双引号</h2><table>
+<thead>
+<tr>
+<th>引号</th>
+<th>SQL 里被当成</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>单引号 <code>&#39;CA&#39;</code></td>
+<td><strong>字符串字面量</strong></td>
+</tr>
+<tr>
+<td>双引号 <code>&quot;CA&quot;</code></td>
+<td><strong>标识符</strong>（列名&#x2F;表名）</td>
+</tr>
+</tbody></table>
+<p><strong>字符串一律用单引号。</strong> 上面所有 SQL 都使用了单引号，也就避开了这处歧义。</p>
+<p>另外，往 SQL 里塞 Python 变量时，<strong>别用字符串拼接</strong>，用占位符 <code>?</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table cities (name text, state text)&#x27;</span>)</span><br><span class="line">c.execute(<span class="string">&#x27;insert into cities values (?, ?)&#x27;</span>, (<span class="string">&#x27;Berkeley&#x27;</span>, <span class="string">&#x27;CA&#x27;</span>))</span><br><span class="line"></span><br><span class="line">state = <span class="string">&#x27;CA&#x27;</span></span><br><span class="line"><span class="built_in">print</span>(c.execute(<span class="string">&#x27;select name from cities where state = ?&#x27;</span>, (state,)).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[(&#x27;Berkeley&#x27;,)]</span><br></pre></td></tr></table></figure>
+
+<p><code>?</code> 让数据库负责转义，既避免了引号地狱，也挡住了 SQL 注入。<strong>这是工程上必须养成的习惯</strong>。</p>
+<h2 id="七、小结"><a href="#七、小结" class="headerlink" title="七、小结"></a>七、小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>流水线</td>
+<td>上一个的输出喂给下一个</td>
+<td><code>clean([None,&#39; a &#39;,&#39;b&#39;,None])</code> → <code>[&#39;a&#39;,&#39;b&#39;]</code></td>
+</tr>
+<tr>
+<td>规则即数据</td>
+<td>换规则不改执行代码</td>
+<td><code>rules</code> 只是元组列表</td>
+</tr>
+<tr>
+<td>声明式</td>
+<td>说要什么，不说怎么做</td>
+<td>同一结果，SQL 无循环</td>
+</tr>
+<tr>
+<td>SQL 是集合</td>
+<td>不保证顺序，要序得 <code>ORDER BY</code></td>
+<td>不加 <code>ORDER BY</code> 顺序是细节</td>
+</tr>
+<tr>
+<td>结果是迭代器</td>
+<td><code>Cursor</code> 支持 <code>next()</code></td>
+<td><code>next(cur)</code> → <code>(&#39;Berkeley&#39;,)</code></td>
+</tr>
+<tr>
+<td>引号</td>
+<td>字符串用单引号</td>
+<td><code>&#39;CA&#39;</code> 是字面量</td>
+</tr>
+<tr>
+<td>占位符</td>
+<td>用 <code>?</code>，别拼字符串</td>
+<td>挡住注入</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong>函数式把转换接成水管，<code>pipeline</code> 只管串、不管业务。</strong> 加一步减一步只改外面那串函数。</li>
+<li><strong>声明式不是「另一种语法」，是另一种思维</strong>：描述要什么，由数据库决定怎么算。把同一条查询用命令式再写一遍，这道门槛就跨过去了。</li>
+<li><strong>SQL 查出来的是集合，<code>Cursor</code> 是迭代器。</strong> 要顺序必须显式 <code>ORDER BY</code>；传参数必须用 <code>?</code> 占位符。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61a0117/">https://hespethorn.github.io/posts/c61a0117/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/%E5%87%BD%E6%95%B0%E5%BC%8F%E7%BC%96%E7%A8%8B/">函数式编程</a><a class="post-meta__tags" href="/tags/SQL/">SQL</a><a class="post-meta__tags" href="/tags/%E5%A3%B0%E6%98%8E%E5%BC%8F/">声明式</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0116/" title="编程智能体与浏览器">编程智能体与浏览器</a><time datetime="2024-10-23T16:00:00.000Z" title="Created 2024-10-24 00:00:00">2024-10-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0101/" title="表达式求值与函数定义">表达式求值与函数定义</a><time datetime="2024-09-01T16:00:00.000Z" title="Created 2024-09-02 00:00:00">2024-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0115/" title="不可变数据与解释器">不可变数据与解释器</a><time datetime="2024-10-20T16:00:00.000Z" title="Created 2024-10-21 00:00:00">2024-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0119/" title="测试与追踪">测试与追踪</a><time datetime="2024-11-03T16:00:00.000Z" title="Created 2024-11-04 00:00:00">2024-11-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0105/" title="递归与树递归">递归与树递归</a><time datetime="2024-09-15T16:00:00.000Z" title="Created 2024-09-16 00:00:00">2024-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0107/" title="对象与链表">对象与链表</a><time datetime="2024-09-22T16:00:00.000Z" title="Created 2024-09-23 00:00:00">2024-09-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0104/" title="高阶函数的三种组合模式">高阶函数的三种组合模式</a><time datetime="2024-09-11T16:00:00.000Z" title="Created 2024-09-12 00:00:00">2024-09-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0114/" title="函数式编程与代数数据类型">函数式编程与代数数据类型</a><time datetime="2024-10-16T16:00:00.000Z" title="Created 2024-10-17 00:00:00">2024-10-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0103/" title="环境图与抽象屏障">环境图与抽象屏障</a><time datetime="2024-09-08T16:00:00.000Z" title="Created 2024-09-09 00:00:00">2024-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0120/" title="技术伦理与四种编程范式">技术伦理与四种编程范式</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0111/" title="继承与惰性求值">继承与惰性求值</a><time datetime="2024-10-06T16:00:00.000Z" title="Created 2024-10-07 00:00:00">2024-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0102/" title="控制流与高阶函数">控制流与高阶函数</a><time datetime="2024-09-04T16:00:00.000Z" title="Created 2024-09-05 00:00:00">2024-09-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0110/" title="类与属性查找">类与属性查找</a><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0113/" title="面向对象综合实践">面向对象综合实践</a><time datetime="2024-10-13T16:00:00.000Z" title="Created 2024-10-14 00:00:00">2024-10-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0112/" title="生成器与效率">生成器与效率</a><time datetime="2024-10-09T16:00:00.000Z" title="Created 2024-10-10 00:00:00">2024-10-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0108/" title="树的聚合与路径搜索">树的聚合与路径搜索</a><time datetime="2024-09-25T16:00:00.000Z" title="Created 2024-09-26 00:00:00">2024-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0117/" title="数据流水线与数据表">数据流水线与数据表</a><time datetime="2024-10-27T16:00:00.000Z" title="Created 2024-10-28 00:00:00">2024-10-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0109/" title="问题求解流程与可变性">问题求解流程与可变性</a><time datetime="2024-09-29T16:00:00.000Z" title="Created 2024-09-30 00:00:00">2024-09-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0106/" title="序列与容器">序列与容器</a><time datetime="2024-09-18T16:00:00.000Z" title="Created 2024-09-19 00:00:00">2024-09-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0118/" title="SQL 连接与聚合">SQL 连接与聚合</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

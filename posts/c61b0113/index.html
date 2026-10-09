@@ -1,0 +1,713 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>最短路径与 Dijkstra | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="这一篇对应官方 Lecture 23（Shortest Paths）。无权图里「第一次到达」就是最短，有权图里这条性质直接失效。这一篇讲清松弛这个动作如何统一最短路的求解过程，并实测 Dijkstra 那条「权重非负」的前提到底卡在哪里。  一、钩子：跳数最少不等于距离最短在无权图里，一条路径的长度就是它经过的边数，所以「跳数最少」和「长度最短」是同一件事，广度优先搜索一次遍历就能全部算出来。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="最短路径与 Dijkstra">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61b0113/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这一篇对应官方 Lecture 23（Shortest Paths）。无权图里「第一次到达」就是最短，有权图里这条性质直接失效。这一篇讲清松弛这个动作如何统一最短路的求解过程，并实测 Dijkstra 那条「权重非负」的前提到底卡在哪里。  一、钩子：跳数最少不等于距离最短在无权图里，一条路径的长度就是它经过的边数，所以「跳数最少」和「长度最短」是同一件事，广度优先搜索一次遍历就能全部算出来。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2025-03-03T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.968Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Java">
+<meta property="article:tag" content="优先队列">
+<meta property="article:tag" content="最短路径">
+<meta property="article:tag" content="Dijkstra">
+<meta property="article:tag" content="松弛">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "最短路径与 Dijkstra",
+  "url": "https://hespethorn.github.io/posts/c61b0113/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2025-03-03T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.968Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61b0113/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '最短路径与 Dijkstra',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">最短路径与 Dijkstra</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">最短路径与 Dijkstra</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2025-03-03T16:00:00.000Z" title="Created 2025-03-04 00:00:00">2025-03-04</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61B/">CS61B</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">3.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>11mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>这一篇对应官方 Lecture 23（Shortest Paths）。<br>无权图里「第一次到达」就是最短，有权图里这条性质直接失效。<br>这一篇讲清松弛这个动作如何统一最短路的求解过程，并实测 Dijkstra 那条「权重非负」的前提到底卡在哪里。</p>
+</blockquote>
+<h2 id="一、钩子：跳数最少不等于距离最短"><a href="#一、钩子：跳数最少不等于距离最短" class="headerlink" title="一、钩子：跳数最少不等于距离最短"></a>一、钩子：跳数最少不等于距离最短</h2><p>在无权图里，一条路径的长度就是它经过的边数，所以「跳数最少」和「长度最短」是同一件事，广度优先搜索一次遍历就能全部算出来。</p>
+<p>一旦边带上权重，两件事立刻分家。</p>
+<p>实测一张 7 个顶点、10 条边的无向带权图，从顶点 0 出发：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">无向带权图：7 个顶点，10 条边，全部权重非负</span><br><span class="line">  从 0 出发的最短距离 = 0:0  1:3  2:1  3:8  4:8  5:11  6:12</span><br><span class="line">  从 0 出发的最少跳数 = 0:0  1:1  2:1  3:2  4:2  5:3  6:4</span><br><span class="line">  松弛次数 = 20（邻接条目总数 = 20），入队次数 = 10</span><br><span class="line">  到顶点 6：跳数 4，权重和 12——两者不是一回事</span><br></pre></td></tr></table></figure>
+
+<p>看顶点 6 这一列：跳数是 4，权重和是 12。<strong>没有任何理由认为这两列会成比例</strong>——一条由 4 段小权重边组成的路，完全可能比另一条由 2 段大权重边组成的路更长。所以 BFS 在这里完全用不上，必须换算法。</p>
+<h2 id="二、松弛：一个动作贯穿所有最短路算法"><a href="#二、松弛：一个动作贯穿所有最短路算法" class="headerlink" title="二、松弛：一个动作贯穿所有最短路算法"></a>二、松弛：一个动作贯穿所有最短路算法</h2><p>换算法之前，先看清真正的难点在哪。</p>
+<p>如果从源点出发，已知到达 <code>u</code> 的最短距离是 <code>dist[u]</code>，而 <code>u</code> 到 <code>v</code> 有一条权重为 <code>w</code> 的边，那么<strong>至少存在一条到 <code>v</code> 的路径长度为 <code>dist[u] + w</code></strong>。如果这个值比当前记录的 <code>dist[v]</code> 更小，就更新它：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="variable">v</span> <span class="operator">=</span> e[<span class="number">0</span>];</span><br><span class="line"><span class="type">int</span> <span class="variable">w</span> <span class="operator">=</span> e[<span class="number">1</span>];</span><br><span class="line"><span class="keyword">if</span> (dist[u] + w &lt; dist[v]) &#123;</span><br><span class="line">    dist[v] = dist[u] + w;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个动作叫<strong>松弛</strong>（relaxation）。它是所有最短路算法的共同内核——Dijkstra、Bellman-Ford、Floyd-Warshall 都在做同一件事，区别只在于<strong>按什么顺序选出下一个要处理的顶点</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>算法</th>
+<th>挑顶点的顺序</th>
+<th>复杂度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BFS</td>
+<td>按跳数，先进先出</td>
+<td>O(V + E)，仅限无权</td>
+</tr>
+<tr>
+<td>Dijkstra</td>
+<td>取当前距离最小的未确定顶点</td>
+<td>O(E log V)</td>
+</tr>
+<tr>
+<td>Bellman-Ford</td>
+<td>不看顺序，全图松弛 V-1 轮</td>
+<td>O(V·E)</td>
+</tr>
+</tbody></table>
+<p><strong>既然松弛这个动作是一样的，那算法的差别就只有「顺序」这一件事。</strong> Dijkstra 的聪明之处在于：只要权重非负，那么当前距离最小的那个顶点，它的距离一定已经是最终值了，可以直接「确定」下来。</p>
+<p>这条推理就是它的全部依据，也是后面所有问题的来源。</p>
+<h2 id="三、Dijkstra-的三步循环"><a href="#三、Dijkstra-的三步循环" class="headerlink" title="三、Dijkstra 的三步循环"></a>三、Dijkstra 的三步循环</h2><pre><code class="highlight mermaid">flowchart TB
+    A[&quot;初始化：dist[src] = 0，其余为正无穷&quot;] --&gt; B[&quot;从「未确定」的顶点里取 dist 最小的 u&quot;]
+    B --&gt; C&#123;&quot;u 存在？&quot;&#125;
+    C --&gt;|不存在| Z[&quot;结束，dist 即为最短距离&quot;]
+    C --&gt;|存在| D[&quot;把 u 标记为已确定&quot;]
+    D --&gt; E[&quot;对 u 的每条出边 (u, v, w) 松弛一次&quot;]
+    E --&gt; F[&quot;若 dist[u] + w 更小，更新 dist[v]&quot;]
+    F --&gt; B</code></pre>
+
+<p>三步循环是：<strong>取最小 → 确定 → 松弛它的出边。</strong></p>
+<p>用优先队列实现时，代码短到几乎可以直接背下来：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="type">int</span>[] dijkstraPq(List&lt;<span class="type">int</span>[]&gt;[] adj, <span class="type">int</span> src, <span class="type">long</span>[] stats) &#123;</span><br><span class="line">    <span class="type">int</span> <span class="variable">n</span> <span class="operator">=</span> adj.length;</span><br><span class="line">    <span class="type">int</span>[] dist = <span class="keyword">new</span> <span class="title class_">int</span>[n];</span><br><span class="line">    Arrays.fill(dist, INF);</span><br><span class="line">    dist[src] = <span class="number">0</span>;</span><br><span class="line">    PriorityQueue&lt;<span class="type">int</span>[]&gt; pq = <span class="keyword">new</span> <span class="title class_">PriorityQueue</span>&lt;&gt;((a, b) -&gt; Integer.compare(a[<span class="number">0</span>], b[<span class="number">0</span>]));</span><br><span class="line">    pq.add(<span class="keyword">new</span> <span class="title class_">int</span>[]&#123;<span class="number">0</span>, src&#125;);</span><br><span class="line">    <span class="type">long</span> <span class="variable">relax</span> <span class="operator">=</span> <span class="number">0</span>;</span><br><span class="line">    <span class="type">long</span> <span class="variable">pushes</span> <span class="operator">=</span> <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">while</span> (!pq.isEmpty()) &#123;</span><br><span class="line">        <span class="type">int</span>[] cur = pq.poll();</span><br><span class="line">        <span class="keyword">if</span> (cur[<span class="number">0</span>] &gt; dist[cur[<span class="number">1</span>]]) &#123;</span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="type">int</span> <span class="variable">u</span> <span class="operator">=</span> cur[<span class="number">1</span>];</span><br><span class="line">        <span class="keyword">for</span> (<span class="type">int</span>[] e : adj[u]) &#123;</span><br><span class="line">            <span class="type">int</span> <span class="variable">v</span> <span class="operator">=</span> e[<span class="number">0</span>];</span><br><span class="line">            <span class="type">int</span> <span class="variable">w</span> <span class="operator">=</span> e[<span class="number">1</span>];</span><br><span class="line">            relax++;</span><br><span class="line">            <span class="keyword">if</span> (dist[u] + w &lt; dist[v]) &#123;</span><br><span class="line">                dist[v] = dist[u] + w;</span><br><span class="line">                pq.add(<span class="keyword">new</span> <span class="title class_">int</span>[]&#123;dist[v], v&#125;);</span><br><span class="line">                pushes++;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (stats != <span class="literal">null</span>) &#123;</span><br><span class="line">        stats[<span class="number">0</span>] = relax;</span><br><span class="line">        stats[<span class="number">1</span>] = pushes;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> dist;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>if (cur[0] &gt; dist[cur[1]]) continue;</code> 这一句是<strong>惰性删除</strong>：优先队列不支持修改已有元素的键，所以一个顶点的距离每次被改进就重新入队一条新记录，旧记录留在队列里变成过期条目，弹出时用这句跳过。</p>
+<h2 id="四、实测：距离与跳数的差别"><a href="#四、实测：距离与跳数的差别" class="headerlink" title="四、实测：距离与跳数的差别"></a>四、实测：距离与跳数的差别</h2><p>回到开头那张图，两种算法的输出放在一起对比：</p>
+<table>
+<thead>
+<tr>
+<th>顶点</th>
+<th>0</th>
+<th>1</th>
+<th>2</th>
+<th>3</th>
+<th>4</th>
+<th>5</th>
+<th>6</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>最短距离</td>
+<td>0</td>
+<td>3</td>
+<td>1</td>
+<td>8</td>
+<td>8</td>
+<td>11</td>
+<td>12</td>
+</tr>
+<tr>
+<td>最少跳数</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+<td>2</td>
+<td>3</td>
+<td>4</td>
+</tr>
+</tbody></table>
+<p>两处值得注意：</p>
+<ul>
+<li><strong>顶点 1 的距离是 3，而跳数是 1。</strong> 直达边的权重是 4，绕道 <code>0 → 2 → 1</code> 的权重是 1 + 2 &#x3D; 3。<strong>更长的路径反而更短</strong>，这正是权重带来的变化。</li>
+<li><strong>距离不是跳数的线性函数。</strong> 顶点 2 距离 1、跳数 1；顶点 5 距离 11、跳数 3；顶点 6 距离 12、跳数 4。每一跳的「单价」都不相同。</li>
+</ul>
+<p>输出里还有两个可以用来对照复杂度的数字：</p>
+<ul>
+<li><strong>松弛次数 &#x3D; 20，恰好等于邻接表条目总数。</strong> 在权重非负的图上，每个顶点只会被确定一次，于是每条出边恰好被检查一次，总松弛次数正好是 E。</li>
+<li><strong>入队次数 &#x3D; 10，也恰好等于顶点数。</strong> 这张图上每个顶点都只被改进过一次，所以没有产生任何过期条目。真实图上这个数字会略大于 V。</li>
+</ul>
+<h2 id="五、为什么必须非负：settled-语义"><a href="#五、为什么必须非负：settled-语义" class="headerlink" title="五、为什么必须非负：settled 语义"></a>五、为什么必须非负：<code>settled</code> 语义</h2><p>Dijkstra 能「直接确定」一个顶点，靠的是这样一条论证：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">设 u 是当前未确定顶点里 dist 最小的那个。</span><br><span class="line">假设存在一条更短的路径到 u，它必然要经过某个尚未确定的顶点 x。</span><br><span class="line">从源点到 x 的距离已经是 dist[x] &gt;= dist[u]（u 是最小的），再加上 x 到 u 那一段，</span><br><span class="line">由于权重非负，总长度 &gt;= dist[x] + 0 &gt;= dist[u]。</span><br><span class="line">这与「更短」矛盾。</span><br></pre></td></tr></table></figure>
+
+<p><strong>「权重非负」这个条件是链条上不可拆的一环。</strong> 只要有一段边是负的，<code>总长度 &gt;= dist[x]</code> 这一步就断了——经过 x 反而可能让路径变短。</p>
+<p>所以经典实现里有一个关键动作：<strong>顶点一旦被确定，就不再接受任何更新。</strong></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">settled[u] = <span class="literal">true</span>;</span><br><span class="line"><span class="keyword">for</span> (<span class="type">int</span>[] e : adj[u]) &#123;</span><br><span class="line">    <span class="type">int</span> <span class="variable">v</span> <span class="operator">=</span> e[<span class="number">0</span>];</span><br><span class="line">    <span class="type">int</span> <span class="variable">w</span> <span class="operator">=</span> e[<span class="number">1</span>];</span><br><span class="line">    <span class="keyword">if</span> (!settled[v] &amp;&amp; dist[u] + w &lt; dist[v]) &#123;</span><br><span class="line">        dist[v] = dist[u] + w;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>注意 <code>!settled[v]</code> 这个前置条件。它正是 Dijkstra 正确性证明的直接落地：既然被确定的顶点距离已是最终值，就不该再改。<strong>但这条规则在负权图上会把正确答案挡在门外。</strong></p>
+<h2 id="六、实测：负权边下的失效"><a href="#六、实测：负权边下的失效" class="headerlink" title="六、实测：负权边下的失效"></a>六、实测：负权边下的失效</h2><p>造一个有向图：<code>0 → 1</code> 权重 1，<code>0 → 2</code> 权重 2，<code>2 → 1</code> 权重 −2。到顶点 1 的两条路分别是 1 和 2 − 2 &#x3D; 0，真正的最短距离是 0。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">含负权边的有向图：0-&gt;1 权重 1，0-&gt;2 权重 2，2-&gt;1 权重 -2</span><br><span class="line">  Bellman-Ford（基准）      = 0:0  1:0  2:2</span><br><span class="line">  教科书版 Dijkstra         = 0:0  1:1  2:2   与基准一致？ false</span><br><span class="line">  优先队列版 Dijkstra       = 0:0  1:0  2:2   与基准一致？ true</span><br></pre></td></tr></table></figure>
+
+<p>教科书版给出的 <code>dist[1] = 1</code> 是错的，正确答案是 0。过程可以完整复盘：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>动作</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>确定顶点 0</td>
+<td><code>dist[1] = 1</code>，<code>dist[2] = 2</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>未确定顶点里最小的是 1（距离 1）</td>
+<td>确定顶点 1，它没有出边</td>
+</tr>
+<tr>
+<td>3</td>
+<td>确定顶点 2</td>
+<td>松弛 <code>2 → 1</code> 得到 0，但 1 已被确定，跳过</td>
+</tr>
+<tr>
+<td>4</td>
+<td>结束</td>
+<td><code>dist[1]</code> 停留在 1</td>
+</tr>
+</tbody></table>
+<p><strong>错的根源在第 3 步：正确的更新被 <code>!settled[v]</code> 挡掉了。</strong> 顶点 1 在第 2 步被确定时，<code>2 → 1</code> 这条负权边还没有被看到。</p>
+<p>不过输出还有第三行值得注意：<strong>优先队列版给出的结果是 0，与基准一致。</strong> 它没有 <code>settled</code> 标记，改进后重新入队，于是第 3 步那条被挡掉的更新在这里正常生效了。</p>
+<p>这个现象不是巧合，而是一条可以证明的结论：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">终止时队列为空，意味着对每条边 (u, v, w) 都有 dist[v] &lt;= dist[u] + w。</span><br><span class="line">沿着任何一条路径把它串起来，得到 dist[v] &lt;= 该路径的总长度，取最短的那条即 dist[v] &lt;= 最短距离。</span><br><span class="line">另一方面，每个 dist 值都等于某条真实路径的长度，所以 dist[v] &gt;= 最短距离。</span><br><span class="line">两边夹逼：dist[v] 就等于最短距离。</span><br></pre></td></tr></table></figure>
+
+<p>推广到随机图上验证一下。用只连 <code>i → j</code>（<code>i &lt; j</code>）的随机有向无环图，天然不含负环，权重落在 <code>[-5, 10]</code>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">随机有向无环图（顶点 8 个，权重落在 [-5, 10]，共 2000 次试验，平均边数 9.85）：</span><br><span class="line">  教科书版与 Bellman-Ford 不一致的次数 = 160（占 8.0%）</span><br><span class="line">  优先队列版与 Bellman-Ford 不一致的次数 = 0</span><br></pre></td></tr></table></figure>
+
+<p><strong>2000 次随机试验里，教科书版错了 160 次，优先队列版一次都没错。</strong></p>
+<p>但这里必须把话说完整——<strong>这不能推出「可以用 Dijkstra 处理负权图」：</strong></p>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>有负环时不终止</td>
+<td>每绕一圈距离都变小，队列永远不为空</td>
+</tr>
+<tr>
+<td>复杂度保证没了</td>
+<td>一个顶点可能被反复弹出，O(E log V) 不再成立，最坏退化到 Bellman-Ford 的量级</td>
+</tr>
+<tr>
+<td>论证不能用</td>
+<td>上面那段夹逼依赖「整数权重」和「无负环」两个额外条件，教科书版连这两个都不需要</td>
+</tr>
+</tbody></table>
+<p>负权图的正规做法仍然是 Bellman-Ford：不看顺序、全图松弛 V−1 轮，代价是 O(V·E)。<strong>用更高的复杂度换取对负权的容忍度，这才是两者的真正分工。</strong></p>
+<h2 id="七、规模"><a href="#七、规模" class="headerlink" title="七、规模"></a>七、规模</h2><p>最后看一眼实际量级。随机有向图，20000 个顶点、99995 条边：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">规模测试：随机有向图，顶点 20000 个，边 99995 条</span><br><span class="line">  可达顶点数 = 19861，不可达顶点数 = 139</span><br><span class="line">  Dijkstra 松弛次数 = 99300，入队次数 = 28825，单次运行耗时量级 = 十毫秒以内</span><br></pre></td></tr></table></figure>
+
+<p>三个数字都对得上：</p>
+<ul>
+<li><strong>松弛次数 99300 小于边数 99995。</strong> 差的 695 条是那 139 个不可达顶点的出边——<strong>不可达的顶点根本不会被弹出，它的出边一次也不会被检查。</strong> 这也说明 Dijkstra 天然只处理源点可达的部分，不需要额外过滤。</li>
+<li><strong>入队次数 28825 略大于顶点数 20000。</strong> 多出来的约 8800 条是过期条目，对应那些距离被改进过两次以上的顶点。</li>
+<li><strong>耗时在十毫秒以内。</strong> 松弛 99300 次、堆操作 28825 次，量级和 O(E log V) 完全相符。</li>
+</ul>
+<h2 id="八、小结"><a href="#八、小结" class="headerlink" title="八、小结"></a>八、小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>松弛</td>
+<td>若 <code>dist[u] + w &lt; dist[v]</code> 就更新 <code>dist[v]</code></td>
+<td>所有最短路算法共用这一个动作</td>
+</tr>
+<tr>
+<td>算法差别</td>
+<td>只在于「下一个处理哪个顶点」</td>
+<td>BFS 按层、Dijkstra 按距离、Bellman-Ford 按轮</td>
+</tr>
+<tr>
+<td>距离 vs 跳数</td>
+<td>有权之后两者没有关系</td>
+<td>顶点 1 距离 3、跳数 1</td>
+</tr>
+<tr>
+<td>非负权重的作用</td>
+<td>保证「距离最小的顶点已是最终值」</td>
+<td>负权时教科书版错 160&#x2F;2000 次</td>
+</tr>
+<tr>
+<td>惰性删除</td>
+<td>改进后重新入队，过期条目靠比较跳过</td>
+<td>20000 顶点图上入队 28825 次</td>
+</tr>
+<tr>
+<td>可达性</td>
+<td>不可达顶点的出边根本不会被检查</td>
+<td>松弛 99300 &lt; 边数 99995</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>算法</th>
+<th>前提</th>
+<th>复杂度</th>
+<th>负权</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BFS</td>
+<td>权重全为 1</td>
+<td>O(V + E)</td>
+<td>不适用</td>
+<td>最少跳数、网格最短路</td>
+</tr>
+<tr>
+<td>Dijkstra</td>
+<td>权重非负</td>
+<td>O(E log V)</td>
+<td>不可用</td>
+<td>非负权图单源最短路</td>
+</tr>
+<tr>
+<td>Bellman-Ford</td>
+<td>无负环</td>
+<td>O(V·E)</td>
+<td>可用</td>
+<td>含负权边、需要检测负环</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong>有权图不等于无权图加了个数字。</strong> 一旦允许权重，BFS 那条「第一次到达即最短」的性质就没了，必须换成按距离顺序处理的策略——这是 Dijkstra 存在的全部理由。</li>
+<li><strong>算法的前提条件写在证明里，读代码看不出来。</strong> <code>!settled[v]</code> 只是一行普通的条件判断，但它承载的是「权重非负」这条假设；把前提破坏掉，代码不会报错，只会安静地给出错误答案。</li>
+<li><strong>不要用随机测试替代最坏情况分析。</strong> 优先队列版在 2000 次含负权的随机试验里全对，但它依然不是负权图的正确解法——在有负环的输入上它根本不终止，而这恰恰是随机测试很难碰到的情形。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61b0113/">https://hespethorn.github.io/posts/c61b0113/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Java/">Java</a><a class="post-meta__tags" href="/tags/%E4%BC%98%E5%85%88%E9%98%9F%E5%88%97/">优先队列</a><a class="post-meta__tags" href="/tags/%E6%9C%80%E7%9F%AD%E8%B7%AF%E5%BE%84/">最短路径</a><a class="post-meta__tags" href="/tags/Dijkstra/">Dijkstra</a><a class="post-meta__tags" href="/tags/%E6%9D%BE%E5%BC%9B/">松弛</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0118/" title="比较排序的下界">比较排序的下界</a><time datetime="2025-03-19T16:00:00.000Z" title="Created 2025-03-20 00:00:00">2025-03-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0107/" title="并查集：加权合并与路径压缩">并查集：加权合并与路径压缩</a><time datetime="2025-02-10T16:00:00.000Z" title="Created 2025-02-11 00:00:00">2025-02-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0108/" title="抽象数据类型与二叉搜索树">抽象数据类型与二叉搜索树</a><time datetime="2025-02-12T16:00:00.000Z" title="Created 2025-02-13 00:00:00">2025-02-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0103/" title="单链表封装与哨兵节点">单链表封装与哨兵节点</a><time datetime="2025-01-27T16:00:00.000Z" title="Created 2025-01-28 00:00:00">2025-01-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0104/" title="动态数组与均摊复杂度">动态数组与均摊复杂度</a><time datetime="2025-01-29T16:00:00.000Z" title="Created 2025-01-30 00:00:00">2025-01-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0111/" title="二叉堆与优先队列">二叉堆与优先队列</a><time datetime="2025-02-24T16:00:00.000Z" title="Created 2025-02-25 00:00:00">2025-02-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0110/" title="哈希表：函数、冲突与装载因子">哈希表：函数、冲突与装载因子</a><time datetime="2025-02-19T16:00:00.000Z" title="Created 2025-02-20 00:00:00">2025-02-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0120/" title="霍夫曼编码与计算复杂性">霍夫曼编码与计算复杂性</a><time datetime="2025-03-26T16:00:00.000Z" title="Created 2025-03-27 00:00:00">2025-03-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0116/" title="基础排序：选择、插入与归并">基础排序：选择、插入与归并</a><time datetime="2025-03-12T16:00:00.000Z" title="Created 2025-03-13 00:00:00">2025-03-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0119/" title="基数排序：LSD 与 MSD">基数排序：LSD 与 MSD</a><time datetime="2025-03-24T16:00:00.000Z" title="Created 2025-03-25 00:00:00">2025-03-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0106/" title="渐进分析：大 O、大 Ω 与大 Θ">渐进分析：大 O、大 Ω 与大 Θ</a><time datetime="2025-02-05T16:00:00.000Z" title="Created 2025-02-06 00:00:00">2025-02-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0117/" title="快速排序与三路切分">快速排序与三路切分</a><time datetime="2025-03-17T16:00:00.000Z" title="Created 2025-03-18 00:00:00">2025-03-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0115/" title="前缀树与自动补全">前缀树与自动补全</a><time datetime="2025-03-10T16:00:00.000Z" title="Created 2025-03-11 00:00:00">2025-03-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0112/" title="图的表示与深度优先、广度优先遍历">图的表示与深度优先、广度优先遍历</a><time datetime="2025-02-26T16:00:00.000Z" title="Created 2025-02-27 00:00:00">2025-02-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0102/" title="引用语义、递归与裸链表">引用语义、递归与裸链表</a><time datetime="2025-01-22T16:00:00.000Z" title="Created 2025-01-23 00:00:00">2025-01-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0105/" title="子类型多态与比较器">子类型多态与比较器</a><time datetime="2025-02-03T16:00:00.000Z" title="Created 2025-02-04 00:00:00">2025-02-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0113/" title="最短路径与 Dijkstra">最短路径与 Dijkstra</a><time datetime="2025-03-03T16:00:00.000Z" title="Created 2025-03-04 00:00:00">2025-03-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0114/" title="最小生成树：Kruskal 与 Prim">最小生成树：Kruskal 与 Prim</a><time datetime="2025-03-05T16:00:00.000Z" title="Created 2025-03-06 00:00:00">2025-03-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0109/" title="B 树与左倾红黑树">B 树与左倾红黑树</a><time datetime="2025-02-17T16:00:00.000Z" title="Created 2025-02-18 00:00:00">2025-02-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61b0101/" title="Java 的编译运行机制与静态类型">Java 的编译运行机制与静态类型</a><time datetime="2025-01-20T16:00:00.000Z" title="Created 2025-01-21 00:00:00">2025-01-21</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

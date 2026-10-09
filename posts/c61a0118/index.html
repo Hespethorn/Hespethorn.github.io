@@ -1,0 +1,673 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>SQL 连接与聚合 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="SQL 是「声明式」的：只说要什么。这一篇把这个「要」具体化——数据散在多张表里，怎么关联起来（Lecture 35 · SQL）？成千上万行，怎么汇总（Lecture 36 · Aggregation）？ 本机 sqlite3 真跑，下面每个输出都是实测的。  一、钩子：JOIN 到底做了什么「连接两张表」听起来抽象，本质只有两步：  先做笛卡尔积（所有行两两配对），再按 ON 条件把不要的删">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SQL 连接与聚合">
+<meta property="og:url" content="https://hespethorn.github.io/posts/c61a0118/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="SQL 是「声明式」的：只说要什么。这一篇把这个「要」具体化——数据散在多张表里，怎么关联起来（Lecture 35 · SQL）？成千上万行，怎么汇总（Lecture 36 · Aggregation）？ 本机 sqlite3 真跑，下面每个输出都是实测的。  一、钩子：JOIN 到底做了什么「连接两张表」听起来抽象，本质只有两步：  先做笛卡尔积（所有行两两配对），再按 ON 条件把不要的删">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2024-10-30T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.967Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="SQL">
+<meta property="article:tag" content="JOIN">
+<meta property="article:tag" content="聚合">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "SQL 连接与聚合",
+  "url": "https://hespethorn.github.io/posts/c61a0118/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2024-10-30T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.967Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/c61a0118/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'SQL 连接与聚合',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">SQL 连接与聚合</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">SQL 连接与聚合</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/">CS-Fundamentals</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Fundamentals/CS61A/">CS61A</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">2.3k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>10mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><blockquote>
+<p>SQL 是「声明式」的：只说要什么。这一篇把这个「要」具体化——<br>数据散在多张表里，怎么<strong>关联</strong>起来（Lecture 35 · SQL）？成千上万行，怎么<strong>汇总</strong>（Lecture 36 · Aggregation）？</p>
+<p>本机 <code>sqlite3</code> 真跑，下面每个输出都是实测的。</p>
+</blockquote>
+<h2 id="一、钩子：JOIN-到底做了什么"><a href="#一、钩子：JOIN-到底做了什么" class="headerlink" title="一、钩子：JOIN 到底做了什么"></a>一、钩子：JOIN 到底做了什么</h2><p>「连接两张表」听起来抽象，本质只有两步：</p>
+<blockquote>
+<p><strong>先做笛卡尔积（所有行两两配对），再按 <code>ON</code> 条件把不要的删掉。</strong></p>
+</blockquote>
+<p>理解这句话，<code>JOIN</code> 的许多现象（行数变多、条件写漏、结果成倍膨胀）都有了统一解释。</p>
+<h2 id="二、SELECT-就三件事"><a href="#二、SELECT-就三件事" class="headerlink" title="二、SELECT 就三件事"></a>二、<code>SELECT</code> 就三件事</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table students (id int, name text, class_id int, gpa real)&#x27;</span>)</span><br><span class="line">c.execute(<span class="string">&#x27;create table classes (id int, location text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">1</span>, <span class="string">&#x27;Ann&#x27;</span>, <span class="number">10</span>, <span class="number">3.9</span>), (<span class="number">2</span>, <span class="string">&#x27;Bob&#x27;</span>, <span class="number">10</span>, <span class="number">3.2</span>), (<span class="number">3</span>, <span class="string">&#x27;Cid&#x27;</span>, <span class="number">20</span>, <span class="number">3.7</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into students values (?, ?, ?, ?)&#x27;</span>, r)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">10</span>, <span class="string">&#x27;Hall A&#x27;</span>), (<span class="number">20</span>, <span class="string">&#x27;Hall B&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into classes values (?, ?)&#x27;</span>, r)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(c.execute(<span class="string">&#x27;select name, gpa from students order by gpa desc&#x27;</span>).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[(&#x27;Ann&#x27;, 3.9), (&#x27;Cid&#x27;, 3.7), (&#x27;Bob&#x27;, 3.2)]</span><br></pre></td></tr></table></figure>
+
+<table>
+<thead>
+<tr>
+<th>动作</th>
+<th>关键词</th>
+<th>在这句里</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>投影</strong>：选哪些列</td>
+<td><code>SELECT</code></td>
+<td><code>name, gpa</code></td>
+</tr>
+<tr>
+<td><strong>过滤</strong>：留哪些行</td>
+<td><code>WHERE</code></td>
+<td>（这里没写）</td>
+</tr>
+<tr>
+<td><strong>排序</strong>：按什么排</td>
+<td><code>ORDER BY</code></td>
+<td><code>gpa desc</code></td>
+</tr>
+</tbody></table>
+<h2 id="三、JOIN：先配对，再过滤"><a href="#三、JOIN：先配对，再过滤" class="headerlink" title="三、JOIN：先配对，再过滤"></a>三、<code>JOIN</code>：先配对，再过滤</h2><p>学生表里只有 <code>class_id</code>，教室位置在另一张表。要一起看，就得连接：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table students (id int, name text, class_id int, gpa real)&#x27;</span>)</span><br><span class="line">c.execute(<span class="string">&#x27;create table classes (id int, location text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">1</span>, <span class="string">&#x27;Ann&#x27;</span>, <span class="number">10</span>, <span class="number">3.9</span>), (<span class="number">2</span>, <span class="string">&#x27;Bob&#x27;</span>, <span class="number">10</span>, <span class="number">3.2</span>), (<span class="number">3</span>, <span class="string">&#x27;Cid&#x27;</span>, <span class="number">20</span>, <span class="number">3.7</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into students values (?, ?, ?, ?)&#x27;</span>, r)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">10</span>, <span class="string">&#x27;Hall A&#x27;</span>), (<span class="number">20</span>, <span class="string">&#x27;Hall B&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into classes values (?, ?)&#x27;</span>, r)</span><br><span class="line"></span><br><span class="line">q = <span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="string">select s.name, c.location</span></span><br><span class="line"><span class="string">from students as s</span></span><br><span class="line"><span class="string">join classes as c on s.class_id = c.id</span></span><br><span class="line"><span class="string">where s.gpa &gt; 3.5</span></span><br><span class="line"><span class="string">order by s.name</span></span><br><span class="line"><span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="built_in">print</span>(c.execute(q).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[(&#x27;Ann&#x27;, &#x27;Hall A&#x27;), (&#x27;Cid&#x27;, &#x27;Hall B&#x27;)]</span><br></pre></td></tr></table></figure>
+
+<p>三个要点：</p>
+<ul>
+<li><strong><code>as s</code> &#x2F; <code>as c</code> 是别名</strong>。有了别名，<code>SELECT</code> 里写 <code>s.name</code> 就明确指「学生表的 name」，而不是教室表的。</li>
+<li><strong><code>ON s.class_id = c.id</code> 是连接条件</strong>，必须写。漏了会怎样？见下一节。</li>
+<li><strong><code>JOIN</code> 之后可以继续 <code>WHERE</code> &#x2F; <code>ORDER BY</code></strong>，跟单表查询一样。</li>
+</ul>
+<pre><code class="highlight mermaid">flowchart LR
+    A[&quot;students（3 行）&quot;] --&gt; X[&quot;笛卡尔积&lt;br/&gt;3 × 2 = 6 行&quot;]
+    B[&quot;classes（2 行）&quot;] --&gt; X
+    X --&gt;|&quot;ON s.class_id = c.id&quot;| F[&quot;过滤后 3 行&quot;]
+    F --&gt;|&quot;WHERE gpa &gt; 3.5&quot;| R[&quot;2 行&quot;]</code></pre>
+
+<h2 id="四、漏写条件的代价：笛卡尔积事故"><a href="#四、漏写条件的代价：笛卡尔积事故" class="headerlink" title="四、漏写条件的代价：笛卡尔积事故"></a>四、漏写条件的代价：笛卡尔积事故</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table students (id int, name text, class_id int, gpa real)&#x27;</span>)</span><br><span class="line">c.execute(<span class="string">&#x27;create table classes (id int, location text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">1</span>, <span class="string">&#x27;Ann&#x27;</span>, <span class="number">10</span>, <span class="number">3.9</span>), (<span class="number">2</span>, <span class="string">&#x27;Bob&#x27;</span>, <span class="number">10</span>, <span class="number">3.2</span>), (<span class="number">3</span>, <span class="string">&#x27;Cid&#x27;</span>, <span class="number">20</span>, <span class="number">3.7</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into students values (?, ?, ?, ?)&#x27;</span>, r)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">10</span>, <span class="string">&#x27;Hall A&#x27;</span>), (<span class="number">20</span>, <span class="string">&#x27;Hall B&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into classes values (?, ?)&#x27;</span>, r)</span><br><span class="line"></span><br><span class="line">with_on = <span class="built_in">len</span>(c.execute(<span class="string">&#x27;select * from students join classes on students.class_id = classes.id&#x27;</span>).fetchall())</span><br><span class="line">without_on = <span class="built_in">len</span>(c.execute(<span class="string">&#x27;select * from students, classes&#x27;</span>).fetchall())</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;加了 ON 条件:&quot;</span>, with_on, <span class="string">&quot;行&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;漏了 ON    :&quot;</span>, without_on, <span class="string">&quot;行&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">加了 ON 条件: 3 行</span><br><span class="line">漏了 ON    : 6 行</span><br></pre></td></tr></table></figure>
+
+<p>3 × 2 &#x3D; 6。<strong>这就是「先笛卡尔积，再过滤」的直接后果</strong>：条件一漏，行数变成 <code>n × m</code>。</p>
+<p>危险的地方在于<strong>它不报错</strong>。查询照样返回，只是结果全错、数据量成倍膨胀。表一大（比如一万行 × 一万行）直接跑不动。这也是「看起来没报错但结果全错」的典型代表。</p>
+<p><strong>检查习惯：看到 <code>JOIN</code>，先数一数 <code>ON</code> 在不在。</strong></p>
+<h2 id="五、自连接：一张表取两个身份"><a href="#五、自连接：一张表取两个身份" class="headerlink" title="五、自连接：一张表取两个身份"></a>五、自连接：一张表取两个身份</h2><p>「学生之间互为伙伴」这种关系存在<strong>同一张表</strong>里，怎么查？把表跟<strong>自己</strong>连：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table students (id int, name text, buddy_id int)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="number">1</span>, <span class="string">&#x27;Ann&#x27;</span>, <span class="number">2</span>), (<span class="number">2</span>, <span class="string">&#x27;Bob&#x27;</span>, <span class="number">3</span>), (<span class="number">3</span>, <span class="string">&#x27;Cid&#x27;</span>, <span class="number">2</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into students values (?, ?, ?)&#x27;</span>, r)</span><br><span class="line"></span><br><span class="line">q = <span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="string">select a.name as student, b.name as buddy</span></span><br><span class="line"><span class="string">from students as a</span></span><br><span class="line"><span class="string">join students as b on a.buddy_id = b.id</span></span><br><span class="line"><span class="string">order by a.name</span></span><br><span class="line"><span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="built_in">print</span>(c.execute(q).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[(&#x27;Ann&#x27;, &#x27;Bob&#x27;), (&#x27;Bob&#x27;, &#x27;Cid&#x27;), (&#x27;Cid&#x27;, &#x27;Bob&#x27;)]</span><br></pre></td></tr></table></figure>
+
+<p><strong>自连接时别名不是可选项，是必需品</strong>——没有 <code>a</code> 和 <code>b</code>，就无法区分「左边的学生」和「右边的伙伴」。</p>
+<p>自连接有个&quot;写法陷阱&quot;：用逗号写法 <code>from students as a, students as b</code> 而<strong>忘了 <code>WHERE a.buddy_id = b.id</code></strong>，立刻变成 3 × 3 &#x3D; 9 行的笛卡尔积。</p>
+<table>
+<thead>
+<tr>
+<th>写法</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>join ... on a.buddy_id = b.id</code></td>
+<td>3 行（一对一匹配）</td>
+</tr>
+<tr>
+<td><code>from a, b</code> 且漏写 <code>WHERE</code></td>
+<td>9 行（全部两两配对）</td>
+</tr>
+</tbody></table>
+<h2 id="六、聚合：把很多行压成一行"><a href="#六、聚合：把很多行压成一行" class="headerlink" title="六、聚合：把很多行压成一行"></a>六、聚合：把很多行压成一行</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table staff (name text, department text, salary int, status text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="string">&#x27;a&#x27;</span>, <span class="string">&#x27;Eng&#x27;</span>, <span class="number">100</span>, <span class="string">&#x27;active&#x27;</span>), (<span class="string">&#x27;b&#x27;</span>, <span class="string">&#x27;Eng&#x27;</span>, <span class="number">120</span>, <span class="string">&#x27;active&#x27;</span>), (<span class="string">&#x27;c&#x27;</span>, <span class="string">&#x27;Eng&#x27;</span>, <span class="number">90</span>, <span class="string">&#x27;left&#x27;</span>),</span><br><span class="line">          (<span class="string">&#x27;d&#x27;</span>, <span class="string">&#x27;Ops&#x27;</span>, <span class="number">80</span>, <span class="string">&#x27;active&#x27;</span>), (<span class="string">&#x27;e&#x27;</span>, <span class="string">&#x27;Ops&#x27;</span>, <span class="number">85</span>, <span class="string">&#x27;active&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into staff values (?, ?, ?, ?)&#x27;</span>, r)</span><br><span class="line"></span><br><span class="line">q = <span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="string">select department, count(*) as n, avg(salary) as avg_sal</span></span><br><span class="line"><span class="string">from staff</span></span><br><span class="line"><span class="string">where status = &#x27;active&#x27;</span></span><br><span class="line"><span class="string">group by department</span></span><br><span class="line"><span class="string">having count(*) &gt;= 2</span></span><br><span class="line"><span class="string">order by department</span></span><br><span class="line"><span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="built_in">print</span>(c.execute(q).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[(&#x27;Eng&#x27;, 2, 110.0), (&#x27;Ops&#x27;, 2, 82.5)]</span><br></pre></td></tr></table></figure>
+
+<p>聚合函数把<strong>一堆行压成一个值</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>COUNT</code></td>
+<td>数行数</td>
+</tr>
+<tr>
+<td><code>SUM</code> &#x2F; <code>AVG</code></td>
+<td>求和 &#x2F; 平均</td>
+</tr>
+<tr>
+<td><code>MIN</code> &#x2F; <code>MAX</code></td>
+<td>最小 &#x2F; 最大</td>
+</tr>
+</tbody></table>
+<p>而 <code>GROUP BY department</code> 的含义是：<strong>先按 <code>department</code> 把行分成几堆，每一堆各算一次聚合</strong>。</p>
+<p><strong>这里有一条硬性约束：<code>SELECT</code> 里出现的非聚合列，必须出现在 <code>GROUP BY</code> 里。</strong> 例如 <code>select department, name, count(*) ... group by department</code> 就是非法的——一个部门对应多个 <code>name</code>，数据库无法确定该返回哪一个。</p>
+<h2 id="七、WHERE-还是-HAVING：看过滤的是行还是组"><a href="#七、WHERE-还是-HAVING：看过滤的是行还是组" class="headerlink" title="七、WHERE 还是 HAVING：看过滤的是行还是组"></a>七、<code>WHERE</code> 还是 <code>HAVING</code>：看过滤的是行还是组</h2><p>这是<strong>最容易混淆的一处</strong>，判据只有一句话：</p>
+<table>
+<thead>
+<tr>
+<th>关键词</th>
+<th>什么时候过滤</th>
+<th>过滤的对象</th>
+<th>能用聚合函数吗</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>WHERE</code></td>
+<td><strong>分组前</strong></td>
+<td><strong>单行</strong></td>
+<td><strong>不能</strong></td>
+</tr>
+<tr>
+<td><code>HAVING</code></td>
+<td><strong>分组后</strong></td>
+<td><strong>组（聚合结果）</strong></td>
+<td>能</td>
+</tr>
+</tbody></table>
+<p>实测一下「<code>WHERE</code> 里用聚合函数」会怎样：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table staff (name text, department text, salary int, status text)&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> [(<span class="string">&#x27;a&#x27;</span>, <span class="string">&#x27;Eng&#x27;</span>, <span class="number">100</span>, <span class="string">&#x27;active&#x27;</span>), (<span class="string">&#x27;b&#x27;</span>, <span class="string">&#x27;Eng&#x27;</span>, <span class="number">120</span>, <span class="string">&#x27;active&#x27;</span>), (<span class="string">&#x27;c&#x27;</span>, <span class="string">&#x27;Eng&#x27;</span>, <span class="number">90</span>, <span class="string">&#x27;left&#x27;</span>),</span><br><span class="line">          (<span class="string">&#x27;d&#x27;</span>, <span class="string">&#x27;Ops&#x27;</span>, <span class="number">80</span>, <span class="string">&#x27;active&#x27;</span>), (<span class="string">&#x27;e&#x27;</span>, <span class="string">&#x27;Ops&#x27;</span>, <span class="number">85</span>, <span class="string">&#x27;active&#x27;</span>)]:</span><br><span class="line">    c.execute(<span class="string">&#x27;insert into staff values (?, ?, ?, ?)&#x27;</span>, r)</span><br><span class="line"></span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    c.execute(<span class="string">&quot;select department from staff where count(*) &gt; 1&quot;</span>)</span><br><span class="line"><span class="keyword">except</span> Exception <span class="keyword">as</span> e:</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;WHERE 里用聚合函数 →&quot;</span>, <span class="built_in">type</span>(e).__name__)</span><br><span class="line"></span><br><span class="line">q = <span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="string">select department, count(*) as n</span></span><br><span class="line"><span class="string">from staff</span></span><br><span class="line"><span class="string">group by department</span></span><br><span class="line"><span class="string">having count(*) &gt; 1</span></span><br><span class="line"><span class="string">order by department</span></span><br><span class="line"><span class="string">&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;HAVING 里用聚合函数 →&quot;</span>, c.execute(q).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">WHERE 里用聚合函数 → OperationalError</span><br><span class="line">HAVING 里用聚合函数 → [(&#x27;Eng&#x27;, 3), (&#x27;Ops&#x27;, 2)]</span><br></pre></td></tr></table></figure>
+
+<p><strong><code>WHERE</code> 报错，<code>HAVING</code> 正常。</strong> 因为 <code>WHERE</code> 跑的时候，「组」还没形成，<code>count(*)</code> 无从谈起。</p>
+<p>最后一个小陷阱，<code>COUNT(*)</code> 与 <code>COUNT(列)</code> 不一样：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> sqlite3 <span class="keyword">import</span> connect</span><br><span class="line"></span><br><span class="line">c = connect(<span class="string">&#x27;:memory:&#x27;</span>).cursor()</span><br><span class="line">c.execute(<span class="string">&#x27;create table t (x int, y int)&#x27;</span>)</span><br><span class="line">c.execute(<span class="string">&#x27;insert into t values (1, 10)&#x27;</span>)</span><br><span class="line">c.execute(<span class="string">&#x27;insert into t values (2, null)&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(c.execute(<span class="string">&#x27;select count(*) as all_rows, count(y) as non_null from t&#x27;</span>).fetchall())</span><br></pre></td></tr></table></figure>
+
+<p>输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">[(2, 1)]</span><br></pre></td></tr></table></figure>
+
+<p><code>COUNT(*)</code> 数<strong>所有行</strong>（2），<code>COUNT(y)</code> <strong>跳过 <code>NULL</code></strong>（1）。两者结果常常不同，写报表时差别很大。</p>
+<h2 id="八、执行顺序：写法-≠-运行顺序"><a href="#八、执行顺序：写法-≠-运行顺序" class="headerlink" title="八、执行顺序：写法 ≠ 运行顺序"></a>八、执行顺序：写法 ≠ 运行顺序</h2><p>写的时候 <code>SELECT</code> 在最前面，但<strong>数据库的运行顺序完全不是这样</strong>：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    F[&quot;FROM&lt;br/&gt;+ JOIN&quot;] --&gt; W[&quot;WHERE&lt;br/&gt;过滤单行&quot;]
+    W --&gt; G[&quot;GROUP BY&lt;br/&gt;分组&quot;]
+    G --&gt; H[&quot;HAVING&lt;br/&gt;过滤组&quot;]
+    H --&gt; S[&quot;SELECT&lt;br/&gt;投影&quot;]
+    S --&gt; O[&quot;ORDER BY&lt;br/&gt;排序&quot;]</code></pre>
+
+<p><code>FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY</code></p>
+<p>理解这个顺序，就能解释两件事：<strong>为什么 <code>WHERE</code> 里不能用 <code>COUNT(*)</code></strong>（那时还没分组），以及<strong>为什么 <code>SELECT</code> 里起的别名不能直接在 <code>WHERE</code> 里用</strong>（<code>WHERE</code> 跑得比 <code>SELECT</code> 早）。</p>
+<h2 id="九、小结"><a href="#九、小结" class="headerlink" title="九、小结"></a>九、小结</h2><table>
+<thead>
+<tr>
+<th>概念</th>
+<th>一句话</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>SELECT</code> 三件事</td>
+<td>投影 &#x2F; 过滤 &#x2F; 排序</td>
+<td><code>order by gpa desc</code> → <code>Ann, Cid, Bob</code></td>
+</tr>
+<tr>
+<td><code>JOIN</code> 本质</td>
+<td>笛卡尔积再按 <code>ON</code> 过滤</td>
+<td>3 行 → <code>Ann/Hall A</code>、<code>Cid/Hall B</code></td>
+</tr>
+<tr>
+<td>漏写 <code>ON</code></td>
+<td>行数 <code>n × m</code>，且不报错</td>
+<td>3 行变 6 行</td>
+</tr>
+<tr>
+<td>自连接</td>
+<td>同表两个别名</td>
+<td><code>[(&#39;Ann&#39;,&#39;Bob&#39;), (&#39;Bob&#39;,&#39;Cid&#39;), (&#39;Cid&#39;,&#39;Bob&#39;)]</code></td>
+</tr>
+<tr>
+<td>聚合 + 分组</td>
+<td>先分组，每组算一次</td>
+<td><code>[(&#39;Eng&#39;, 2, 110.0), (&#39;Ops&#39;, 2, 82.5)]</code></td>
+</tr>
+<tr>
+<td><code>WHERE</code> vs <code>HAVING</code></td>
+<td>行级 vs 组级</td>
+<td><code>WHERE count(*)</code> → <code>OperationalError</code></td>
+</tr>
+<tr>
+<td><code>COUNT(*)</code> vs <code>COUNT(y)</code></td>
+<td>后者跳过 <code>NULL</code></td>
+<td><code>[(2, 1)]</code></td>
+</tr>
+<tr>
+<td>执行顺序</td>
+<td><code>FROM→WHERE→GROUP BY→HAVING→SELECT→ORDER BY</code></td>
+<td>解释 <code>WHERE</code> 里不能聚合</td>
+</tr>
+</tbody></table>
+<p>三条能带走的：</p>
+<ol>
+<li><strong><code>JOIN</code> &#x3D; 笛卡尔积 + <code>ON</code> 过滤。</strong> 漏写 <code>ON</code> 不报错、只是结果错——看到 <code>JOIN</code> 先数条件。</li>
+<li><strong>过滤单行用 <code>WHERE</code>，过滤组用 <code>HAVING</code>。</strong> 判据是「过滤条件是行级还是组级」，<code>WHERE</code> 里写聚合函数直接报错。</li>
+<li><strong>执行顺序和书写顺序不是一回事。</strong> 把握 <code>FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY</code>，大部分「为什么这里不能用」的问题就自然解决了。</li>
+</ol>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/c61a0118/">https://hespethorn.github.io/posts/c61a0118/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/SQL/">SQL</a><a class="post-meta__tags" href="/tags/JOIN/">JOIN</a><a class="post-meta__tags" href="/tags/%E8%81%9A%E5%90%88/">聚合</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0116/" title="编程智能体与浏览器">编程智能体与浏览器</a><time datetime="2024-10-23T16:00:00.000Z" title="Created 2024-10-24 00:00:00">2024-10-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0101/" title="表达式求值与函数定义">表达式求值与函数定义</a><time datetime="2024-09-01T16:00:00.000Z" title="Created 2024-09-02 00:00:00">2024-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0115/" title="不可变数据与解释器">不可变数据与解释器</a><time datetime="2024-10-20T16:00:00.000Z" title="Created 2024-10-21 00:00:00">2024-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0119/" title="测试与追踪">测试与追踪</a><time datetime="2024-11-03T16:00:00.000Z" title="Created 2024-11-04 00:00:00">2024-11-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0105/" title="递归与树递归">递归与树递归</a><time datetime="2024-09-15T16:00:00.000Z" title="Created 2024-09-16 00:00:00">2024-09-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0107/" title="对象与链表">对象与链表</a><time datetime="2024-09-22T16:00:00.000Z" title="Created 2024-09-23 00:00:00">2024-09-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0104/" title="高阶函数的三种组合模式">高阶函数的三种组合模式</a><time datetime="2024-09-11T16:00:00.000Z" title="Created 2024-09-12 00:00:00">2024-09-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0114/" title="函数式编程与代数数据类型">函数式编程与代数数据类型</a><time datetime="2024-10-16T16:00:00.000Z" title="Created 2024-10-17 00:00:00">2024-10-17</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0103/" title="环境图与抽象屏障">环境图与抽象屏障</a><time datetime="2024-09-08T16:00:00.000Z" title="Created 2024-09-09 00:00:00">2024-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0120/" title="技术伦理与四种编程范式">技术伦理与四种编程范式</a><time datetime="2024-11-06T16:00:00.000Z" title="Created 2024-11-07 00:00:00">2024-11-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0111/" title="继承与惰性求值">继承与惰性求值</a><time datetime="2024-10-06T16:00:00.000Z" title="Created 2024-10-07 00:00:00">2024-10-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0102/" title="控制流与高阶函数">控制流与高阶函数</a><time datetime="2024-09-04T16:00:00.000Z" title="Created 2024-09-05 00:00:00">2024-09-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0110/" title="类与属性查找">类与属性查找</a><time datetime="2024-10-02T16:00:00.000Z" title="Created 2024-10-03 00:00:00">2024-10-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0113/" title="面向对象综合实践">面向对象综合实践</a><time datetime="2024-10-13T16:00:00.000Z" title="Created 2024-10-14 00:00:00">2024-10-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0112/" title="生成器与效率">生成器与效率</a><time datetime="2024-10-09T16:00:00.000Z" title="Created 2024-10-10 00:00:00">2024-10-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0108/" title="树的聚合与路径搜索">树的聚合与路径搜索</a><time datetime="2024-09-25T16:00:00.000Z" title="Created 2024-09-26 00:00:00">2024-09-26</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0117/" title="数据流水线与数据表">数据流水线与数据表</a><time datetime="2024-10-27T16:00:00.000Z" title="Created 2024-10-28 00:00:00">2024-10-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0109/" title="问题求解流程与可变性">问题求解流程与可变性</a><time datetime="2024-09-29T16:00:00.000Z" title="Created 2024-09-30 00:00:00">2024-09-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0106/" title="序列与容器">序列与容器</a><time datetime="2024-09-18T16:00:00.000Z" title="Created 2024-09-19 00:00:00">2024-09-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/c61a0118/" title="SQL 连接与聚合">SQL 连接与聚合</a><time datetime="2024-10-30T16:00:00.000Z" title="Created 2024-10-31 00:00:00">2024-10-31</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

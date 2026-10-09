@@ -1,0 +1,680 @@
+<!DOCTYPE html><html lang="zh_CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>引用计数与垃圾回收：谁来负责释放 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="先看三个真实场面：  一段 C++ 代码用 shared_ptr 管对象，逻辑上没问题，但两个对象互相持有智能指针，内存一路涨到 OOM； 一个 Java 服务，平时 P99 是 20ms，每次 Full GC 时飙到 800ms，业务方以为是网络抖动； 一段 Python 代码，with open(...) 一离开作用域文件就关了，但一个自定义缓存类里的对象却要等到「某个不确定的时刻」才被清掉。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="引用计数与垃圾回收：谁来负责释放">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-refcount-vs-gc/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="先看三个真实场面：  一段 C++ 代码用 shared_ptr 管对象，逻辑上没问题，但两个对象互相持有智能指针，内存一路涨到 OOM； 一个 Java 服务，平时 P99 是 20ms，每次 Full GC 时飙到 800ms，业务方以为是网络抖动； 一段 Python 代码，with open(...) 一离开作用域文件就关了，但一个自定义缓存类里的对象却要等到「某个不确定的时刻」才被清掉。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-10-08T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-09T08:35:38.972Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="语言">
+<meta property="article:tag" content="内存管理">
+<meta property="article:tag" content="GC">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "引用计数与垃圾回收：谁来负责释放",
+  "url": "https://hespethorn.github.io/posts/princ-refcount-vs-gc/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-10-08T16:00:00.000Z",
+  "dateModified": "2026-10-09T08:35:38.972Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/friend_404.gif"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-refcount-vs-gc/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: 'days',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '引用计数与垃圾回收：谁来负责释放',
+  isHighlightShrink: false,
+  isToc: false,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-image: url(/img/001.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/friend_404.gif" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">引用计数与垃圾回收：谁来负责释放</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-blog"></i><span> 博客</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></li><li><a class="site-page child" href="/categories/"><i class="fa-fw fas fa-folder"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-bookmark"></i><span> 收藏</span></a></li></ul></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div><div class="menus_item"><a class="site-page" target="_blank" rel="noopener external nofollow noreferrer" href="https://personal-business-ca-wnd0.bolt.host/"><i class="fa-fw fas fa-user"></i><span> 关于博主</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">引用计数与垃圾回收：谁来负责释放</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">Created</span><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">Word Count:</span><span class="word-count">4.1k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">Reading Time:</span><span>13mins</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>先看三个真实场面：</p>
+<ul>
+<li>一段 C++ 代码用 <code>shared_ptr</code> 管对象，逻辑上没问题，但两个对象互相持有智能指针，内存一路涨到 OOM；</li>
+<li>一个 Java 服务，平时 P99 是 20ms，每次 Full GC 时飙到 800ms，业务方以为是网络抖动；</li>
+<li>一段 Python 代码，<code>with open(...)</code> 一离开作用域文件就关了，但一个自定义缓存类里的对象却要等到「某个不确定的时刻」才被清掉。</li>
+</ul>
+<p>这三个场面看起来分别是「C++ 智能指针用错」「JVM 调优」「Python 语法」，但它们指向的是同一个问题：<strong>一块内存什么时候可以被释放，以及由谁来决定？</strong> 两种主流的回答方式——<strong>引用计数</strong>和<strong>追踪式垃圾回收</strong>——给出了两套完全不同的答案。</p>
+<p>本文讲的不是「哪种 GC 算法更好」，而是这两种机制<strong>各自的成本结构</strong>：为什么有的语言选了引用计数、有的选了追踪式 GC，以及现代语言为什么大多是「混合体」。</p>
+<h2 id="一、它从哪来"><a href="#一、它从哪来" class="headerlink" title="一、它从哪来"></a>一、它从哪来</h2><p>很有意思的是，这两种方案<strong>诞生在同一年：1960 年</strong>。</p>
+<ul>
+<li><strong>引用计数（Reference Counting）</strong>：1960 年，<strong>George E. Collins</strong> 在《A Method for Overlapping and Erasure of Lists》里提出——给每个对象记一个「有多少人在引用我」的计数，计数归零就释放。思路直观得像物理常识：<strong>没人拿着了，就可以扔了。</strong></li>
+<li><strong>追踪式 GC（Tracing GC）</strong>：同样在 1960 年，<strong>John McCarthy</strong> 为 Lisp 实现 GC 时提出了 <strong>mark-and-sweep</strong>——从一组确定的「根」（栈、寄存器、全局变量）出发，把所有能到达的对象标记一遍，没被标记的就是垃圾。它的思路是：<strong>判断存活不应该去数引用，而应该从根出发问一句「还够得着吗」。</strong></li>
+</ul>
+<p>两条路线的分歧从一开始就埋下了：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>引用计数</th>
+<th>追踪式 GC</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>判断依据</td>
+<td>局部信息（这个对象被谁指）</td>
+<td>全局信息（从根能不能到达）</td>
+</tr>
+<tr>
+<td>何时回收</td>
+<td>计数归零的那一刻</td>
+<td>扫描时发现不可达</td>
+</tr>
+<tr>
+<td>循环引用</td>
+<td><strong>数得到但拆不掉</strong></td>
+<td>天然处理（不可达即回收）</td>
+</tr>
+<tr>
+<td>谁做判断</td>
+<td>每次赋值都判断</td>
+<td>定期集中判断</td>
+</tr>
+</tbody></table>
+<p>后来这条线继续分叉：</p>
+<ul>
+<li><strong>1983–1984 年</strong>，<strong>Lieberman &amp; Hewitt</strong> 提出「代际垃圾回收」的想法，<strong>David Ungar</strong> 在 1984 年的 <em>Generation Scavenging</em> 里把它做成了可用的工程方案——这就是今天几乎所有高性能 GC（Java、Go、V8）的分代模型源头。</li>
+<li><strong>2001 年</strong>，<strong>David Bacon 和 V.T. Rajan</strong> 在《Concurrent Cycle Collection in Reference Counted Systems》里给出了<strong>如何用引用计数回收循环垃圾</strong>的算法——这直接影响了 CPython 等「引用计数 + 循环回收」的混合方案。</li>
+<li><strong>2011 年</strong>，Apple 在 LLVM 上推出 <strong>ARC（Automatic Reference Counting）</strong>，把引用计数的增减<strong>在编译期静态插入</strong>，砍掉了运行期判断的开销——这是引用计数路线的一次重要现代化。</li>
+</ul>
+<h2 id="二、为什么需要它"><a href="#二、为什么需要它" class="headerlink" title="二、为什么需要它"></a>二、为什么需要它</h2><p>因为**「手动管理内存」这件事，人类做得并不好**。它的失败模式有三种，每一种都极其昂贵：</p>
+<ul>
+<li><strong>泄漏（leak）</strong>：忘记释放，内存缓慢上涨，最后 OOM。<strong>最阴险，因为它不会立刻出事</strong>，可能上线几个月才爆。</li>
+<li><strong>悬垂（dangling）</strong>：释放太早，还留着指针，之后访问就是未定义行为。<strong>最危险，因为它可能表现为任何症状</strong>——错误结果、随机崩溃、或者「悄悄改掉了别人的数据」。</li>
+<li><strong>重复释放（double free）</strong>：释放两次，野指针被分配给别人，程序状态彻底乱掉。</li>
+</ul>
+<p>而自动管理要解决的核心问题，本质是一个<strong>判定问题</strong>：「这个对象还有用吗？」两种方案的差别，就在于它们用什么信息来回答：</p>
+<ul>
+<li><strong>引用计数用「局部计数」回答</strong>：被引用了就还有用。<strong>优点是快、确定、不需要停顿；缺点是「互相引用的孤岛」在计数上看起来永远有用</strong>——这就是循环引用。</li>
+<li><strong>追踪式 GC 用「可达性」回答</strong>：从根能到达就还有用。<strong>优点是能正确处理循环、判断更本质；缺点是必须定期停下来做全局扫描，而扫描时间随堆大小增长</strong>。</li>
+</ul>
+<p><strong>本质一句话：引用计数和追踪式 GC 回答的是同一个问题——「这块内存还有用吗」——但一个用「谁还引用我」这种局部信息来回答，另一个用「从根能不能到达」这种全局信息来回答；这个差异决定了一个没有停顿但有循环泄漏、另一个没有循环泄漏但有全局停顿。</strong></p>
+<h2 id="三、两张图看懂"><a href="#三、两张图看懂" class="headerlink" title="三、两张图看懂"></a>三、两张图看懂</h2><p>先看两者在<strong>回收时机</strong>上的区别。这不是实现细节，而是它们最本质的分野：</p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph RC[&quot;引用计数：成本摊在每次赋值&quot;]
+        A1[&quot;每次赋值 / 出作用域&quot;] --&gt; A2[&quot;计数 +1 / -1&quot;]
+        A2 --&gt; A3&#123;&quot;计数归零？&quot;&#125;
+        A3 --&gt;|&quot;是&quot;| A4[&quot;★ 立刻释放&quot;]
+        A3 --&gt;|&quot;否&quot;| A5[&quot;什么都不做&quot;]
+    end
+    subgraph GC[&quot;追踪式 GC：成本集中在一个时刻&quot;]
+        B1[&quot;平时分配&quot;] --&gt; B2[&quot;分配计数到阈值 / 内存吃紧&quot;]
+        B2 --&gt; B3[&quot;★ stop-the-world 扫描&quot;]
+        B3 --&gt; B4[&quot;标记：从根遍历可达对象&quot;]
+        B4 --&gt; B5[&quot;清除：回收不可达对象&quot;]
+    end
+    style A4 fill:#e6ffe6,stroke:#009900
+    style B3 fill:#ffe6e6,stroke:#cc0000</code></pre>
+
+<p>再看追踪式 GC 的分代模型。它的整个赌注就写在图里：<strong>大多数对象活不过第一代</strong>。</p>
+<pre><code class="highlight mermaid">flowchart TD
+    N[&quot;新分配对象 → 进入 gen0&quot;] --&gt; Q&#123;&quot;活过一次 gen0 回收？&quot;&#125;
+    Q --&gt;|&quot;否（绝大多数）&quot;| D[&quot;直接回收&quot;]
+    Q --&gt;|&quot;是（少数）&quot;| G1[&quot;晋升 gen1&quot;]
+    G1 --&gt; Q2&#123;&quot;活过一次 gen1 回收？&quot;&#125;
+    Q2 --&gt;|&quot;否&quot;| D
+    Q2 --&gt;|&quot;是（更少）&quot;| G2[&quot;晋升 gen2 老年代&quot;]
+    G2 --&gt; S[&quot;此后很少被扫描&lt;br/&gt;（只在 Full GC 时处理）&quot;]
+    style D fill:#f2f2f2,stroke:#888888
+    style G2 fill:#ffe6e6,stroke:#cc0000</code></pre>
+
+<p>两张图合起来说明：<strong>引用计数把回收成本「摊平」到每一次赋值上，换来「随时可回收」；追踪式 GC 把成本「集中」到一个时刻，换来「平时零开销」——但那个时刻不可预测，而且随堆增长。</strong></p>
+<h2 id="四、它有什么用"><a href="#四、它有什么用" class="headerlink" title="四、它有什么用"></a>四、它有什么用</h2><p><strong>1. 引用计数是「即时」的（CPython 3.13 实跑）</strong></p>
+<p>引用计数最容易被忽略的特点，是它的<strong>确定性</strong>：引用归零的那一刻，对象就被回收，不需要等任何后台进程：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">[1] 引用计数：对象一被引用就 +1，引用离开就 -1，归零即释放</span><br><span class="line">  a = Cell()            → sys.getrefcount(a) = 2  （含 getrefcount 自己的临时引用）</span><br><span class="line">  b = a                 → sys.getrefcount(a) = 3</span><br><span class="line">  lst = [a, a, a]       → sys.getrefcount(a) = 6</span><br><span class="line"></span><br><span class="line">[2] 确定性析构：引用归零的时间点可精确观测</span><br><span class="line">  del x 之后 finalizer 是否已触发：True</span><br><span class="line">  从 del 到对象被回收的间隔：3.90 微秒（同一语句内完成）</span><br></pre></td></tr></table></figure>
+
+<p><strong>这就是 CPython 里 <code>with</code> 语句、文件句柄能「离开作用域立刻关闭」的原理</strong>，靠的不是 GC，是引用计数。C++ 的 RAII 能成立，也是同一套机制（<code>shared_ptr</code> 的计数归零即析构）。</p>
+<p><strong>2. 引用计数的死穴：循环引用（本机实跑）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[3] 引用计数的死穴：循环引用，计数永远不为零</span><br><span class="line">  构造 p &lt;-&gt; q 环后，sys.getrefcount(p) = 3</span><br><span class="line">  del p, q 之后：环仍在，两个对象都无法被引用计数释放</span><br><span class="line">  当前 gc 垃圾计数 = (1259, 8, 0)  → 追踪式 GC 才能收割</span><br><span class="line">  gc.collect() 回收对象数 = 2，耗时 1.465 ms</span><br><span class="line">  回收后再 collect：0 个（环已被清掉）</span><br></pre></td></tr></table></figure>
+
+<p><code>p.next = q; q.next = p</code> 之后，<code>p</code> 的引用计数是 3（本地变量 <code>p</code> 一个、<code>q.next</code> 一个、<code>getrefcount</code> 的参数一个）。<code>del p, q</code> 之后，<strong>两个对象的计数各剩 1，因为互相指着</strong>，永远归不了零。引用计数在这里<strong>彻底失效</strong>，必须靠追踪式 GC 兜底。</p>
+<p>CPython 的解法正是「混合」：<strong>引用计数为主（处理绝大多数对象）+ 一个分代循环回收器（处理环）</strong>。这个组合是 2000 年 Python 2.0 引入的，算法基础就是 Bacon &amp; Rajan 那套循环回收。</p>
+<p><strong>3. 暂停时间：两种成本结构的实测对比（本机实跑）</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">[4] 暂停时间：引用计数释放 vs GC 一次完整回收</span><br><span class="line">  标量           | 操作                    |     耗时 | 说明</span><br><span class="line">  -------------+-------------------------+----------+------------------</span><br><span class="line">       100,000 | del 单向链表（引用计数）    |  2.917 ms | 逐对象立即释放，无扫描</span><br><span class="line">       300,000 | del 单向链表（引用计数）    |  9.050 ms | 逐对象立即释放，无扫描</span><br><span class="line">       600,000 | del 单向链表（引用计数）    | 16.008 ms | 逐对象立即释放，无扫描</span><br><span class="line">       100,000 | gc.collect()（追踪式）    | 18.542 ms | 必须遍历存活对象图</span><br><span class="line">       300,000 | gc.collect()（追踪式）    | 81.923 ms | 必须遍历存活对象图</span><br><span class="line">       600,000 | gc.collect()（追踪式）    | 144.070 ms | 必须遍历存活对象图</span><br></pre></td></tr></table></figure>
+
+<p><strong>这张表要诚实地读</strong>：两者都随对象数线性增长，引用计数并不是「零成本」，它把成本摊到了每一次赋值的 <code>+1/-1</code> 上。真正的差别在<strong>两个方面</strong>：</p>
+<ol>
+<li><strong>可预测性</strong>：引用计数的释放点由程序控制（<code>del x</code> 的那一刻），GC 的释放点由运行时决定，<strong>你无法预知它会在哪个请求上停顿</strong>。</li>
+<li><strong>扫描范围</strong>：引用计数只处理<strong>被释放的对象</strong>；GC 必须遍历<strong>整张存活对象图</strong>——<strong>堆里活着的对象越多，暂停越长</strong>，哪怕这次要回收的垃圾很少。</li>
+</ol>
+<p><strong>这就是「低延迟」系统偏爱引用计数、「高吞吐」系统能容忍 GC 停顿的根本原因</strong>：前者买的是确定性，后者买的是平时零开销。</p>
+<p><strong>4. 分代假说：为什么 GC 敢只扫一小块（本机实跑）</strong></p>
+<p>分代 GC 的赌注是：<strong>新对象更可能很快死</strong>。实测这个赌注赢得很明显：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[5] 分代假说：绝大多数对象活不过第一代</span><br><span class="line">  分配 400,000 个临时对象后，三代回收次数：</span><br><span class="line">    gen0（新生代）:   366 次  ← 绝大多数对象死在这里</span><br><span class="line">    gen1（中年代）:    33 次  ← 活过 gen0 的才被扫</span><br><span class="line">    gen2（老年代）:     0 次  ← 长期存活的最后兜底</span><br><span class="line">    观察到的 GC 暂停次数：399，最大暂停 1.570 ms，总暂停 94.362 ms</span><br></pre></td></tr></table></figure>
+
+<p><strong>同一个对象，被 gen0 回收扫描了 366 次，却没进过一次 gen2。</strong>（注：最大暂停随机器负载波动，这里是单次运行观测值。）这就是分代的收益：<strong>把「每次全堆扫描」的成本，压到只扫「新分配的那一小块」</strong>，因为统计上，垃圾几乎都在新生代里。</p>
+<p>赌注的另一面是：<strong>如果有个长寿对象被放进 gen0，它会被反复扫描 366 次</strong>，直到晋升到 gen2 才消停。这就是「晋升」这个机制要解决的效率问题，也是为什么「大对象直接进老年代」是个常见优化。</p>
+<p><strong>5. 两种机制在现代语言里都是「混合」的</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">  语言 / 运行时        主机制             循环处理            补充</span><br><span class="line">--------------------------------------------------------------------------------</span><br><span class="line">  CPython            引用计数            分代循环回收器       弱引用 / finalizer</span><br><span class="line">  Swift              引用计数(ARC)        需 weak/unowned 打断  编译期插入计数</span><br><span class="line">  C++ shared_ptr     引用计数            需 weak_ptr 打断      手动选择</span><br><span class="line">  Java HotSpot       追踪式(分代)        天然处理            G1 / ZGC 并发标记</span><br><span class="line">  Go                 追踪式(并发标记)     天然处理            低延迟目标</span><br><span class="line">  V8 (JS)            追踪式(分代)        天然处理            Orinoco 并发</span><br></pre></td></tr></table></figure>
+
+<p><strong>注意「循环处理」这一列</strong>：选了引用计数的语言，都把「防环」的责任<strong>部分转移给了程序员</strong>：C++ 要你判断该用 <code>weak_ptr</code> 还是 <code>shared_ptr</code>，Swift 要你标 <code>weak</code>，Python 则选择用 GC 兜底。<strong>这就是那条规律：没有免费的午餐，只有「谁在什么时候付账」。</strong></p>
+<h2 id="五、反例与边界"><a href="#五、反例与边界" class="headerlink" title="五、反例与边界"></a>五、反例与边界</h2><ul>
+<li><strong>引用计数不是「没有停顿」，只是「停顿分散」。</strong> 一次 <code>del</code> 一个十万节点的树，照样会有毫秒级卡顿。<strong>「无停顿」是相对追踪式 GC 的 stop-the-world 说的，不是绝对承诺。</strong></li>
+<li><strong>追踪式 GC 的暂停也可能是「假象」。</strong> 现代 JVM 的并发 GC（G1、ZGC）把大部分标记工作放在业务线程之外，暂停被压到毫秒级甚至亚毫秒，<strong>「Java 一定会有几百 ms 停顿」这个印象，早已过时</strong>。选型要看具体收集器，不是看语言。</li>
+<li><strong>引用计数有「计数溢出」风险。</strong> 32 位计数在极端场景下（海量共享指针）会回绕，一些实现（如 Python 的 <code>ob_refcnt</code>）为此在超大对象上改用 64 位或特殊处理。<strong>这是引用计数在实现层面必须防的边界。</strong></li>
+<li><strong>循环不是引用计数唯一的麻烦，还有一个更隐蔽的</strong>：<strong>多线程下的原子计数</strong>。引用计数的 <code>+1/-1</code> 在多线程里必须是原子的，这个开销（写屏障）可能吃掉它相对追踪式 GC 的优势——这也是为什么很多高并发运行时最终选了追踪式 GC + 并发标记。</li>
+<li><strong>分代假说不永远成立。</strong> 如果程序大量分配长寿对象（比如启动期构建一个巨大缓存），分代策略会把大量对象搬来搬去，反而更慢。<strong>这也是为什么 JVM 允许你直接调大新生代、或者用 <code>-XX:PretenureSizeThreshold</code> 让大对象直接进老年代。</strong></li>
+<li><strong>别再问「哪种更好」了，先问「我在优化什么」。</strong> 追求<strong>低延迟 &#x2F; 可预测</strong>（实时系统、游戏引擎、音频处理）：偏向引用计数或无停顿 GC；追求<strong>高吞吐</strong>（批处理、Web 后端）：偏向追踪式 GC 的分代 + 并发。<strong>同一个语言的不同 GC 实现，服务的就是不同的目标函数。</strong></li>
+</ul>
+<h2 id="六、对比表与小结"><a href="#六、对比表与小结" class="headerlink" title="六、对比表与小结"></a>六、对比表与小结</h2><table>
+<thead>
+<tr>
+<th>维度</th>
+<th>引用计数</th>
+<th>追踪式 GC</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>回收时机</td>
+<td>即时、确定性</td>
+<td>延迟、不确定</td>
+</tr>
+<tr>
+<td>暂停特征</td>
+<td>分散在每次赋值，单次很短</td>
+<td>集中成一次 stop-the-world</td>
+</tr>
+<tr>
+<td>扫描范围</td>
+<td>只处理被释放对象</td>
+<td>遍历整张存活对象图</td>
+</tr>
+<tr>
+<td>循环垃圾</td>
+<td>❌ 无法自动回收</td>
+<td>✅ 天然处理</td>
+</tr>
+<tr>
+<td>运行期开销</td>
+<td>每次赋值都有计数开销</td>
+<td>分配&#x2F;回收时才付费</td>
+</tr>
+<tr>
+<td>内存峰值</td>
+<td>低（即死即放）</td>
+<td>高（等回收才放）</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>低（逻辑简单）</td>
+<td>高（分代&#x2F;并发&#x2F;写屏障）</td>
+</tr>
+<tr>
+<td>对程序员的暴露</td>
+<td>需处理循环（weak）</td>
+<td>基本透明，但停顿不可控</td>
+</tr>
+<tr>
+<td>代表实现</td>
+<td>CPython、Swift ARC、COM、shared_ptr</td>
+<td>Java HotSpot、Go、V8</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>你的诉求</th>
+<th>更倾向</th>
+<th>具体做法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>延迟可预测、停顿要短</td>
+<td>引用计数</td>
+<td>Swift &#x2F; C++ 智能指针；注意打断循环</td>
+</tr>
+<tr>
+<td>吞吐优先、能容忍停顿</td>
+<td>追踪式 GC</td>
+<td>JVM 调参、G1&#x2F;ZGC、Go 的 GOGC</td>
+</tr>
+<tr>
+<td>既要低延迟又要高吞吐</td>
+<td>混合</td>
+<td>CPython 的 RC + 分代循环回收</td>
+</tr>
+<tr>
+<td>内存峰值敏感</td>
+<td>引用计数</td>
+<td>即死即放，堆不会膨胀</td>
+</tr>
+<tr>
+<td>大量短命对象 + 少量长寿缓存</td>
+<td>分代 GC</td>
+<td>让长寿对象尽早晋升</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：引用计数和追踪式 GC 常被讲成「旧 vs 新」「弱 vs 强」，但它们从 1960 年诞生起就是<strong>两条平行的路线</strong>，各自优化一个目标：引用计数优化<strong>确定性</strong>（什么时候放，我说了算），追踪式 GC 优化<strong>吞吐与正确性</strong>（平时零开销、循环也能收）。它们各自的死穴也正好对称：引用计数怕环，追踪式 GC 怕停顿。所以现代语言几乎都走了混合路线——<strong>CPython 用引用计数保确定性、用分代循环回收补环的漏洞</strong>；Java 用分代保吞吐、用并发标记压停顿。真正要记住的不是「哪个更好」，而是那句老话：<strong>每种自动内存管理都在做一笔交易——用可预测性换吞吐，或者用吞吐换可预测性。</strong></p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-locality/">局部性原理：缓存体系的地基</a></li>
+<li><a href="/posts/princ-space-time/">空间换时间：哈希、缓存与索引的共同母题</a></li>
+<li><a href="/posts/princ-jit/">JIT：让程序在奔跑中变快</a></li>
+<li><a href="/posts/princ-big-o/">大 O 复杂度：增长率的语言，不只是面试题</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-refcount-vs-gc/">https://hespethorn.github.io/posts/princ-refcount-vs-gc/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener external nofollow noreferrer" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E8%AF%AD%E8%A8%80/">语言</a><a class="post-meta__tags" href="/tags/%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/">内存管理</a><a class="post-meta__tags" href="/tags/GC/">GC</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">HespethornのBlog</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">820</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">1110</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">38</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://weibo.com/u/7103954483" rel="external nofollow noreferrer" target="_blank" title="weibo"><i class="fa-brands fa-weibo" style="color: #E6162D;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>Post Series</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="Created 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="Created 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="Created 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="Created 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="Created 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="Created 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="Created 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="Created 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="Created 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="Created 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="Created 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="Created 2026-10-09 00:00:00">2026-10-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap" style="background-color: rgba(255, 255, 255, 0.3); border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); color:rgb(16, 4, 4) !important"><div id="ft"><div class="ft-item-1"><div class="t-top"><div class="t-t-l"><p class="ft-t t-l-t">个人寄语</p><div class="bg-ad"><div>永远不要期待在雪地里能走回头路，风雪会将你的脚印全部掩埋，你只能向前。</div><div class="btn-xz-box"><a class="btn-xz" href="/archives">查看更多文章</a></div></div></div><div class="t-t-r"><p class="ft-t t-l-t">Knowledge Navigation</p><ul class="ft-links"><li><a href="/categories/AI-ML/">AI ML</a><a href="/categories/Algorithms/">Algorithms</a></li><li><a href="/categories/CS-Fundamentals/">CS Fundamentals</a><a href="/categories/Fables/">Fables</a></li><li><a href="/categories/Database/">Database</a><a href="/categories/Languages/">Languages</a></li><li><a href="/categories/Source-Reading/">Source Reading</a><a href="/categories/Systems/">Systems</a></li></ul></div></div></div><div class="ft-item-2"><p class="ft-t">推荐资源</p><div class="ft-img-group"><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><img src="/img/github-avatar.png" alt="GitHub" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://leetcode.cn/"><img src="https://leetcode.cn/favicon.ico" alt="LeetCode" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://godbolt.org/"><img src="https://static.ce-cdn.net/site-logo.svg" alt="Compiler Explorer" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://cmake.org/"><img src="https://cmake.org/favicon.ico" alt="CMake" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://arxiv.org/"><img src="https://arxiv.org/static/base/1.0.1/images/arxiv-logo-primary-light.svg" alt="arXiv" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://docs.python.org/"><img src="https://docs.python.org/favicon.ico" alt="Python Docs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://scholar.google.com/"><img src="https://scholar.google.com/favicon.ico" alt="Google Scholar" style="width: 45px; height: 45px;"/ loading='lazy'></a></div><div class="img-group-item"><a target="_blank" rel="noopener external nofollow noreferrer" href="https://devdocs.io/"><img src="https://devdocs.io/favicon.ico" alt="DevDocs" style="width: 45px; height: 45px;"/ loading='lazy'></a></div></div></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="Search for Posts" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
