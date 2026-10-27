@@ -1,0 +1,845 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#F4F7F4"><meta name="description" content="这一章的五条原则分属设计、架构、运行时、分布式事务、数据治理五个领域，追问的却是同一件事：某样东西，应该存在于几个地方。  信息隐藏把「将来可能变的设计决定」收进一个模块，外部只看得到接口； 关注点分离把一个决策只放在一层，不让它散落到 N 个分支里； 逃逸分析把对象留在它被使用的作用域，能不上堆就不上堆； 两阶段提交把「提交还是回滚」收进协调者的持久化日志，参与者只负责执行； 单一事实源把数据的">
+<meta property="og:type" content="article">
+<meta property="og:title" content="计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-chapter-02/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这一章的五条原则分属设计、架构、运行时、分布式事务、数据治理五个领域，追问的却是同一件事：某样东西，应该存在于几个地方。  信息隐藏把「将来可能变的设计决定」收进一个模块，外部只看得到接口； 关注点分离把一个决策只放在一层，不让它散落到 N 个分支里； 逃逸分析把对象留在它被使用的作用域，能不上堆就不上堆； 两阶段提交把「提交还是回滚」收进协调者的持久化日志，参与者只负责执行； 单一事实源把数据的">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-10-22T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-27T08:43:55.088Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="封装">
+<meta property="article:tag" content="关注点分离">
+<meta property="article:tag" content="逃逸分析">
+<meta property="article:tag" content="分布式事务">
+<meta property="article:tag" content="数据一致性">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源",
+  "url": "https://hespethorn.github.io/posts/princ-chapter-02/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-10-22T16:00:00.000Z",
+  "dateModified": "2026-10-27T08:43:55.088Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-chapter-02/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1E3A33')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F4F7F4')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link href="/self/base.css" rel="stylesheet"><link href="/self/redesign.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-color: #0b1412;"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">827</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">39</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/hero-fuhua.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/avatar-chibi.png" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div class="hero-corner-mask"></div><div id="post-info"><h1 class="post-title">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">发表于</span><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">总字数:</span><span class="word-count">9.7k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>31分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>这一章的五条原则分属设计、架构、运行时、分布式事务、数据治理五个领域，追问的却是同一件事：<strong>某样东西，应该存在于几个地方。</strong></p>
+<ul>
+<li><strong>信息隐藏</strong>把「将来可能变的设计决定」收进一个模块，外部只看得到接口；</li>
+<li><strong>关注点分离</strong>把一个决策只放在一层，不让它散落到 N 个分支里；</li>
+<li><strong>逃逸分析</strong>把对象留在它被使用的作用域，能不上堆就不上堆；</li>
+<li><strong>两阶段提交</strong>把「提交还是回滚」收进协调者的持久化日志，参与者只负责执行；</li>
+<li><strong>单一事实源</strong>把数据的真相收进唯一可写的那一处，其余全部降级为派生视图。</li>
+</ul>
+<p>各自动用的手段差别很大——一层间接、一层拼装、一次编译器证明、两轮投票、一套失效策略。但判据是共通的：<strong>数一数这样东西现在有几个地方可以改它。</strong> 超过一个，一致性就只剩人的自觉在维持。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    Q[&quot;本讲五条原则&quot;] --&gt; A[&quot;信息隐藏&lt;br/&gt;内部表示收进一扇门&quot;]
+    Q --&gt; B[&quot;关注点分离&lt;br/&gt;一个决策只在一层&quot;]
+    Q --&gt; C[&quot;逃逸分析&lt;br/&gt;对象留在它的作用域&quot;]
+    Q --&gt; D[&quot;两阶段提交&lt;br/&gt;决定收进协调者日志&quot;]
+    Q --&gt; E[&quot;单一事实源&lt;br/&gt;真相收进唯一可写处&quot;]
+    A --&gt; M[&quot;共同的问法：这样东西有几个归属地&quot;]
+    B --&gt; M
+    C --&gt; M
+    D --&gt; M
+    E --&gt; M</code></pre>
+
+<p>下面五节各自独立成立，结论都带本机实跑输出，或明确标注为模拟。</p>
+<h2 id="一、信息隐藏：变化的隔离面"><a href="#一、信息隐藏：变化的隔离面" class="headerlink" title="一、信息隐藏：变化的隔离面"></a>一、信息隐藏：变化的隔离面</h2><p>1972 年，David Parnas 在 CACM 上发表《On the Criteria To Be Used in Decomposing Systems into Modules》。当时主流的模块划分方式是按处理步骤来：一个数据处理系统，读入、转换、排序、输出，一步一个模块。这种分法直观，画在纸上也整齐。</p>
+<p>Parnas 用 KWIC（Key Word In Context，关键词上下文索引）做了对照实验。第一种分解按步骤切：输入模块、循环移位模块、字母排序模块、输出模块、主控模块。第二种分解按「藏起来的决定」切：每个模块藏住一个将来可能变的设计决策——数据怎么存、循环移位怎么实现、排序用什么算法、输出怎么排版。</p>
+<p>他的结论是第二种更好，理由很具体：<strong>第一种分法下，任何一个设计决策的改变都会穿透所有模块；第二种分法下，改变被关在一个模块内部。</strong> 两个版本功能完全等价，区别只在变化到来时的改动范围。</p>
+<p>这里要分清两个词。Parnas 讲的是<strong>信息隐藏</strong>，一条模块分解准则；<strong>封装</strong>是后来的语言机制，private、接口、getter&#x2F;setter 是它在语法上的投影。两者常被混用，关系却是单向的：封装可以用来实现信息隐藏，也可以用来假装实现了它。一个把所有字段都配上 getter&#x2F;setter 的类，语法上封装得严严实实，信息上什么都没藏。</p>
+<p>变化不可避免。真正决定改动成本的，往往不是改动本身有多大，而是它要穿透几层。只落在单个函数里的改动，改完跑一遍单测就行；穿透五个模块的改动，要重新理解五处上下文、重新验证五种组合。所谓「隔离面」就是这个意思——接口是一道面，面的一侧是可以自由变动的实现，另一侧是承诺不变的行为。</p>
+<p><strong>本质一句话：信息隐藏不是把东西藏起来不让人看，而是把「将来可能改变的那个决定」收进一个模块，让变化只能从一扇门里出来。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    CH[&quot;一个设计决策要变&lt;br/&gt;金额从整数分改成 Decimal 元&quot;]
+    CH --&gt; P1[&quot;按处理步骤切分的系统&quot;]
+    CH --&gt; P2[&quot;按隐藏决策切分的系统&quot;]
+    P1 --&gt; P1a[&quot;输入层：要改&quot;]
+    P1 --&gt; P1b[&quot;校验层：要改&quot;]
+    P1 --&gt; P1c[&quot;存储层：要改&quot;]
+    P1 --&gt; P1d[&quot;输出层：要改&quot;]
+    P2 --&gt; P2a[&quot;一个模块内部改完&lt;br/&gt;接口签名不变&quot;]
+    P2a --&gt; P2b[&quot;外部调用点：0 处改动&quot;]</code></pre>
+
+<p>本机用 CPython 3.13 做了两组对照，输出节选如下。</p>
+<p>第一组测不变量守不守得住。账户对象要求余额永远是非负整数，外部写入 60 次，其中 12 次是非法值（负数、字符串、浮点、None、布尔）。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【1】裸字段 vs 带守卫的属性</span><br><span class="line">  裸字段 · 不变量被破坏    : 12 次   终值 = 100000</span><br><span class="line">  受守卫 · 非法写入被拦下  : 12 次   终值 = 100000</span><br><span class="line">  受守卫 · 不变量被破坏    : 0 次</span><br></pre></td></tr></table></figure>
+
+<p>裸字段那 12 次非法写入全部生效，账户一度出现负余额，随后又被下一次合法写入覆盖——错误发生了，却没有留下任何痕迹。加 setter 之后 12 次全部被拒，终值停在最后一次合法写入上。守卫的价值不在「挡了多少次」，而在「挡不住的那一次会不会变成线上事故」。</p>
+<p>第二组测变化的波及面。账户内部表示从整数分换成 <code>Decimal</code> 元，公开方法 <code>balance_cents()</code> 的名字、参数、返回单位都不变。外部 12 个调用点，6 个直接读内部字段 <code>a._cents</code>，6 个走公开方法。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">【2】内部表示迁移后的调用点存活情况</span><br><span class="line">  V1（整数分）      直接抠字段: 成功 6 / 失败 0    走公开方法: 成功 6 / 失败 0</span><br><span class="line">  V2（Decimal 元）  直接抠字段: 成功 0 / 失败 6    走公开方法: 成功 6 / 失败 0</span><br></pre></td></tr></table></figure>
+
+<p>6 个直接访问的调用点迁移后全部抛异常，6 个走公开方法的一个都没动。把实现那一处也算上，两边的迁移改动点是 7 处对 1 处——这就是上面那张图在真实代码里的样子。两次折扣计算的返回值得以保持一致（都是 850 分），靠的也是接口把单位与舍入规则固定住了。</p>
+<p>另外说明一件容易被忽略的事：<strong>Python 的封装靠约定，不靠语法。</strong> 单下划线是命名约定，双下划线只是名字改写（name mangling，<code>_cents</code> 变成 <code>_AccountGuarded__cents</code>），两者都拦不住一句直接赋值。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">【3】绕过封装</span><br><span class="line">  obj._cents = -999                  后读到 -&gt; -999</span><br><span class="line">  obj._AccountGuarded__cents = -888  后读到 -&gt; -888</span><br></pre></td></tr></table></figure>
+
+<p>这不是 Python 的缺陷，而是设计取舍：把「别碰内部」交给使用者自觉，换取不必写样板代码。真正强制的边界只有编译器（Java、C++ 的 private）和进程边界（跨服务调用）。<strong>先弄清自己的语言站在哪一档，比争论该不该封装更实际。</strong></p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>藏错了东西</strong>。把不变的藏起来、把会变的暴露出去，是最常见的形式主义。典型例子是「返回内部集合的引用」，调用方拿到引用可以随意增删，封装只剩一层皮。</li>
+<li><strong>getter&#x2F;setter 满天飞等于没有封装</strong>。把 <code>public int x</code> 改成 <code>public int getX()</code>，只改了调用写法，没改依赖关系。<strong>判据是「外部能否借此影响内部状态的不变量」，不是「有没有方法」。</strong></li>
+<li><strong>泄漏抽象</strong>。接口本身干净，行为却依赖内部细节：某方法「O(1) 但偶尔会阻塞 200ms」、异常类型暴露了底层驱动、返回顺序恰好是插入顺序。这些承诺没写在签名里，一样会被依赖。</li>
+<li><strong>为不存在的变化提前封装</strong>。加三层接口、两套适配器，理由是「以后可能要换存储」。三年没换，读者却要先读三层才能找到业务逻辑。<strong>隔离面是要付阅读成本的，只有真实存在的变化才值得。</strong></li>
+<li><strong>跨模块还有一层隐式契约</strong>。并发安全、可重入、调用顺序、幂等性，这些性质不在类型系统里，却属于接口承诺的一部分。文档不写，使用者只能试出来。</li>
+<li><strong>封装挡不住反射与序列化</strong>。Java 的反射、Python 的 <code>__dict__</code>、JSON 反序列化都会绕过构造函数。追求「任何路径都改不坏」，靠的是不变量校验点，不是访问修饰符。</li>
+</ul>
+<h2 id="二、关注点分离：一次只解决一件事"><a href="#二、关注点分离：一次只解决一件事" class="headerlink" title="二、关注点分离：一次只解决一件事"></a>二、关注点分离：一次只解决一件事</h2><p>「separation of concerns」这个词出自 Edsger Dijkstra 1974 年的短文《On the role of scientific thought》。他谈的不是系统怎么切模块，而是人怎么思考复杂问题：研究一个东西时，要能把注意力放在它的某一个侧面，而不必同时装下全部。这是一条认知方法，后来才被工程界借去描述结构。</p>
+<p>借过去之后衍生出不少形态。结构化编程把控制流与数据分开，MVC（Trygve Reenskaug，1979，Smalltalk）把界面、数据、交互分开，AOP（Gregor Kiczales，1997）专门处理「横切关注点」——日志、鉴权、事务这类东西会横穿所有业务模块，按功能切根本切不掉，只好在切面上下手。微服务把这条原则推到了进程边界之外。</p>
+<p>为什么非分不可？因为<strong>组合的数量是乘法</strong>。三个维度各有若干取值，写在一起就是「取值 1 × 取值 2 × 取值 3」份实现；分开写是「取值 1 + 取值 2 + 取值 3」份。维度越多，差距越离谱。更要紧的是另一件事——写在一起时，同一条业务规则会被复制到每一份实现里，改一次规则就要改 N 处，漏掉一处就是行为分叉。</p>
+<p><strong>本质一句话：关注点分离把「N 个维度相乘」的实现数量变成「相加」，代价是多一层拼装，以及一次跨层的调用与错误传递。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    D[&quot;3 个维度&lt;br/&gt;格式 2 × 校验 2 × 存储 2&quot;]
+    D --&gt; M[&quot;绞在一起&lt;br/&gt;2×2×2 = 8 份实现&lt;br/&gt;同一段校验逻辑抄 8 遍&quot;]
+    D --&gt; A[&quot;分层&lt;br/&gt;2+2+2 = 6 个组件&lt;br/&gt;加 1 处拼装&quot;]
+    M --&gt; M2[&quot;改一条规则：要改 8 处&quot;]
+    A --&gt; A2[&quot;改一条规则：要改 1 处&quot;]</code></pre>
+
+<p>本机用两个版本的 Python 实现做了对照。方案甲是 8 个函数，每个函数把「格式 + 校验 + 存储」写在一起；方案乙是 6 个组件（2 个格式器、2 个校验器、2 个存储器）加一处拼装。两边跑同样的 8 种组合，先确认输出完全一致，再谈规模。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【0】两版输出逐条比对（8 种组合，同一笔 500 元订单）</span><br><span class="line">  输出一致: 8/8</span><br><span class="line">    csv/strict/mem     甲=&#x27;B1,500&#x27;                   乙=&#x27;B1,500&#x27;</span><br><span class="line">    csv/strict/file    甲=&#x27;B1,500&#x27;                   乙=&#x27;B1,500&#x27;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">【1】代码规模与「同一决策被复制了几份」</span><br><span class="line">  方案甲（绞在一起）: 函数 8 个, 实体行 96 行, 上限常量出现 8 次</span><br><span class="line">  方案乙（分层拼装）  : 维度实现 6 个 + 公共件 2 个, 实体行 18 行, 上限常量出现 1 次</span><br><span class="line">  方案甲 8 个函数两两平均相似度: 97.34%</span><br><span class="line">  方案乙 4 个组件两两平均相似度: 49.66%</span><br></pre></td></tr></table></figure>
+
+<p>这 8 个函数由同一份模板生成，模拟的是现实里「复制粘贴出一个新分支」的典型形态，所以相似度高达 97.34%。方案乙的组件之间相似度只有 49.66%——每个组件解决不同的问题，本来就不该长得像。<strong>代码相似度高不高，本身就是「同一个决策被复制了几份」的测量指标。</strong></p>
+<p>再看一次真实的规则变更：单笔金额上限从 1000 降到 800，只改 1 处，模拟人手漏改。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">【2】规则变更后，对 900 元这笔单的判定</span><br><span class="line">  方案甲：7 个放行 / 1 个拒绝   &lt;- 同一笔单，行为分叉</span><br><span class="line">    csv/strict/mem: 拒绝</span><br><span class="line">    csv/strict/file: 放行</span><br><span class="line">  方案乙：改 1 处常量，8 条流水线全部读到新上限</span><br><span class="line">    判定分布 = 放行 4 / 拒绝 4（lenient 放行，strict 拒绝，与设计一致）</span><br></pre></td></tr></table></figure>
+
+<p>方案甲里 8 个分支对同一笔订单给出了相反结论：恰好改到的那条路径拒绝，其余 7 条放行。这类缺陷在测试里很难被抓住，因为每条路径单独看都是对的。方案乙改一处常量，8 条流水线同时生效，且放行&#x2F;拒绝的分布严格由校验策略决定，不再有随机性。</p>
+<p>最后一组看扩展成本，维度从 2 涨到 4。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【3】组合扩展的成本</span><br><span class="line">  格式 2 × 校验 2 × 存储 2 -&gt; 甲: 8 个函数   乙: 6 个组件</span><br><span class="line">  格式 3 × 校验 3 × 存储 3 -&gt; 甲: 27 个函数   乙: 9 个组件</span><br><span class="line">  格式 4 × 校验 4 × 存储 4 -&gt; 甲: 64 个函数   乙: 12 个组件</span><br></pre></td></tr></table></figure>
+
+<p>每加一个取值，方案甲要新增一整批函数，方案乙只新增一个组件。<strong>乘法与加法的差距，在维度少的时候看不出来，在维度多的时候是能不能维护下去的区别。</strong></p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>分错了轴，比不分更糟</strong>。按「controller &#x2F; service &#x2F; dao」横向切分，看起来是分层，实际上一条业务改动要横跨三层、改三个文件、写三次 DTO 转换。真正该按「关注点」切的是业务能力，而不是技术层次。判断方法很朴素：<strong>一次典型需求变更，改动落在几个文件里。</strong></li>
+<li><strong>分离过度会制造阅读成本</strong>。为了「以后可能换」拆出十几层，追踪一个请求要跳十几个文件，每层只做一次转发。分离的收益是「改动局部化」，代价是「阅读全局化」，两边都要计。</li>
+<li><strong>跨进程分离要重新付一遍代价</strong>。函数调用变成网络调用之后，原本不存在的超时、重试、序列化、部分失败全都出现了。把分层原则原样搬到微服务上，得到的是分布式单体。</li>
+<li><strong>关注点会漂移</strong>。一个层里慢慢长出别的关注点：service 里开始写 SQL，controller 里开始算业务规则，日志逻辑散落在各处。分离不是一次性动作，是需要持续维护的状态。</li>
+<li><strong>彻底分离数据与行为会得到贫血模型</strong>。把「账算在哪」和「数存在哪」完全拆开，数据对象退化成一堆没有行为的字段，业务规则漂到 service 里，最后 service 变成上帝类。分离的粒度要跟着「变化频率」走，不是越细越好。</li>
+</ul>
+<h2 id="三、逃逸分析：把堆分配变成栈分配"><a href="#三、逃逸分析：把堆分配变成栈分配" class="headerlink" title="三、逃逸分析：把堆分配变成栈分配"></a>三、逃逸分析：把堆分配变成栈分配</h2><p>逃逸分析（escape analysis）是编译优化里的老话题。面向对象语言的系统化处理通常追到 1999 年前后的几项工作，其中 Choi、Gupta、Serrano、Sreedhar、Midkiff 在 OOPSLA 上的《Escape Analysis for Java》给出了较完整的算法框架。它要回答的问题只有一个——<strong>一个对象，会不会「逃出」它被创建的那个作用域？</strong></p>
+<p>判据是可达性：对象的引用有没有被写进字段、静态变量、数组，有没有作为返回值传出，有没有传给一个编译器看不透的方法。只要有一条成立，就判定逃逸；全部不成立，就可以把它拆成若干个标量（scalar replacement），直接放进寄存器或栈帧。分配这个动作本身消失了。</p>
+<p>这里要拆开两个常被混用的说法。<strong>标量替换</strong>是把对象的字段拆成独立的局部变量，对象结构不复存在；<strong>栈上分配</strong>是把整个对象搬进栈帧，结构还在，只是不走堆。HotSpot 走的是前者——<code>-XX:+EliminateAllocations</code> 控制的是标量替换，Java 里流传的「栈上分配」多数时候指的就是它的效果，而不是真的在栈上放了一个对象。Go 的逃逸分析更接近后者：判定不逃逸的变量直接放在 goroutine 栈上。</p>
+<p>不同语言的落点不一样。Go 在编译期做——<code>go build -gcflags=&quot;-m&quot;</code> 会把每个变量「moved to heap」的理由打出来，是 Go 性能调优最常用的一把尺子。JVM 在 JIT 期做，只对热点代码生效，但能利用运行时的类型信息，比静态分析更准。CPython 没有这层优化，<code>sys.getrefcount</code> 之外能做的很有限。</p>
+<p>为什么需要它？因为堆分配有一整套固定成本：对象头、分配路径、GC 要扫描它、回收要移动它、访问要走指针。一个只在方法内活几行的临时对象，付这些成本纯属浪费。逃逸分析把这笔钱省掉的方式不是「让分配更快」，而是<strong>证明这次分配根本不需要发生</strong>。</p>
+<p><strong>本质一句话：逃逸分析是编译器在证明「这个对象的引用出不了这个作用域」，证明成立就把它的字段拆成局部变量，分配这件事直接消失。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    N[&quot;new Point(i, 2i, 3i)&quot;] --&gt; Q&#123;&quot;引用会不会离开当前作用域？&quot;&#125;
+    Q --&gt;|&quot;写进字段 / static / 数组&lt;br/&gt;或作为返回值传出&quot;| H[&quot;判定逃逸&lt;br/&gt;堆分配：对象头 + GC 管理 + 指针跳转&quot;]
+    Q --&gt;|&quot;只在本方法内被读写&quot;| S[&quot;判定不逃逸&lt;br/&gt;标量替换：字段拆成局部变量&quot;]
+    S --&gt; R[&quot;落到寄存器 / 栈帧&lt;br/&gt;分配动作消失，GC 看不到它&quot;]</code></pre>
+
+<p>本机用 JDK 26（build 26.0.2.1，G1，<code>-Xmx64m</code>）做了对照。两个方法做同样的事：循环 2000 万次，每次构造一个三元组对象并求字段和。区别只在引用的去向——<code>noEscape</code> 里对象用完即弃，<code>escapes</code> 里引用被写进一个 <code>static</code> 字段。两个方法都先预热 6 轮，让 C2 完成编译，再各跑 3 轮取最快值。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">【1】-XX:+DoEscapeAnalysis（默认开启）</span><br><span class="line">noEscape        4.0 ms   校验和=1199999940000000</span><br><span class="line">escapes        61.2 ms   校验和=1199999940000000</span><br><span class="line">倍数          15.33x</span><br><span class="line">GC 次数: 100</span><br><span class="line"></span><br><span class="line">【2】-XX:-DoEscapeAnalysis（关闭逃逸分析）</span><br><span class="line">noEscape       65.3 ms   校验和=1199999940000000</span><br><span class="line">escapes        67.9 ms   校验和=1199999940000000</span><br><span class="line">倍数           1.04x</span><br><span class="line">GC 次数: 184</span><br></pre></td></tr></table></figure>
+
+<p>两组数据要连起来看。开启逃逸分析时，<code>noEscape</code> 是 4.0 ms，<code>escapes</code> 是 61.2 ms，差 15 倍；关掉之后，<code>noEscape</code> 从 4.0 ms 涨到 65.3 ms，与 <code>escapes</code> 的 67.9 ms 几乎相等。<strong>一个不做任何分配的工作，被降到了和「每轮都分配一个对象」完全一样的速度——这个退化本身就是证据：开启时它真的没有分配对象。</strong> 校验和两边完全一致，也排除了「优化把计算也一起省掉」的可能。</p>
+<p>GC 次数是旁证：同样的 2000 万次循环，开启时 100 次，关闭时 184 次。多出来那 84 次，就是被标量替换省掉的分配压力。</p>
+<p><code>escapes</code> 那 61.2 ms 另有一层含义。它没有因为开启逃逸分析而变快，因为引用写进 <code>static</code> 字段属于最硬的逃逸形式——编译器必须假设这个方法返回后别人还会读它，标量替换无从谈起。<strong>逃逸分析的收益只给「不逃逸」的那一类，逃逸的那一类一分钱都拿不到。</strong></p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>它是尽力而为，不是保证</strong>。跨方法调用、虚方法分派、复杂控制流、超过内联阈值的代码，都可能让分析失败。失败时的行为是保守地按逃逸处理，不报错、不提示。</li>
+<li><strong>只在热代码上生效</strong>。JVM 的逃逸分析在 C2 里，方法要跑够次数才被编译。启动阶段的那几万次分配，一次都省不掉。Go 是编译期分析，没有这个问题，但反过来也拿不到运行时类型信息。</li>
+<li><strong>收益取决于分配是不是瓶颈</strong>。业务代码里对象分配往往不是热点，CPU 花在锁、IO、日志格式化上。此时关掉逃逸分析，吞吐量可能一点变化都没有——<strong>优化之前先确认瓶颈，不然省下的是不存在的钱。</strong></li>
+<li><strong>大对象不适合标量替换</strong>。字段几十个的对象拆开之后，寄存器压力陡增，反而可能触发溢出到栈。编译器会自己放弃，但放弃的阈值不可见。</li>
+<li><strong>别为了迎合分析改代码风格</strong>。把对象拆成三个 <code>long</code> 局部变量，收益和让编译器自己拆差不多，可读性却差很多。真正有效的动作是<strong>减少不必要的逃逸</strong>：临时对象不要往字段里塞，不要在没有必要的地方返回新对象。</li>
+<li><strong>栈空间有限</strong>。栈上分配受线程栈大小约束，深递归场景下把对象挪到栈上可能换来 <code>StackOverflowError</code>。标量替换虽然不额外分配对象，但字段变多一样会挤占寄存器与栈帧，编译器会自己权衡。</li>
+</ul>
+<h2 id="四、两阶段提交：跨资源的原子性代价"><a href="#四、两阶段提交：跨资源的原子性代价" class="headerlink" title="四、两阶段提交：跨资源的原子性代价"></a>四、两阶段提交：跨资源的原子性代价</h2><p>两阶段提交（two-phase commit，2PC）的雏形见于 Lampson 与 Sturgis 1976 年的《Crash Recovery in a Distributed Data Storage System》，系统化的描述通常归给 Jim Gray 1978 年的《Notes on Data Base Operating Systems》。1991 年 X&#x2F;Open 把它固化成 XA 规范，成了应用服务器与数据库之间的标准接口。</p>
+<p>它要解决的是一个很朴素的问题：一笔事务要同时改两个资源，怎么保证「要么都成，要么都不成」。各自提交做不到——第一个提交成功、第二个失败，中间态就永久留在系统里，而且没有任何机制能自动发现它。</p>
+<p>XA 与 2PC 常被当成同义词，层次其实不同：2PC 是协议（怎么投票、怎么决定、崩了怎么恢复），XA 是接口（<code>xa_start</code>、<code>xa_end</code>、<code>xa_prepare</code>、<code>xa_commit</code>、<code>xa_rollback</code>、<code>xa_recover</code> 这套调用约定）。同一个协议可以由 XA 实现，也可以由自研 RPC 实现，跨语言系统里后者更常见。</p>
+<p>2PC 的办法是把提交拆成两轮。第一轮问所有参与者「你能不能提交」，参与者检查完资源、把承诺写进自己的日志，然后投票；第二轮协调者收集完票，做出唯一决定，写进自己的持久化日志，再逐个通知参与者执行。</p>
+<p><strong>本质一句话：两阶段提交把「提交还是回滚」这个决定从参与者手里收走，交给协调者一次性写进持久化日志——决定只有一处，其余动作都只是执行这个决定。</strong></p>
+<pre><code class="highlight mermaid">sequenceDiagram
+    participant C as 协调者
+    participant A as 资源 A
+    participant B as 资源 B
+    C-&gt;&gt;A: prepare(tx)
+    C-&gt;&gt;B: prepare(tx)
+    A--&gt;&gt;C: YES（承诺已持久化）
+    B--&gt;&gt;C: YES（承诺已持久化）
+    Note over C: 写 COMMIT 决定进日志&lt;br/&gt;这一刻是分水岭
+    C-&gt;&gt;A: commit
+    C-&gt;&gt;B: commit
+    A--&gt;&gt;C: ACK
+    B--&gt;&gt;C: ACK</code></pre>
+
+<p>这张图上最关键的不是两轮，而是中间那个 <code>Note</code>。<strong>在决定落盘之前，所有参与者都还来得及反悔；决定落盘之后，参与者再怎么宕机，重启后也只能照做。</strong> 协议的正确性完全押在这一条上。</p>
+<p>本机用两个 SQLite 库模拟两个资源，初始各 1000，做一笔 300 元的转账，期望合计始终为 2000。资源端用 journal 表记录 prepare 承诺（承诺内容包括变更量），commit 时才真正改账，恢复时按协调者日志重放。这里<strong>没有实现 XA，只模拟协议行为</strong>——真实数据库的 prepare 阶段会持有行锁直到决定下达，SQLite 没有这个能力。</p>
+<p>先看没有协调的情况。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">【1】单阶段顺序写（没有协调）</span><br><span class="line">    A 扣款提交成功</span><br><span class="line">    B 加款失败：触发单笔入账上限 1200（模拟第三方风控拒绝）</span><br><span class="line">  结果                         A=  700  B= 1000  合计= 1700</span><br><span class="line">    与期望值 2000 的差 = -300 元</span><br></pre></td></tr></table></figure>
+
+<p>A 扣款已提交，B 加款被拒，300 元凭空消失。这不是理论上的风险。所有「先写 A 再写 B」的代码，第二个写失败时的默认结果都是它。也正因为如此，这类缺陷通常不会在测试里暴露——只有 B 真的失败时才会出现。</p>
+<p>正常路径与反对票路径：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">【2】双方都投赞成票</span><br><span class="line">    prepare  A: YES (已记录承诺)   B: YES (已记录承诺)</span><br><span class="line">    prepare 之后（未决定）          A= 1000  B= 1000  合计= 2000   journal: A=PREPARED B=PREPARED</span><br><span class="line">    A: 已提交    B: 已提交</span><br><span class="line">    commit 之后                A=  700  B= 1300  合计= 2000   journal: A=COMMITTED B=COMMITTED</span><br><span class="line">    落盘写事务次数 = 5</span><br><span class="line"></span><br><span class="line">【3】转出方投反对票（余额不足）</span><br><span class="line">    prepare  A: NO (余额不足，投反对票)   B: YES (已记录承诺)</span><br><span class="line">    A: 已中止（账面未动）    B: 已中止（账面未动）</span><br><span class="line">    abort 之后                 A= 1000  B= 1000  合计= 2000</span><br><span class="line">    落盘写事务次数 = 4   账面一分未动</span><br></pre></td></tr></table></figure>
+
+<p>注意 prepare 之后那一行：两个资源都投了赞成票，账面却一分未动，合计仍是 2000。承诺不等于生效，这是 2PC 与「先改后补偿」式方案的根本区别。场景 3 里 A 因余额不足投反对票，B 虽然已经承诺，仍然被中止，账面回到初始状态。</p>
+<p>崩溃才是这个协议真正的考场。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">【4】协调者写下 COMMIT 决定后崩溃（B 尚未落实）</span><br><span class="line">    协调者已提交 A，然后在提交 B 之前断电</span><br><span class="line">    崩溃后                      A=  700  B= 1000  合计= 1700   journal: A=COMMITTED B=PREPARED</span><br><span class="line">    ...重启，进入恢复流程</span><br><span class="line">    恢复重放 tx-crash @资源B: 已提交</span><br><span class="line">    恢复后                      A=  700  B= 1300  合计= 2000   journal: A=COMMITTED B=COMMITTED</span><br><span class="line"></span><br><span class="line">【5】决定只存在内存里，进程崩溃</span><br><span class="line">    协调者在写决定之前崩溃，决定丢失</span><br><span class="line">    崩溃后                      A= 1000  B= 1000  合计= 2000   journal: A=PREPARED B=PREPARED</span><br><span class="line">      资源A journal[tx-nolog] = PREPARED</span><br><span class="line">      资源B journal[tx-nolog] = PREPARED</span><br><span class="line">    但协调者日志里查不到这个 txid，恢复流程不知道该提交还是回滚</span><br><span class="line">    恢复重放: 没有处于 PREPARED 的资源，无需动作</span><br><span class="line">    恢复后                      A= 1000  B= 1000  合计= 2000   journal: A=PREPARED B=PREPARED</span><br></pre></td></tr></table></figure>
+
+<p>场景 4 是协议生效的样子：崩溃瞬间账面确实不一致（1700），但协调者日志里那条 COMMIT 决定还在，重启后恢复流程读日志、重放 B 的提交，账面重新收敛。<strong>中间态存在，但它有确定的终局。</strong></p>
+<p>场景 5 是协议失效的样子：决定还没来得及落盘，进程就没了。两个资源各自停在 PREPARED，账面上看还是干净的 2000，可它们的 journal 都锁着，既不能提交也不能回滚。恢复流程翻遍协调者日志也找不到这个 txid——<strong>不知道该往哪走，这才是 2PC 最贵的地方：它把「不一致」换成了「不确定」，而后者需要人来裁决。</strong></p>
+<p>代价可以量化：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【6】一次转账的持久化写次数对照</span><br><span class="line">    单阶段顺序写 : 2 次落盘</span><br><span class="line">    两阶段提交   : 5 次落盘（2 次 prepare + 1 次决定 + 2 次落实）</span><br><span class="line">    代价倍数     : 2.50x，另加 prepare 到决定之间的资源锁定时间</span><br></pre></td></tr></table></figure>
+
+<p>2.5 倍落盘之外，还有两轮网络往返、prepare 到决定之间的锁持有期，以及协调者日志本身的持久化开销。这些成本在低冲突场景下可以接受，在高并发写同一行时会被锁等待放大。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>协调者是单点</strong>。协调者日志丢了就是场景 5，所有参与者卡死等人工。生产实现里协调者日志通常要三副本。</li>
+<li><strong>同步阻塞无法避免</strong>。prepare 之后、决定之前，参与者必须持有资源。参与者在这一刻失联，协调者和其他参与者只能等——等超时，然后由人决定。3PC 试图用第三轮把阻塞去掉，代价是在网络分区下可能做出错误决定。</li>
+<li><strong>它保证原子性，不保证隔离性</strong>。prepare 期间其他事务能不能看到未提交的修改，取决于隔离级别，与 2PC 无关。</li>
+<li><strong>决定之后仍然可能长时间不一致</strong>。commit 阶段参与者失联，只能靠重试加幂等收敛；网络分区期间，一部分参与者已提交、一部分没有，外部观察到的仍是中间态。</li>
+<li><strong>长事务会把代价放大到不可接受</strong>。跨三个系统的转账如果中间夹着一次外部 HTTP 调用，锁的持有时间就是那次调用的超时时间。所以长流程几乎不用 2PC。</li>
+<li><strong>替代方案只是换了代价的位置</strong>。Saga 用补偿换掉阻塞，代价是中间态对外可见、补偿逻辑要自己写且可能失败；TCC 用 Try 阶段预留资源换掉长锁，代价是业务要改造；本地消息表把跨库事务降级成本地事务加最终一致，代价是延迟。<strong>没有免费的原子性，只有把成本挪到不同位置。</strong></li>
+</ul>
+<h2 id="五、单一事实源：谁说了算"><a href="#五、单一事实源：谁说了算" class="headerlink" title="五、单一事实源：谁说了算"></a>五、单一事实源：谁说了算</h2><p>SSOT（single source of truth）这个词出自信息管理领域，1990 年代随主数据管理（MDM）与数据仓库建设流行起来，指的是「一个数据项在全组织范围内只有一个权威来源」。工程上它并不新鲜：数据库范式化的核心动作就是消除冗余存储，Git 的每次提交只有一个父节点、只有一条历史，Kubernetes 用声明式的单一期望状态驱动整个集群收敛。</p>
+<p>为什么需要它？因为副本会漂移，而漂移的原因不是「有人故意写错」——是「有两个地方都可以写」。只要存在两条写路径，两条路径之间就必然出现时间差、失败差、遗漏差。这不是纪律问题，是结构问题。</p>
+<p><strong>本质一句话：单一事实源不是「只存一份」，而是「只有一个地方可以改」——其余所有出现都必须是能随时重建的派生视图。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    subgraph BAD[&quot;多份各自维护&quot;]
+        W1[&quot;写路径 1&quot;] --&gt; R1[&quot;副本 A&quot;]
+        W2[&quot;写路径 2&quot;] --&gt; R2[&quot;副本 B&quot;]
+        W3[&quot;写路径 3&quot;] --&gt; R3[&quot;副本 C&quot;]
+        R1 -.-&gt;|&quot;对不上&quot;| R2
+        R2 -.-&gt;|&quot;对不上&quot;| R3
+    end
+    subgraph GOOD[&quot;单一事实源&quot;]
+        WR[&quot;唯一的写入口&quot;] --&gt; SRC[&quot;源 + 版本号&quot;]
+        SRC --&gt; V1[&quot;派生视图 1&quot;]
+        SRC --&gt; V2[&quot;派生视图 2&quot;]
+        SRC --&gt; V3[&quot;派生视图 3&quot;]
+    end</code></pre>
+
+<p>本机模拟了一件商品的单价出现在四个位置：定价源、展示价签、下单计价、对账报表。读写交错进行——每次调价后立刻读三次，模拟线上真实时序。调价 200 次，每次以 75% 的概率同步到各副本（模拟人工与异步同步的成功率）。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">【甲】4 份各自维护</span><br><span class="line">  调价 200 次，副本没跟上的累计次数 = 138</span><br><span class="line">    展示价签: 落后 46 次</span><br><span class="line">    下单计价: 落后 45 次</span><br><span class="line">    对账报表: 落后 47 次</span><br><span class="line">  期间读 600 次，读到非最新价 128 次 (21.3%)</span><br><span class="line">  第 63 次调价后四个位置的取值：</span><br><span class="line">    定价源     = 140.03</span><br><span class="line">    展示价签 = 139.92   &lt;- 与源不一致</span><br><span class="line">    下单计价 = 139.92   &lt;- 与源不一致</span><br><span class="line">    对账报表 = 139.92   &lt;- 与源不一致</span><br></pre></td></tr></table></figure>
+
+<p>第 63 次调价那一刻，三个下游都没跟上：源已经走到 140.03，三处副本还停在 139.92。这一行数据比「三个价格各不相同」更值得警惕——<strong>三个副本的取值完全一致，拿它们互相校验是查不出问题的，因为它们的错误是同步的。</strong> 唯一能对上的基准只有源，而源恰恰是最少被查询的那一个。21.3% 的陈旧读意味着每五次读价就有一次拿到过期数字。</p>
+<p>再看三种以「一份源」为前提的派生策略，成本单位是模拟的相对值（回源 10，缓存 1）。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">【乙】源 + 写时推送失效（失效消息送达率 98%，丢失 5 条）</span><br><span class="line">  缓存命中 405/600 (67.5%)，平均读取代价 3.92</span><br><span class="line">  读到旧价 15 次 (2.5%)</span><br><span class="line"></span><br><span class="line">【丙】源 + 读时校验版本</span><br><span class="line">  缓存命中 400/600 (66.7%)，平均读取代价 6.33</span><br><span class="line">  读到旧价 0 次</span><br><span class="line"></span><br><span class="line">【丁】源 + 纯回源</span><br><span class="line">  平均读取代价 = 10.00   漂移 = 0</span><br></pre></td></tr></table></figure>
+
+<p>三组数字排在一起，就是一条一致性-成本前沿：</p>
+<table>
+<thead>
+<tr>
+<th>做法</th>
+<th>副本漂移</th>
+<th>陈旧读</th>
+<th>平均读取代价</th>
+<th>复杂度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>甲 多份各自维护</td>
+<td>138 次</td>
+<td>21.3%</td>
+<td>约 0（读本地）</td>
+<td>低</td>
+</tr>
+<tr>
+<td>乙 源 + 写时失效</td>
+<td>0（无副本）</td>
+<td>2.5%</td>
+<td>3.92</td>
+<td>中</td>
+</tr>
+<tr>
+<td>丙 源 + 读时校验</td>
+<td>0</td>
+<td>0%</td>
+<td>6.33</td>
+<td>中</td>
+</tr>
+<tr>
+<td>丁 源 + 纯回源</td>
+<td>0</td>
+<td>0%</td>
+<td>10.00</td>
+<td>高（源是硬依赖）</td>
+</tr>
+</tbody></table>
+<p>模式乙最值得琢磨：它结构上没有第二份真相，可失效消息丢一条，缓存就变成一份没人管的副本。2.5% 的陈旧读比起模式甲的 21.3% 好看得多，但这个数字不是白来的——<strong>SSOT 的性质需要一条可靠的失效链路去维持，链路一断，它立刻退化成多副本问题。</strong> 缓存本质上就是副本，任何缓存都必须回答「失效策略是什么」；回答不出来，它就不是优化，是隐患。</p>
+<p>模式丙一条消息都不会丢，代价是每次读都要一次轻量往返，缓存只省下传输的数据量，省不掉往返。模式丁最干净，也最脆——源一挂，所有读取全部失败。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>SSOT 不等于「一个数据库」</strong>。常见形态是「一个写入路径 + 多个只读副本」，物理上仍是多份，但只要只有一个地方能写，就不算破坏 SSOT。<strong>判据是写者数量，不是副本数量。</strong></li>
+<li><strong>源会变成单点</strong>。模式丁的可用性完全依赖源，这也是缓存存在的理由。选择 SSOT 就必须同时回答「源挂了怎么办」，而不是假设源不挂。</li>
+<li><strong>组织边界能让 SSOT 失效</strong>。两个团队各自维护一份客户信息，技术上没有任何手段能强制合并——除非把写权限收到一个团队手里，而那往往是组织问题，不是技术问题。</li>
+<li><strong>派生必须可重建</strong>。所谓派生视图，指的是「删掉它，能从源一键重建」。做不到这一点，它就是一个需要独立维护的源，只是名字叫视图。</li>
+<li><strong>过度 SSOT 会造出巨型服务</strong>。把所有数据塞进一个「唯一真相」的服务，写路径是单点了，服务本身的耦合度也跟着上升。合理的粒度是「一个业务概念一个源」，不是「全公司一个源」。</li>
+<li><strong>时间维度上 SSOT 也需要版本</strong>。同一份数据在不同时刻有不同的值，没有版本号，「谁是最新」这个问题就只能靠时间戳猜，而时间戳在分布式环境里并不可靠。</li>
+</ul>
+<h2 id="六、五条原则的横向对照与小结"><a href="#六、五条原则的横向对照与小结" class="headerlink" title="六、五条原则的横向对照与小结"></a>六、五条原则的横向对照与小结</h2><table>
+<thead>
+<tr>
+<th>原则</th>
+<th>拿什么换什么</th>
+<th>代价结构的关键量</th>
+<th>失效边界</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>信息隐藏</td>
+<td>一层间接换变化传播半径</td>
+<td>接口的稳定性、变化穿透的模块数</td>
+<td>藏错对象 &#x2F; 泄漏抽象 &#x2F; 为不存在的变化设计</td>
+</tr>
+<tr>
+<td>关注点分离</td>
+<td>一次拼装换组合数从乘到加</td>
+<td>维度数量、单个维度的取值数量</td>
+<td>分错轴 &#x2F; 分离过度 &#x2F; 关注点漂移</td>
+</tr>
+<tr>
+<td>逃逸分析</td>
+<td>编译器证明换掉堆分配</td>
+<td>逃逸判定的成功率、分配是否瓶颈</td>
+<td>分析失败 &#x2F; 冷代码 &#x2F; 大对象</td>
+</tr>
+<tr>
+<td>两阶段提交</td>
+<td>两次往返与阻塞窗口换原子性</td>
+<td>参与者数量、锁持有时间、日志持久化</td>
+<td>协调者单点 &#x2F; 决定丢失 &#x2F; 长事务</td>
+</tr>
+<tr>
+<td>单一事实源</td>
+<td>读取成本换掉副本漂移</td>
+<td>写者数量、失效策略、派生可重建性</td>
+<td>源成单点 &#x2F; 组织分裂 &#x2F; 缓存没有失效策略</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>五条原则</th>
+<th>一句话判据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>信息隐藏</td>
+<td>这个决定将来要变的时候，改动会穿透几个模块</td>
+</tr>
+<tr>
+<td>关注点分离</td>
+<td>同一段业务规则，现在复制在几个地方</td>
+</tr>
+<tr>
+<td>逃逸分析</td>
+<td>这个对象的引用，出得了当前方法吗</td>
+</tr>
+<tr>
+<td>两阶段提交</td>
+<td>这个决定写进日志了吗，写完还会不会变</td>
+</tr>
+<tr>
+<td>单一事实源</td>
+<td>这份数据，现在有几个地方可以改它</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：这五条原则表面在谈模块划分、分层、编译优化、分布式事务、数据治理，落到根上都在回答同一个问题——<strong>这样东西应该有几个归属地</strong>。Parnas 把「会变的决定」收进一个模块，Dijkstra 把「不同的关注」拆到不同层，编译器把「不需要堆的对象」留在栈上，2PC 把「提交与否」收进协调者的日志，SSOT 把「真相」收进唯一可写的那一处。</p>
+<p>反过来看，它们的失效方式也是同一个：<strong>一旦某样东西有了第二个归属地，一致性就只能靠人的自觉去维护，而人会漏。</strong> 副本漏同步、规则漏改一处、缓存漏失效、日志漏落盘——事故的形态千差万别，起因都是同一个「第二处」。</p>
+<p>判断一个设计稳不稳，与其看它套了什么模式，不如问一句：<strong>这个决定、这份数据、这个状态，现在有几个地方可以改它。</strong> 答案是一个，剩下的都是工程问题；答案是两个，剩下的都是时间问题。</p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-chapter-01/">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</a></li>
+<li><a href="/posts/239109f/">C++ 中的 Pimpl 模式：封装实现细节的艺术</a></li>
+<li><a href="/posts/princ-least-astonishment/">最少惊讶原则：接口设计的隐形标准</a></li>
+<li><a href="/posts/princ-dbc/">契约式设计：把应该写成必须</a></li>
+<li><a href="/posts/princ-jit/">JIT：让程序在奔跑中变快</a></li>
+<li><a href="/posts/princ-wal/">写前日志 WAL：先记账、后落库</a></li>
+<li><a href="/posts/princ-acid-base/">ACID 与 BASE：两种一致性契约</a></li>
+<li><a href="/posts/princ-cap/">CAP 定理：分布式的取舍三角</a></li>
+<li><a href="/posts/princ-fail-fast/">快速失败：让 Bug 早点现形</a></li>
+<li><a href="/posts/princ-refcount-vs-gc/">引用计数与垃圾回收：谁来负责释放</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-chapter-02/">https://hespethorn.github.io/posts/princ-chapter-02/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="external nofollow noreferrer" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://Hespethorn.github.io" target="_blank">HespethornのBlog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E5%B0%81%E8%A3%85/">封装</a><a class="post-meta__tags" href="/tags/%E5%85%B3%E6%B3%A8%E7%82%B9%E5%88%86%E7%A6%BB/">关注点分离</a><a class="post-meta__tags" href="/tags/%E9%80%83%E9%80%B8%E5%88%86%E6%9E%90/">逃逸分析</a><a class="post-meta__tags" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/">分布式事务</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E4%B8%80%E8%87%B4%E6%80%A7/">数据一致性</a></div><div class="post-share"><div class="social-share" data-image="https://hespethorn.github.io/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related full-width" href="/posts/8bd3804a/" title="Redis HyperLogLog：12 KB 的基数账本"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">Redis HyperLogLog：12 KB 的基数账本</div></div><div class="info-2"><div class="info-item-1">一、基数统计的三条路线：精度、空间与可枚举性基数（cardinality）指一个集合中不重复元素的个数。每日 UV、活跃设备数、搜索词去重数、独立 IP 数，报的都是这个量。它和「集合里有哪些元素」是两件事：业务只要那个数字，却常常顺手把元素也存了下来。 精确做法的成本很直白：要判断一个元素是否出现过，就必须记住...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-14</div><div class="info-item-2">背压：慢消费者的保护机制</div></div><div class="info-2"><div class="info-item-1">线上有个很常见的死法：上游一慢，下游先崩。 下游没做错什么，它只是老老实实收下所有请求，放进队列，然后慢慢处理。结果队列越来越长，内存越来越满，延迟越来越高，最后 OutOfMemoryError 或者一次超时雪崩——监控图上，崩溃前那段&quot;吞吐还挺好看&quot;的时间，往往就是队列在替它挨打。 再对比...</div></div></div></a><a class="pagination-related" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-28</div><div class="info-item-2">布鲁克斯定律：给延期项目加人只会更晚</div></div><div class="info-2"><div class="info-item-1">1975 年，一本讲操作系统的书里，有一章不是讲技术，而是讲人。它的名字后来成了软件工程里最常被引用、也最常被无视的一句话：  Adding manpower to a late software project makes it later.向已经延期的软件项目增加人力，只会让它更晚。  这句话之所以反直觉，是...</div></div></div></a><a class="pagination-related" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-28</div><div class="info-item-2">大 O 复杂度：增长率的语言，不只是面试题</div></div><div class="info-2"><div class="info-item-1">先看三个真实反复发生的场面：  一段跑得飞快的代码，上线后数据量涨了 100 倍，直接超时——代码一个字没改； 一个&quot;优化&quot;把平均耗时从 3 毫秒降到 1 毫秒，但 P99 反而变差了——因为新的实现有更差的最坏情况； 面试里能默写&quot;快排平均 O(n log n)、最坏 O(n²)&...</div></div></div></a></div></div><hr class="custom-hr"/><div id="post-comment"><div class="comment-head"><div class="comment-headline"><i class="fas fa-comments fa-fw"></i><span> 评论</span></div></div><div class="comment-wrap"><div><div id="twikoo-wrap"></div></div></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">后端工程师 / CS 学习者。把踩过的坑写成可复用的判断，偶尔写点家书。</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">827</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">39</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://www.zhihu.com/people/96-40-70-62-86" rel="external nofollow noreferrer" target="_blank" title="知乎"><i class="fa-brands fa-zhihu" style="color: #0084FF;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E4%BF%A1%E6%81%AF%E9%9A%90%E8%97%8F%EF%BC%9A%E5%8F%98%E5%8C%96%E7%9A%84%E9%9A%94%E7%A6%BB%E9%9D%A2"><span class="toc-number">1.</span> <span class="toc-text">一、信息隐藏：变化的隔离面</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81%E5%85%B3%E6%B3%A8%E7%82%B9%E5%88%86%E7%A6%BB%EF%BC%9A%E4%B8%80%E6%AC%A1%E5%8F%AA%E8%A7%A3%E5%86%B3%E4%B8%80%E4%BB%B6%E4%BA%8B"><span class="toc-number">2.</span> <span class="toc-text">二、关注点分离：一次只解决一件事</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E9%80%83%E9%80%B8%E5%88%86%E6%9E%90%EF%BC%9A%E6%8A%8A%E5%A0%86%E5%88%86%E9%85%8D%E5%8F%98%E6%88%90%E6%A0%88%E5%88%86%E9%85%8D"><span class="toc-number">3.</span> <span class="toc-text">三、逃逸分析：把堆分配变成栈分配</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81%E4%B8%A4%E9%98%B6%E6%AE%B5%E6%8F%90%E4%BA%A4%EF%BC%9A%E8%B7%A8%E8%B5%84%E6%BA%90%E7%9A%84%E5%8E%9F%E5%AD%90%E6%80%A7%E4%BB%A3%E4%BB%B7"><span class="toc-number">4.</span> <span class="toc-text">四、两阶段提交：跨资源的原子性代价</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E5%8D%95%E4%B8%80%E4%BA%8B%E5%AE%9E%E6%BA%90%EF%BC%9A%E8%B0%81%E8%AF%B4%E4%BA%86%E7%AE%97"><span class="toc-number">5.</span> <span class="toc-text">五、单一事实源：谁说了算</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AD%E3%80%81%E4%BA%94%E6%9D%A1%E5%8E%9F%E5%88%99%E7%9A%84%E6%A8%AA%E5%90%91%E5%AF%B9%E7%85%A7%E4%B8%8E%E5%B0%8F%E7%BB%93"><span class="toc-number">6.</span> <span class="toc-text">六、五条原则的横向对照与小结</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="发表于 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="发表于 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</a><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="发表于 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="发表于 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="发表于 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="发表于 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="发表于 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="发表于 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</a><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8bd3804a/" title="Redis HyperLogLog：12 KB 的基数账本">Redis HyperLogLog：12 KB 的基数账本</a><time datetime="2026-10-20T16:00:00.000Z" title="发表于 2026-10-21 00:00:00">2026-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-sm2-sm3-sm4/" title="SM2、SM3、SM4：国密三件套各管哪一段，以及五个只有跑起来才发现的坑">SM2、SM3、SM4：国密三件套各管哪一段，以及五个只有跑起来才发现的坑</a><time datetime="2026-10-19T16:00:00.000Z" title="发表于 2026-10-20 00:00:00">2026-10-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20261016/" title="AI 新闻速递（周更精选 2026-10-16）">AI 新闻速递（周更精选 2026-10-16）</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="footer-inner"><div class="footer-about"><h4>关于这个站</h4><p class="quote">不识庐山真面目，<br>只缘身在此山中。</p><p class="quote-src">— 苏轼《题西林壁》</p></div><div class="footer-col"><h4>主线</h4><a href="/categories/CS-Fundamentals/">CS 学习线</a><a href="/categories/Seckill/">Seckill 实战</a><a href="/categories/Systems/">系统与工程</a><a href="/categories/AI-ML/AI-News/">AI 周报</a></div><div class="footer-col"><h4>索引</h4><a href="/archives/">归档</a><a href="/tags/">标签</a><a href="/link/">收藏</a><a href="/posts/FamilyProse/">家书</a><a href="/atom.xml">RSS</a></div></div><div class="footer-bottom"><span>© 2022—2026 HESPETHORN</span><span>插画：大肥鱼 · HEXO / BUTTERFLY</span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_comment" href="#post-comment" title="前往评论"><i class="fas fa-comments"></i></a><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script><script>(() => {
+  const isShuoshuo = GLOBAL_CONFIG_SITE.pageType === 'shuoshuo'
+  const option = null
+
+  const getCount = () => {
+    const countELement = document.getElementById('twikoo-count')
+    if(!countELement) return
+    twikoo.getCommentsCount({
+      envId: 'cloud1-5gvih2v152129658',
+      region: 'ap-shanghai',
+      urls: [window.location.pathname],
+      includeReply: false
+    }).then(res => {
+      countELement.textContent = res[0].count
+    }).catch(err => {
+      console.error(err)
+    })
+  }
+
+  const init = (el = document, path = location.pathname) => {
+    twikoo.init({
+      el: el.querySelector('#twikoo-wrap'),
+      envId: 'cloud1-5gvih2v152129658',
+      region: 'ap-shanghai',
+      onCommentLoaded: () => {
+        btf.loadLightbox(document.querySelectorAll('#twikoo .tk-content img:not(.tk-owo-emotion)'))
+      },
+      ...option,
+      path: isShuoshuo ? path : (option && option.path) || path
+    })
+
+    
+
+    isShuoshuo && (window.shuoshuoComment.destroyTwikoo = () => {
+      if (el.children.length) {
+        el.innerHTML = ''
+        el.classList.add('no-comment')
+      }
+    })
+  }
+
+  const loadTwikoo = (el, path) => {
+    if (typeof twikoo === 'object') setTimeout(() => init(el, path), 0)
+    else btf.getScript('https://cdn.jsdelivr.net/npm/twikoo@1.6.41/dist/twikoo.all.min.js').then(() => init(el, path))
+  }
+
+  if (isShuoshuo) {
+    'Twikoo' === 'Twikoo'
+      ? window.shuoshuoComment = { loadComment: loadTwikoo }
+      : window.loadOtherComment = loadTwikoo
+    return
+  }
+
+  if ('Twikoo' === 'Twikoo' || !false) {
+    if (false) btf.loadComment(document.getElementById('twikoo-wrap'), loadTwikoo)
+    else loadTwikoo()
+  } else {
+    window.loadOtherComment = loadTwikoo
+  }
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

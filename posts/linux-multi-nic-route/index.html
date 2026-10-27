@@ -1,0 +1,691 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>网络路由实战：当内网 OA 机接上 WiFi 之后 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#F4F7F4"><meta name="description" content="一台办公电脑原本通过有线网卡访问内网 OA 系统。为了临时查阅外部资料，接入 WiFi 后，电脑同时拥有了两条网络连接：有线网卡连接办公内网，无线网卡连接外部网络。 网络连接看起来正常，但接下来可能出现一些不符合直觉的现象：OA 页面无法打开，外部网站仍然可以访问；断开 WiFi 后 OA 恢复正常；重新连接 WiFi 后，问题再次出现。 这类现象不一定是 OA 服务异常，也不一定是 DNS 配置">
+<meta property="og:type" content="article">
+<meta property="og:title" content="网络路由实战：当内网 OA 机接上 WiFi 之后">
+<meta property="og:url" content="https://hespethorn.github.io/posts/linux-multi-nic-route/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一台办公电脑原本通过有线网卡访问内网 OA 系统。为了临时查阅外部资料，接入 WiFi 后，电脑同时拥有了两条网络连接：有线网卡连接办公内网，无线网卡连接外部网络。 网络连接看起来正常，但接下来可能出现一些不符合直觉的现象：OA 页面无法打开，外部网站仍然可以访问；断开 WiFi 后 OA 恢复正常；重新连接 WiFi 后，问题再次出现。 这类现象不一定是 OA 服务异常，也不一定是 DNS 配置">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-10-11T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-10-27T08:43:55.130Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="网络">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="路由">
+<meta property="article:tag" content="NetworkManager">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "网络路由实战：当内网 OA 机接上 WiFi 之后",
+  "url": "https://hespethorn.github.io/posts/linux-multi-nic-route/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-10-11T16:00:00.000Z",
+  "dateModified": "2026-10-27T08:43:55.130Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://hespethorn.github.io/posts/linux-multi-nic-route/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1E3A33')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F4F7F4')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '网络路由实战：当内网 OA 机接上 WiFi 之后',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link href="/self/base.css" rel="stylesheet"><link href="/self/redesign.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-color: #0b1412;"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">827</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">39</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/hero-fuhua.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/avatar-chibi.png" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">网络路由实战：当内网 OA 机接上 WiFi 之后</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div class="hero-corner-mask"></div><div id="post-info"><h1 class="post-title">网络路由实战：当内网 OA 机接上 WiFi 之后</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">发表于</span><time datetime="2026-10-11T16:00:00.000Z" title="发表于 2026-10-12 00:00:00">2026-10-12</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Systems/">Systems</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Systems/Linux/">Linux</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">总字数:</span><span class="word-count">4.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>14分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>一台办公电脑原本通过有线网卡访问内网 OA 系统。为了临时查阅外部资料，接入 WiFi 后，电脑同时拥有了两条网络连接：有线网卡连接办公内网，无线网卡连接外部网络。</p>
+<p>网络连接看起来正常，但接下来可能出现一些不符合直觉的现象：OA 页面无法打开，外部网站仍然可以访问；断开 WiFi 后 OA 恢复正常；重新连接 WiFi 后，问题再次出现。</p>
+<p>这类现象不一定是 OA 服务异常，也不一定是 DNS 配置错误。一个值得优先检查的方向是：<strong>当 Linux 主机同时连接多个网络时，内核究竟根据什么决定一个数据包从哪个网卡发出？</strong></p>
+<p>理解这个问题，需要区分三个层次：路由表决定数据包可以走哪条路径，路由规则决定查询哪些路由表，网络管理工具则负责把配置写入系统并在连接变化时重新应用。</p>
+<blockquote>
+<p>本文所有 IP 地址均取自 RFC 5737（<code>192.0.2.0/24</code>、<code>198.51.100.0/24</code>、<code>203.0.113.0/24</code>）与 RFC 1918 保留的示例网段，不对应任何真实网络。</p>
+</blockquote>
+<h2 id="一、接入-WiFi-改变了主机的网络路径"><a href="#一、接入-WiFi-改变了主机的网络路径" class="headerlink" title="一、接入 WiFi 改变了主机的网络路径"></a>一、接入 WiFi 改变了主机的网络路径</h2><p>先假设办公电脑有以下网络配置：</p>
+<table>
+<thead>
+<tr>
+<th>网络接口</th>
+<th>地址</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>enp3s0</code></td>
+<td><code>192.0.2.15/24</code></td>
+<td>连接办公内网</td>
+</tr>
+<tr>
+<td><code>wlp2s0</code></td>
+<td><code>203.0.113.25/24</code></td>
+<td>连接 WiFi</td>
+</tr>
+</tbody></table>
+<p>办公内网的 OA 服务器地址为 <code>192.0.2.80</code>，WiFi 路由器的地址为 <code>203.0.113.1</code>。</p>
+<p>有线连接建立后，系统通常会获得一条指向办公网的直连路由。如果有线网络还提供了默认网关，系统也可能获得一条默认路由。接入 WiFi 后，无线连接可能再增加一条直连路由和一条默认路由。</p>
+<p>问题由此产生：<strong>系统同时存在多条路由时，并不会简单地按照网卡连接顺序选择出口。</strong>&#x5B83;需要依据目标地址、路由前缀、路由优先级以及可能存在的策略规则完成路径选择。</p>
+<div align="center">  
+\!\[svg\](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiB2aWV3Qm94PSIwIDAgNjgwIDI5MCIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIGhlaWdodD0iMjkwIj4KICA8dGV4dCB4PSIzNDAiIHk9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzFhMWExYSI+5Y+M572R5Y2h5ouT5omR77ya5pWw5o2u5YyF5Ye65Y+j55Sx5YaF5qC46Lev55Sx5p+l6K+i5Yaz5a6a77yM6ICM6Z2e6L+e57q/PC90ZXh0PgogIDxyZWN0IHg9IjIyMCIgeT0iMjgiIHdpZHRoPSIyNDAiIGhlaWdodD0iNTgiIHJ4PSIxMCIgZmlsbD0iI2U4ZjBmZSIgc3Ryb2tlPSIjNWI4MmM0IiBzdHJva2Utd2lkdGg9IjEuNSIvPgogIDx0ZXh0IHg9IjM0MCIgeT0iNTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiMxNzM2NWQiPkxpbnV4IOWKnuWFrOeUteiEkTwvdGV4dD4KICA8dGV4dCB4PSIzNDAiIHk9IjcxIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjEyIiBmaWxsPSIjMTczNjVkIj7ot6/nlLHooaggwrcg6Lev55Sx6KeE5YiZPC90ZXh0PgogIDxwYXRoIGQ9Ik0yNzUgODYgTDE3MCAxMzIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzM1NzdiOCIgc3Ryb2tlLXdpZHRoPSIyLjUiLz4KICA8cGF0aCBkPSJNNDA1IDg2IEw1MTAgMTMyIiBmaWxsPSJub25lIiBzdHJva2U9IiMyNjk0NmEiIHN0cm9rZS13aWR0aD0iMi41Ii8+CiAgPHJlY3QgeD0iNTAiIHk9IjEzMiIgd2lkdGg9IjI0MCIgaGVpZ2h0PSI2MiIgcng9IjEwIiBmaWxsPSIjZThmNWU5IiBzdHJva2U9IiMyNjk0NmEiIHN0cm9rZS13aWR0aD0iMS41Ii8+CiAgPHRleHQgeD0iMTcwIiB5PSIxNTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTMiIGZpbGw9IiMxNzViM2MiPuaciee6v+e9keWNoSBlbnAzczA8L3RleHQ+CiAgPHRleHQgeD0iMTcwIiB5PSIxNzYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZpbGw9IiMxNzViM2MiPjE5Mi4wLjIuMTUvMjQ8L3RleHQ+CiAgPHJlY3QgeD0iMzkwIiB5PSIxMzIiIHdpZHRoPSIyNDAiIGhlaWdodD0iNjIiIHJ4PSIxMCIgZmlsbD0iI2ZmZjRlNSIgc3Ryb2tlPSIjYzg4YTMwIiBzdHJva2Utd2lkdGg9IjEuNSIvPgogIDx0ZXh0IHg9IjUxMCIgeT0iMTU2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjEzIiBmaWxsPSIjN2E0YTBiIj7ml6Dnur/nvZHljaEgd2xwMnMwPC90ZXh0PgogIDx0ZXh0IHg9IjUxMCIgeT0iMTc2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjEyIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmaWxsPSIjN2E0YTBiIj4yMDMuMC4xMTMuMjUvMjQ8L3RleHQ+CiAgPHBhdGggZD0iTTE3MCAxOTQgTDE3MCAyMTgiIHN0cm9rZT0iIzI2OTQ2YSIgc3Ryb2tlLXdpZHRoPSIyLjUiLz4KICA8cGF0aCBkPSJNNTEwIDE5NCBMNTEwIDIxOCIgc3Ryb2tlPSIjYzg4YTMwIiBzdHJva2Utd2lkdGg9IjIuNSIvPgogIDxyZWN0IHg9IjY1IiB5PSIyMTgiIHdpZHRoPSIyMTAiIGhlaWdodD0iNTQiIHJ4PSI4IiBmaWxsPSIjZjJmYWY0IiBzdHJva2U9IiMyNjk0NmEiLz4KICA8dGV4dCB4PSIxNzAiIHk9IjI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzE3NWIzYyI+5Yqe5YWs5YaF572RPC90ZXh0PgogIDx0ZXh0IHg9IjE3MCIgeT0iMjU4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjEyIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmaWxsPSIjMTc1YjNjIj5PQe+8mjE5Mi4wLjIuODA8L3RleHQ+CiAgPHJlY3QgeD0iNDA1IiB5PSIyMTgiIHdpZHRoPSIyMTAiIGhlaWdodD0iNTQiIHJ4PSI4IiBmaWxsPSIjZmZmOWYwIiBzdHJva2U9IiNjODhhMzAiLz4KICA8dGV4dCB4PSI1MTAiIHk9IjI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzdhNGEwYiI+V2lGaSDot6/nlLHlmag8L3RleHQ+CiAgPHRleHQgeD0iNTEwIiB5PSIyNTgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM3YTRhMGIiPuWklumDqOe9kee7nOWHuuWPozwvdGV4dD4KPC9zdmc+)  
+</div>
+
+<p>这张拓扑图只描述网络连接关系。真正决定一个数据包从哪个接口离开的，是 Linux 内核执行的路由查询结果，而不是图中的连线，也不是应用程序认为自己连接了哪张网卡。</p>
+<h2 id="二、Linux-如何选择路由"><a href="#二、Linux-如何选择路由" class="headerlink" title="二、Linux 如何选择路由"></a>二、Linux 如何选择路由</h2><h3 id="1-路由表描述目标网络的可达路径"><a href="#1-路由表描述目标网络的可达路径" class="headerlink" title="1. 路由表描述目标网络的可达路径"></a>1. 路由表描述目标网络的可达路径</h3><p>可以先查看当前系统的 IPv4 路由表：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ip -4 route show</span><br></pre></td></tr></table></figure>
+
+<p>在上述办公网络中，可能看到类似这样的结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">default via 203.0.113.1 dev wlp2s0 metric 600</span><br><span class="line">default via 192.0.2.1 dev enp3s0 metric 100</span><br><span class="line">192.0.2.0/24 dev enp3s0 proto kernel scope link src 192.0.2.15</span><br><span class="line">203.0.113.0/24 dev wlp2s0 proto kernel scope link src 203.0.113.25</span><br></pre></td></tr></table></figure>
+
+<p>注意：这是一份用于解释路由选择的示例路由表，并非某台办公电脑的实测输出。实际路由取决于网络配置、DHCP 下发信息、NetworkManager 设置以及其他网络管理服务。</p>
+<p>每一条路由都描述了一个目标前缀，以及到达该前缀时可以使用的路径。</p>
+<ul>
+<li><code>default</code> 表示默认路由，即没有匹配到更具体路由时可考虑的路径。</li>
+<li><code>via</code> 指定下一跳网关。</li>
+<li><code>dev</code> 指定出接口。</li>
+<li><code>metric</code> 表示路由度量值。在其他选择条件相同、路由可比较的情况下，较低的 metric 通常具有更高优先级。</li>
+<li><code>src</code> 出现在直连路由中时，表示内核可为相关流量选择的首选源地址。</li>
+</ul>
+<p>路由表不是&quot;当前正在使用的网卡列表&quot;，而是内核执行路由查询时使用的路径信息。</p>
+<div align="center">  
+\!\[svg\](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiB2aWV3Qm94PSIwIDAgNjgwIDMwMCIgaGVpZ2h0PSIzMDAiPgogIDx0ZXh0IHg9IjM0MCIgeT0iMTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMWExYTFhIj7ljrvlvoAgMTkyLjAuMi44MCDnmoTljIXvvJrlkb3kuK3mm7TlhbfkvZPnmoQgLzI0IOadoeebru+8jG1ldHJpYyDkuI3lj4LkuI48L3RleHQ+CiAgPHJlY3QgeD0iMjAiIHk9IjM0IiB3aWR0aD0iNjQwIiBoZWlnaHQ9Ijc2IiByeD0iOCIgZmlsbD0iI2U4ZjVlOSIgc3Ryb2tlPSIjMjY5NDZhIiBzdHJva2Utd2lkdGg9IjEuNSIvPgogIDx0ZXh0IHg9IjM2IiB5PSI1NSIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiMxNzViM2MiPuKRoCDnsr7noa7nvZHmrrXmnaHnm67vvIjmnIDplb/liY3nvIDljLnphY3og5zlh7rvvIk8L3RleHQ+CiAgPHJlY3QgeD0iMzYiIHk9IjY0IiB3aWR0aD0iNDMwIiBoZWlnaHQ9IjE4IiByeD0iMyIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjMjY5NDZhIi8+CiAgPHRleHQgeD0iNDIiIHk9Ijc3IiBmb250LXNpemU9IjExIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmaWxsPSIjMWExYTFhIj4xOTIuMC4yLjAvMjQgZGV2IGVucDNzMCBzY29wZSBsaW5rPC90ZXh0PgogIDx0ZXh0IHg9IjQ3OCIgeT0iNzciIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiMxNzViM2MiPuKGkCDliY3nvIDmm7Tplb/vvIzkvJjlhYjlkb3kuK08L3RleHQ+CiAgPHRleHQgeD0iMzYiIHk9Ijk4IiBmb250LXNpemU9IjExIiBmaWxsPSIjNWY2MzY4Ij7nm67moIfnmoQgLzI0IOavlOm7mOiupOi3r+eUseeahCAvMCDmm7TlhbfkvZPvvIzmr5TovoPliLDmraTnu5PmnZ88L3RleHQ+CiAgPHJlY3QgeD0iMjAiIHk9IjEyMiIgd2lkdGg9IjY0MCIgaGVpZ2h0PSI3NiIgcng9IjgiIGZpbGw9IiNmMWYzZjQiIHN0cm9rZT0iIzlhYTBhNiIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KICA8dGV4dCB4PSIzNiIgeT0iMTQzIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzNjNDA0MyI+4pGhIOS4pOadoem7mOiupOi3r+eUse+8iOacrOasoeafpeivouacquWPguS4juavlOi+g++8iTwvdGV4dD4KICA8cmVjdCB4PSIzNiIgeT0iMTUyIiB3aWR0aD0iNDMwIiBoZWlnaHQ9IjE4IiByeD0iMyIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjOWFhMGE2Ii8+CiAgPHRleHQgeD0iNDIiIHk9IjE2NSIgZm9udC1zaXplPSIxMSIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZmlsbD0iIzFhMWExYSI+MC4wLjAuMC8wIHZpYSAyMDMuMC4xMTMuMSBkZXYgd2xwMnMwIG1ldHJpYyA2MDA8L3RleHQ+CiAgPHJlY3QgeD0iMzYiIHk9IjE3NCIgd2lkdGg9IjQzMCIgaGVpZ2h0PSIxOCIgcng9IjMiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzlhYTBhNiIvPgogIDx0ZXh0IHg9IjQyIiB5PSIxODciIGZvbnQtc2l6ZT0iMTEiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZpbGw9IiMxYTFhMWEiPjAuMC4wLjAvMCB2aWEgMTkyLjAuMi4xIGRldiBlbnAzczAgbWV0cmljIDEwMDwvdGV4dD4KICA8dGV4dCB4PSI0NzgiIHk9IjE3MCIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzVmNjM2OCI+4oaQIOS7heW9k+ebruaghzwvdGV4dD4KICA8dGV4dCB4PSI0NzgiIHk9IjE4NiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzVmNjM2OCI+ICAg5LiN5Yy56YWNIC8yNCDml7bmiY3mr5Q8L3RleHQ+CiAgPHJlY3QgeD0iMjAiIHk9IjIxMiIgd2lkdGg9IjY0MCIgaGVpZ2h0PSI3MiIgcng9IjgiIGZpbGw9IiNlOGYwZmUiIHN0cm9rZT0iIzViODJjNCIgc3Ryb2tlLXdpZHRoPSIxLjUiLz4KICA8dGV4dCB4PSIzNiIgeT0iMjMzIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzE3MzY1ZCI+5p+l6K+i6aG65bqP77ya6Lev55Sx6KeE5YiZIOKGkiDot6/nlLHooagg4oaSIOacgOmVv+WJjee8gOWMuemFjSDihpIg5ZCM5YmN57yA5q+UIG1ldHJpYzwvdGV4dD4KICA8dGV4dCB4PSIzNiIgeT0iMjU0IiBmb250LXNpemU9IjExIiBmaWxsPSIjMWExYTFhIj7ikaAgaXAgcnVsZSDlhrPlrprmn6Xlk6rlvKDooajjgIDikaEg6KGo5YaF5oyJ5YmN57yA6ZW/5bqm5Y+W5pyA5YW35L2T55qE5LiA5p2hPC90ZXh0PgogIDx0ZXh0IHg9IjM2IiB5PSIyNzIiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiMxYTFhMWEiPuKRoiDliY3nvIDplb/luqbnm7jlkIzml7bmiY3mr5TovoMgbWV0cmlj77yM5bqm6YeP5YC85bCP6ICF5LyY5YWIPC90ZXh0Pgo8L3N2Zz4=)  
+</div>
+
+<h3 id="2-最长前缀匹配优先于默认路由"><a href="#2-最长前缀匹配优先于默认路由" class="headerlink" title="2. 最长前缀匹配优先于默认路由"></a>2. 最长前缀匹配优先于默认路由</h3><p>假设系统有以下两条路由：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">default via 203.0.113.1 dev wlp2s0 metric 100</span><br><span class="line">192.0.2.0/24 dev enp3s0 scope link</span><br></pre></td></tr></table></figure>
+
+<p>当目标地址为 <code>192.0.2.80</code> 时，它既符合默认路由 <code>0.0.0.0/0</code>，也符合 <code>192.0.2.0/24</code>。</p>
+<p>但是，<code>192.0.2.0/24</code> 的前缀更具体，因此正常情况下会优先匹配这条直连路由，数据包从 <code>enp3s0</code> 发出，而不是经由 WiFi 默认网关转发。</p>
+<p>当目标地址变成 <code>1.1.1.1</code> 时，它不属于 <code>192.0.2.0/24</code>，系统才会考虑默认路由。</p>
+<p>这里有一个重要区别：<strong>metric 并不是让所有路由进行全局排序的唯一依据。</strong>&#x8DEF;由前缀的匹配程度是关键因素；metric 主要用于比较可用于同一目标的候选路由。不能因为 WiFi 的默认路由 metric 较低，就直接推断所有流量都会走 WiFi。</p>
+<h3 id="3-多条默认路由如何竞争"><a href="#3-多条默认路由如何竞争" class="headerlink" title="3. 多条默认路由如何竞争"></a>3. 多条默认路由如何竞争</h3><p>如果有线网络和 WiFi 都配置了默认路由，那么访问不属于任何更具体路由的目标时，系统需要在可用的默认路径中作出选择。</p>
+<p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">default via 192.0.2.1 dev enp3s0 metric 100</span><br><span class="line">default via 203.0.113.1 dev wlp2s0 metric 600</span><br></pre></td></tr></table></figure>
+
+<p>在这份示例配置中，有线默认路由的 metric 更低，因此在普通主路由表的相应查询条件下，它通常会成为优先路径。</p>
+<p>但这并不意味着&quot;metric 越低，所有流量就必然走该接口&quot;。如果系统使用了策略路由、不同的路由表、数据包标记、VRF 或其他路由选择条件，最终结果还会受到这些机制的影响。</p>
+<h2 id="三、先查询内核的真实决策"><a href="#三、先查询内核的真实决策" class="headerlink" title="三、先查询内核的真实决策"></a>三、先查询内核的真实决策</h2><p>查看路由表可以了解系统配置了哪些路径，但要确认某个目标地址实际会使用哪条路径，更直接的方式是查询内核的路由决策。</p>
+<h3 id="1-使用-ip-route-get"><a href="#1-使用-ip-route-get" class="headerlink" title="1. 使用 ip route get"></a>1. 使用 <code>ip route get</code></h3><p>例如：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ip route get 192.0.2.80</span><br><span class="line">ip route get 1.1.1.1</span><br></pre></td></tr></table></figure>
+
+<p>第一条查询内网 OA 服务器的路由，第二条查询外部地址的路由。命令会根据当前环境中的路由与规则，返回相应的路由查询结果。</p>
+<p>如果 OA 服务器的路由指向 <code>enp3s0</code>，而外部地址指向 <code>wlp2s0</code>，说明当前路由查询分别选择了有线和无线出口。</p>
+<p>如果两者都指向 WiFi，或者 OA 服务器的路由意外指向有线网卡之外的路径，就需要继续检查路由表与规则。</p>
+<p><code>ip route get</code> 的输出会给出这条查询最终选中的出口接口、下一跳和源地址，是判断&quot;内核到底怎么走&quot;最直接的依据。</p>
+<h3 id="2-路由表与-ip-route-get-的分工"><a href="#2-路由表与-ip-route-get-的分工" class="headerlink" title="2. 路由表与 ip route get 的分工"></a>2. 路由表与 <code>ip route get</code> 的分工</h3><p>两者回答的问题并不相同：</p>
+<table>
+<thead>
+<tr>
+<th>命令</th>
+<th>主要回答的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ip route show</code></td>
+<td>当前路由表里有哪些路由？</td>
+</tr>
+<tr>
+<td><code>ip rule show</code></td>
+<td>内核按什么规则选择路由表？</td>
+</tr>
+<tr>
+<td><code>ip route get &lt;地址&gt;</code></td>
+<td>当前查询条件下，该目标会选择什么路径？</td>
+</tr>
+</tbody></table>
+<p>如果系统存在策略路由，仅查看主路由表可能无法解释全部现象。因此，当路由表看起来正确，但实际流量仍然异常时，应该进一步检查路由规则。</p>
+<h2 id="四、用-ip-route-临时修正路径"><a href="#四、用-ip-route-临时修正路径" class="headerlink" title="四、用 ip route 临时修正路径"></a>四、用 <code>ip route</code> 临时修正路径</h2><p>假设办公电脑的内网地址为 <code>192.0.2.15/24</code>，OA 服务器地址为 <code>192.0.2.80</code>。正常情况下，同一网段内的 OA 服务器可以通过有线网卡的直连路由到达。</p>
+<p>如果 OA 服务器位于其他网段，例如 <code>198.51.100.0/24</code>，而该网络应通过办公网关 <code>192.0.2.1</code> 到达，就可以添加一条更具体的路由：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ip route add 198.51.100.0/24 via 192.0.2.1 dev enp3s0</span><br></pre></td></tr></table></figure>
+
+<p>这条命令告诉内核：访问 <code>198.51.100.0/24</code> 时，经由办公网关 <code>192.0.2.1</code>，从 <code>enp3s0</code> 发出。</p>
+<p>随后可以检查配置：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ip route show 198.51.100.0/24</span><br><span class="line">ip route get 198.51.100.20</span><br></pre></td></tr></table></figure>
+
+<p>当确认这条路由不再需要时，可以删除：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ip route del 198.51.100.0/24 via 192.0.2.1 dev enp3s0</span><br></pre></td></tr></table></figure>
+
+<p>上述路由配置是适用于相应网络拓扑的命令示例；本次验证环境没有执行添加、删除该办公网路由的操作。实际使用前，应确认网关可达、目标前缀正确，并且有权修改本机路由表。</p>
+<p>还需要注意，<code>ip route add</code> 修改的是内核当前使用的路由配置。它并不会自动写入 NetworkManager 的连接配置文件。网络连接重新激活、网络管理服务重新应用配置或系统重启后，这条路由可能不再存在。</p>
+<p>因此，<code>ip route</code> 适合用来验证路由设计、临时修复路径，以及快速判断问题是否来自路由选择；如果需要长期生效，就应该把配置写入对应的网络管理配置。</p>
+<h2 id="五、用-NetworkManager-配置持久化路由"><a href="#五、用-NetworkManager-配置持久化路由" class="headerlink" title="五、用 NetworkManager 配置持久化路由"></a>五、用 NetworkManager 配置持久化路由</h2><p>在使用 NetworkManager 管理网络连接的 Linux 桌面或办公电脑上，<code>nmcli</code> 可以修改连接配置，使路由在连接重新激活时重新应用。</p>
+<p>首先查看连接名称：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">nmcli connection show</span><br></pre></td></tr></table></figure>
+
+<p>假设有线连接的名称为 <code>Office Ethernet</code>，WiFi 连接的名称为 <code>Office WiFi</code>。注意，连接名称不一定与接口名称相同，应该以本机实际输出为准。</p>
+<h3 id="1-调整默认路由的-metric"><a href="#1-调整默认路由的-metric" class="headerlink" title="1. 调整默认路由的 metric"></a>1. 调整默认路由的 metric</h3><p>如果希望 WiFi 主要用于访问外部网络，而办公网默认出口应优先使用有线连接，可以在确认网络设计允许的前提下，设置两条连接的默认路由 metric：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">nmcli connection modify &quot;Office Ethernet&quot; ipv4.route-metric 100</span><br><span class="line">nmcli connection modify &quot;Office WiFi&quot; ipv4.route-metric 600</span><br></pre></td></tr></table></figure>
+
+<p>这里的数值仅为示例。<code>ipv4.route-metric</code> 是连接配置中的默认路由度量设置，会影响适用该默认值的 IPv4 路由，不只影响默认路由本身。因此，修改前应检查这两条连接是否还承担其他网段的路由职责。</p>
+<p>如果需要让新配置应用到当前活动连接，可以在维护窗口内重新激活连接。重新激活可能导致网络短暂中断，远程操作时尤其需要谨慎：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">nmcli connection up &quot;Office Ethernet&quot;</span><br><span class="line">nmcli connection up &quot;Office WiFi&quot;</span><br></pre></td></tr></table></figure>
+
+<p>连接重新激活的具体行为取决于设备与连接状态；不应在没有确认管理通道和恢复方式时直接对远程办公设备执行。</p>
+<p>应用后，再使用以下命令核对实际结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">ip -4 route show</span><br><span class="line">ip -4 route get 198.51.100.20</span><br><span class="line">ip -4 route get 1.1.1.1</span><br></pre></td></tr></table></figure>
+
+<p>应当关注最终选中的出口接口、下一跳和源地址，而不是仅凭配置命令执行成功就判断问题已经解决。</p>
+<h3 id="2-持久化添加专用内网路由"><a href="#2-持久化添加专用内网路由" class="headerlink" title="2. 持久化添加专用内网路由"></a>2. 持久化添加专用内网路由</h3><p>如果只有特定内网网段需要经由办公网关，通常比单纯调整两条默认路由更精确的办法，是为目标网段添加静态路由。</p>
+<p>例如，使用 <code>nmcli</code> 为有线连接添加路由：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">nmcli connection modify &quot;Office Ethernet&quot; +ipv4.routes &quot;198.51.100.0/24 192.0.2.1 100&quot;</span><br></pre></td></tr></table></figure>
+
+<p>这条配置将 <code>198.51.100.0/24</code> 指向网关 <code>192.0.2.1</code>，并为这条静态路由指定 metric <code>100</code>。</p>
+<p>其中 <code>+ipv4.routes</code> 用于在现有路由列表上追加配置。若需要删除这条路由，应当依据当前连接中实际存在的路由条目，使用 NetworkManager 支持的修改方式移除对应配置，而不是随意清空整个路由列表。</p>
+<p>修改连接配置后，需要让该配置在连接激活时应用，再检查：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">nmcli connection show &quot;Office Ethernet&quot;</span><br><span class="line">ip route show 198.51.100.0/24</span><br><span class="line">ip route get 198.51.100.20</span><br></pre></td></tr></table></figure>
+
+<p>NetworkManager 的连接配置和内核当前路由表是两个相关但不同的层次：前者描述网络连接应当如何配置，后者反映系统当前实际使用的路由。只有检查后者，才能确认内核最终采用的路径。</p>
+<h2 id="六、metric-不能解决所有多网卡问题"><a href="#六、metric-不能解决所有多网卡问题" class="headerlink" title="六、metric 不能解决所有多网卡问题"></a>六、metric 不能解决所有多网卡问题</h2><p>到这里，已经可以解释大部分常见的多网卡路由问题：具体内网路由优先于默认路由；多个默认路由之间可以通过 metric 调整相对优先级；<code>ip route</code> 适合临时验证，NetworkManager 则适合管理持久配置。</p>
+<p>但有些问题不能只靠调整 metric 解决。</p>
+<h3 id="1-内网与-WiFi-的网段发生重叠"><a href="#1-内网与-WiFi-的网段发生重叠" class="headerlink" title="1. 内网与 WiFi 的网段发生重叠"></a>1. 内网与 WiFi 的网段发生重叠</h3><p>假设办公网和 WiFi 都使用 <code>203.0.113.0/24</code>。此时，两张网卡可能各自拥有指向相同前缀的直连路由。</p>
+<p>这时系统无法仅凭目标 IP 地址表达&quot;这个地址应该属于办公网，而不是 WiFi 网络&quot;。路由优先级可能影响选择结果，但它并不能从根本上消除地址空间重叠带来的歧义。</p>
+<p>应优先通过网络规划避免重叠网段。如果无法调整地址规划，则需要结合实际拓扑评估独立路由表、策略路由或网络隔离方案，而不是仅仅继续调低某条路由的 metric。</p>
+<h3 id="2-策略路由改变了查询顺序"><a href="#2-策略路由改变了查询顺序" class="headerlink" title="2. 策略路由改变了查询顺序"></a>2. 策略路由改变了查询顺序</h3><p>Linux 除了路由表，还有路由规则。可以通过以下命令查看：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ip rule show</span><br><span class="line">ip route show table all</span><br></pre></td></tr></table></figure>
+
+<p>路由规则可以根据源地址、目标地址、数据包标记等条件选择不同的路由表。此时，即使主路由表中存在一条看似正确的路径，实际查询也可能先匹配其他规则，并使用不同的路由表。</p>
+<p>因此，当普通路由表无法解释 <code>ip route get</code> 的结果时，应该检查规则与其他路由表，而不是直接假设内核忽略了 metric。</p>
+<h3 id="3-出口正确，但回程路径不正确"><a href="#3-出口正确，但回程路径不正确" class="headerlink" title="3. 出口正确，但回程路径不正确"></a>3. 出口正确，但回程路径不正确</h3><p>网络通信不仅需要发送方选择正确的出口，也需要返回流量能够到达原始主机。</p>
+<p>例如，请求从有线网卡发往 OA 服务器，但服务器的返回路由指向另一条无法到达客户端的路径，连接仍然可能失败。类似现象也可能由防火墙策略、源地址选择、网关配置或网络设备的访问控制造成。</p>
+<p>遇到这种情况，应分别检查请求方向和响应方向的路径。必要时使用抓包工具观察报文从哪个接口发出、是否收到响应，以及响应是否从预期接口返回。</p>
+<h2 id="七、排查时应遵循的顺序"><a href="#七、排查时应遵循的顺序" class="headerlink" title="七、排查时应遵循的顺序"></a>七、排查时应遵循的顺序</h2><p>多网卡环境下，最有效的排查方式是先确认内核的决策，再逐层检查配置来源，而不是一开始就修改所有网卡的 metric。</p>
+<ol>
+<li><strong>确认接口和地址。</strong> 使用 <code>ip -br addr</code> 检查网卡状态与 IP 地址，确认 OA 服务器实际位于哪个网段。</li>
+<li><strong>检查路由表。</strong> 使用 <code>ip -4 route show</code> 查看直连路由、专用内网路由和默认路由。</li>
+<li><strong>查询目标路径。</strong> 使用 <code>ip route get &lt;OA服务器地址&gt;</code>，检查所选接口、下一跳和源地址。</li>
+<li><strong>检查路由规则。</strong> 使用 <code>ip rule show</code> 和 <code>ip route show table all</code>，确认是否存在策略路由或其他路由表。</li>
+<li><strong>选择合适的修正方式。</strong> 单次验证可以使用 <code>ip route</code>；长期配置则应修改对应的 NetworkManager 连接。</li>
+<li><strong>验证配置的持续性。</strong> 在适当维护条件下重新激活连接，再次检查路由表和实际查询结果。</li>
+</ol>
+<p>这套顺序的核心是区分现象与原因。OA 无法访问只是应用层现象；只有确认实际路由决策，才能判断问题是否发生在主机侧路径选择。</p>
+<h2 id="八、小结"><a href="#八、小结" class="headerlink" title="八、小结"></a>八、小结</h2><p>当一台 Linux 办公电脑同时连接有线内网与 WiFi 时，真正需要理解的不是&quot;哪张网卡先连接&quot;，而是内核如何根据目标前缀、路由度量值和路由规则选择数据包的路径。</p>
+<p><code>ip route</code> 提供了直接观察和调整内核路由的手段，<code>nmcli</code> 则让网络配置能够随连接生命周期持续生效。两者分别对应当前生效状态与连接配置管理，不能互相替代。</p>
+<p>对于多网卡问题，先使用 <code>ip route get</code> 确认内核选择了什么路径，再结合路由表、路由规则与连接配置定位原因，通常比反复切换网卡或盲目调整 metric 更可靠。</p>
+<p>三条能带走的：</p>
+<ul>
+<li><strong>最长前缀匹配优先于 metric。</strong>&#x53EA;要存在更具体的网段条目，它必然被命中，metric 之间的比较不会发生。</li>
+<li><strong>metric 只用于比较同一目标的候选路由。</strong>&#x5B83;无法表达&quot;某个网段必须走某张卡&quot;这类诉求，用它解决内网可达性，实质是把出口选择整体推向某一侧。</li>
+<li><strong>内核当前状态与连接配置是两个层次。</strong><code>ip route</code> 改的是前者（易失），<code>nmcli</code> 改的是后者（持久）；判断问题是否解决，最终要看内核实际选了什么路径，而不是命令有没有执行成功。</li>
+</ul>
+<h2 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h2><ul>
+<li><a target="_blank" rel="noopener external nofollow noreferrer" href="https://man7.org/linux/man-pages/man8/ip-route.8.html">ip-route(8) — Linux manual page</a></li>
+<li><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.linux.org/docs/man8/ip-rule.html">ip-rule(8) — Linux routing policy database management</a></li>
+<li><a target="_blank" rel="noopener external nofollow noreferrer" href="https://networkmanager.pages.freedesktop.org/NetworkManager/NetworkManager/nm-settings-nmcli.html">NetworkManager Reference Manual — nm-settings-nmcli</a></li>
+<li><a target="_blank" rel="noopener external nofollow noreferrer" href="https://www.rfc-editor.org/rfc/rfc5737.txt">RFC 5737 — IPv4 Address Blocks Reserved for Documentation</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/linux-multi-nic-route/">https://hespethorn.github.io/posts/linux-multi-nic-route/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="external nofollow noreferrer" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://Hespethorn.github.io" target="_blank">HespethornのBlog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E7%BD%91%E7%BB%9C/">网络</a><a class="post-meta__tags" href="/tags/Linux/">Linux</a><a class="post-meta__tags" href="/tags/%E8%B7%AF%E7%94%B1/">路由</a><a class="post-meta__tags" href="/tags/NetworkManager/">NetworkManager</a></div><div class="post-share"><div class="social-share" data-image="https://hespethorn.github.io/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/posts/ai-news-20261009/" title="AI 新闻速递（周更精选 2026-10-09）"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">AI 新闻速递（周更精选 2026-10-09）</div></div><div class="info-2"><div class="info-item-1"> 本周精选摘要：这一周是 2026 年秋天最密集的&quot;模型发布 + 政策落地 + 资本下注&quot;三重叠一周——OpenAI 在 DevDay 2026 一口气放出 GPT-6.1 Sol（约为 Astra 五分之一 token 价）、常驻智能体 Dots 与 20 余项更新；Anthropic 同步...</div></div></div></a><a class="pagination-related" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</div></div><div class="info-2"><div class="info-item-1">把五条原则放进一章，不是为了凑篇幅。它们表面上分属算法、存储、运行时、容错、语言五个领域，内里问的却是同一件事：这套机制，到底拿什么换什么。  分治拿「廉价的合并」换掉相乘的代价； 顺序读与随机读拿「连续搬运」换掉反复定位； 分代回收拿「押注大多数对象很快死」换掉全堆扫描； 失败安全拿「数据新鲜度」换「系统可用性...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-07</div><div class="info-item-2">端到端原则：TCP 为什么把可靠性放在两端</div></div><div class="info-2"><div class="info-item-1">先问一个&quot;熟到没人问&quot;的问题：你在浏览器里下载一个 1 GB 的文件，TCP 保证它一个字节都不差地到达。可这 1 GB 数据要穿过几十台路由器、交换机，中间任何一台设备都没有帮你校验文件内容——它们只低头转发，丢了包也不管。 那这份&quot;不差一个字节&quot;的保证，到底是谁给的？答...</div></div></div></a><a class="pagination-related" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-10-09</div><div class="info-item-2">停等与滑动窗口：让管道不空转</div></div><div class="info-2"><div class="info-item-1">先看三个真实场面：  一个文件传到一半突然变慢，抓包发现发送方每发一个包就停下来等 ACK——不是网络差，是窗口开得太小； 一个跨机房接口，明明两边都是千兆网，实测吞吐只有几 Mbps，排查半天发现瓶颈是RTT 太大而窗口没跟着调； 面试时被问「TCP 怎么保证可靠传输」，答了「超时重传」，对方追问「那如果每一段...</div></div></div></a><a class="pagination-related" href="/posts/84e78701/" title="网络理论核心知识整理"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2023-03-06</div><div class="info-item-2">网络理论核心知识整理</div></div><div class="info-2"><div class="info-item-1">一、网络分层：从 OSI 到 TCP&#x2F;IP 的架构演进1.1 ISO&#x2F;OSI 七层模型OSI 模型将网络通信划分为七层，构建了标准化的网络通信框架，各层在实际网络交互中扮演着不可或缺的角色：  应用层：直接为用户应用程序提供服务，是用户与网络的接口层。例如，HTTP 协议用于网页数据传输，在浏...</div></div></div></a></div></div><hr class="custom-hr"/><div id="post-comment"><div class="comment-head"><div class="comment-headline"><i class="fas fa-comments fa-fw"></i><span> 评论</span></div></div><div class="comment-wrap"><div><div id="twikoo-wrap"></div></div></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="author-info-description">后端工程师 / CS 学习者。把踩过的坑写成可复用的判断，偶尔写点家书。</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">827</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">39</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="https://www.zhihu.com/people/96-40-70-62-86" rel="external nofollow noreferrer" target="_blank" title="知乎"><i class="fa-brands fa-zhihu" style="color: #0084FF;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;"></div><script>// 初始日期
+const startDate = new Date('2021-08-08T00:00:00');
+const loveTimeElement = document.getElementById('love-time');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E6%8E%A5%E5%85%A5-WiFi-%E6%94%B9%E5%8F%98%E4%BA%86%E4%B8%BB%E6%9C%BA%E7%9A%84%E7%BD%91%E7%BB%9C%E8%B7%AF%E5%BE%84"><span class="toc-number">1.</span> <span class="toc-text">一、接入 WiFi 改变了主机的网络路径</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81Linux-%E5%A6%82%E4%BD%95%E9%80%89%E6%8B%A9%E8%B7%AF%E7%94%B1"><span class="toc-number">2.</span> <span class="toc-text">二、Linux 如何选择路由</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-%E8%B7%AF%E7%94%B1%E8%A1%A8%E6%8F%8F%E8%BF%B0%E7%9B%AE%E6%A0%87%E7%BD%91%E7%BB%9C%E7%9A%84%E5%8F%AF%E8%BE%BE%E8%B7%AF%E5%BE%84"><span class="toc-number">2.1.</span> <span class="toc-text">1. 路由表描述目标网络的可达路径</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-%E6%9C%80%E9%95%BF%E5%89%8D%E7%BC%80%E5%8C%B9%E9%85%8D%E4%BC%98%E5%85%88%E4%BA%8E%E9%BB%98%E8%AE%A4%E8%B7%AF%E7%94%B1"><span class="toc-number">2.2.</span> <span class="toc-text">2. 最长前缀匹配优先于默认路由</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-%E5%A4%9A%E6%9D%A1%E9%BB%98%E8%AE%A4%E8%B7%AF%E7%94%B1%E5%A6%82%E4%BD%95%E7%AB%9E%E4%BA%89"><span class="toc-number">2.3.</span> <span class="toc-text">3. 多条默认路由如何竞争</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E5%85%88%E6%9F%A5%E8%AF%A2%E5%86%85%E6%A0%B8%E7%9A%84%E7%9C%9F%E5%AE%9E%E5%86%B3%E7%AD%96"><span class="toc-number">3.</span> <span class="toc-text">三、先查询内核的真实决策</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-%E4%BD%BF%E7%94%A8-ip-route-get"><span class="toc-number">3.1.</span> <span class="toc-text">1. 使用 ip route get</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-%E8%B7%AF%E7%94%B1%E8%A1%A8%E4%B8%8E-ip-route-get-%E7%9A%84%E5%88%86%E5%B7%A5"><span class="toc-number">3.2.</span> <span class="toc-text">2. 路由表与 ip route get 的分工</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81%E7%94%A8-ip-route-%E4%B8%B4%E6%97%B6%E4%BF%AE%E6%AD%A3%E8%B7%AF%E5%BE%84"><span class="toc-number">4.</span> <span class="toc-text">四、用 ip route 临时修正路径</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E7%94%A8-NetworkManager-%E9%85%8D%E7%BD%AE%E6%8C%81%E4%B9%85%E5%8C%96%E8%B7%AF%E7%94%B1"><span class="toc-number">5.</span> <span class="toc-text">五、用 NetworkManager 配置持久化路由</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-%E8%B0%83%E6%95%B4%E9%BB%98%E8%AE%A4%E8%B7%AF%E7%94%B1%E7%9A%84-metric"><span class="toc-number">5.1.</span> <span class="toc-text">1. 调整默认路由的 metric</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-%E6%8C%81%E4%B9%85%E5%8C%96%E6%B7%BB%E5%8A%A0%E4%B8%93%E7%94%A8%E5%86%85%E7%BD%91%E8%B7%AF%E7%94%B1"><span class="toc-number">5.2.</span> <span class="toc-text">2. 持久化添加专用内网路由</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AD%E3%80%81metric-%E4%B8%8D%E8%83%BD%E8%A7%A3%E5%86%B3%E6%89%80%E6%9C%89%E5%A4%9A%E7%BD%91%E5%8D%A1%E9%97%AE%E9%A2%98"><span class="toc-number">6.</span> <span class="toc-text">六、metric 不能解决所有多网卡问题</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-%E5%86%85%E7%BD%91%E4%B8%8E-WiFi-%E7%9A%84%E7%BD%91%E6%AE%B5%E5%8F%91%E7%94%9F%E9%87%8D%E5%8F%A0"><span class="toc-number">6.1.</span> <span class="toc-text">1. 内网与 WiFi 的网段发生重叠</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-%E7%AD%96%E7%95%A5%E8%B7%AF%E7%94%B1%E6%94%B9%E5%8F%98%E4%BA%86%E6%9F%A5%E8%AF%A2%E9%A1%BA%E5%BA%8F"><span class="toc-number">6.2.</span> <span class="toc-text">2. 策略路由改变了查询顺序</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-%E5%87%BA%E5%8F%A3%E6%AD%A3%E7%A1%AE%EF%BC%8C%E4%BD%86%E5%9B%9E%E7%A8%8B%E8%B7%AF%E5%BE%84%E4%B8%8D%E6%AD%A3%E7%A1%AE"><span class="toc-number">6.3.</span> <span class="toc-text">3. 出口正确，但回程路径不正确</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%83%E3%80%81%E6%8E%92%E6%9F%A5%E6%97%B6%E5%BA%94%E9%81%B5%E5%BE%AA%E7%9A%84%E9%A1%BA%E5%BA%8F"><span class="toc-number">7.</span> <span class="toc-text">七、排查时应遵循的顺序</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AB%E3%80%81%E5%B0%8F%E7%BB%93"><span class="toc-number">8.</span> <span class="toc-text">八、小结</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99"><span class="toc-number">9.</span> <span class="toc-text">参考资料</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/linux-multi-nic-route/" title="网络路由实战：当内网 OA 机接上 WiFi 之后">网络路由实战：当内网 OA 机接上 WiFi 之后</a><time datetime="2026-10-11T16:00:00.000Z" title="发表于 2026-10-12 00:00:00">2026-10-12</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</a><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/8bd3804a/" title="Redis HyperLogLog：12 KB 的基数账本">Redis HyperLogLog：12 KB 的基数账本</a><time datetime="2026-10-20T16:00:00.000Z" title="发表于 2026-10-21 00:00:00">2026-10-21</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-sm2-sm3-sm4/" title="SM2、SM3、SM4：国密三件套各管哪一段，以及五个只有跑起来才发现的坑">SM2、SM3、SM4：国密三件套各管哪一段，以及五个只有跑起来才发现的坑</a><time datetime="2026-10-19T16:00:00.000Z" title="发表于 2026-10-20 00:00:00">2026-10-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20261016/" title="AI 新闻速递（周更精选 2026-10-16）">AI 新闻速递（周更精选 2026-10-16）</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="footer-inner"><div class="footer-about"><h4>关于这个站</h4><p class="quote">不识庐山真面目，<br>只缘身在此山中。</p><p class="quote-src">— 苏轼《题西林壁》</p></div><div class="footer-col"><h4>主线</h4><a href="/categories/CS-Fundamentals/">CS 学习线</a><a href="/categories/Seckill/">Seckill 实战</a><a href="/categories/Systems/">系统与工程</a><a href="/categories/AI-ML/AI-News/">AI 周报</a></div><div class="footer-col"><h4>索引</h4><a href="/archives/">归档</a><a href="/tags/">标签</a><a href="/link/">收藏</a><a href="/posts/FamilyProse/">家书</a><a href="/atom.xml">RSS</a></div></div><div class="footer-bottom"><span>© 2022—2026 HESPETHORN</span><span>插画：大肥鱼 · HEXO / BUTTERFLY</span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_comment" href="#post-comment" title="前往评论"><i class="fas fa-comments"></i></a><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script><script>(() => {
+  const isShuoshuo = GLOBAL_CONFIG_SITE.pageType === 'shuoshuo'
+  const option = null
+
+  const getCount = () => {
+    const countELement = document.getElementById('twikoo-count')
+    if(!countELement) return
+    twikoo.getCommentsCount({
+      envId: 'cloud1-5gvih2v152129658',
+      region: 'ap-shanghai',
+      urls: [window.location.pathname],
+      includeReply: false
+    }).then(res => {
+      countELement.textContent = res[0].count
+    }).catch(err => {
+      console.error(err)
+    })
+  }
+
+  const init = (el = document, path = location.pathname) => {
+    twikoo.init({
+      el: el.querySelector('#twikoo-wrap'),
+      envId: 'cloud1-5gvih2v152129658',
+      region: 'ap-shanghai',
+      onCommentLoaded: () => {
+        btf.loadLightbox(document.querySelectorAll('#twikoo .tk-content img:not(.tk-owo-emotion)'))
+      },
+      ...option,
+      path: isShuoshuo ? path : (option && option.path) || path
+    })
+
+    
+
+    isShuoshuo && (window.shuoshuoComment.destroyTwikoo = () => {
+      if (el.children.length) {
+        el.innerHTML = ''
+        el.classList.add('no-comment')
+      }
+    })
+  }
+
+  const loadTwikoo = (el, path) => {
+    if (typeof twikoo === 'object') setTimeout(() => init(el, path), 0)
+    else btf.getScript('https://cdn.jsdelivr.net/npm/twikoo@1.6.41/dist/twikoo.all.min.js').then(() => init(el, path))
+  }
+
+  if (isShuoshuo) {
+    'Twikoo' === 'Twikoo'
+      ? window.shuoshuoComment = { loadComment: loadTwikoo }
+      : window.loadOtherComment = loadTwikoo
+    return
+  }
+
+  if ('Twikoo' === 'Twikoo' || !false) {
+    if (false) btf.loadComment(document.getElementById('twikoo-wrap'), loadTwikoo)
+    else loadTwikoo()
+  } else {
+    window.loadOtherComment = loadTwikoo
+  }
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
