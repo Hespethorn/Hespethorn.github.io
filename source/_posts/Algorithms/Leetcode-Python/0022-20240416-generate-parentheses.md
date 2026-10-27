@@ -3,7 +3,7 @@
 title: Leetcode 0022.Generate Parentheses(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 回溯
   - dfs
   - 字符串

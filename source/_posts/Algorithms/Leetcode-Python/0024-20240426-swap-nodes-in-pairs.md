@@ -3,7 +3,7 @@
 title: Leetcode 0024.Swap Nodes in Pairs(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 链表
   - 递归
   - 迭代

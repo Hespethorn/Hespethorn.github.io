@@ -3,7 +3,7 @@
 title: Leetcode 0010. Regular Expression Matching (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 动态规划
   - 正则表达式
   - 递归

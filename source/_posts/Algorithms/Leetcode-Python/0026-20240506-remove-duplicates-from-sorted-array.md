@@ -3,7 +3,7 @@
 title: Leetcode 0026.Remove Duplicates from Sorted Array(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 双指针
   - 数组
 categories: [Algorithms, Leetcode-Python]

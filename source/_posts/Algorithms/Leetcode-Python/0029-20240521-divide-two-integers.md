@@ -3,7 +3,7 @@
 title: Leetcode 0029.Divide Two Integers(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 位运算
   - 数学
 categories: [Algorithms, Leetcode-Python]

@@ -4,10 +4,9 @@
 title: select 与 epoll 的核心区别整理
 tags:
   - 多人聊天
-  - 计算机网络
+  - Computer-Networking
   - select
   - epoll
-  - Computer-Networking
 categories: [Networking]
 abbrlink: c4667e6
 date: 2023-05-11

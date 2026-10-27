@@ -3,7 +3,7 @@
 title: Leetcode 0019.Remove Nth Node From End of List(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 链表
   - 双指针
 categories: [Algorithms, Leetcode-Python]

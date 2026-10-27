@@ -4,7 +4,7 @@
 tags:
   - C++
   - nique_ptr
-  - vector
+  - Vector
   - Data-Structures-and-Algorithms
 categories: [Algorithms, DSA]
 abbrlink: ebb68aeb

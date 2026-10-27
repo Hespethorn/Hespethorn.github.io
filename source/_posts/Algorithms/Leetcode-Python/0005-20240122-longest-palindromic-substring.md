@@ -3,7 +3,7 @@
 title: Leetcode 0005. Longest Palindromic Substring (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 双指针
   - 中心扩展
   - Manacher

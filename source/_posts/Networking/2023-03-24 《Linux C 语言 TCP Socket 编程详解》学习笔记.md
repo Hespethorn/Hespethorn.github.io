@@ -4,9 +4,8 @@
 title: 《Linux C 语言 TCP Socket 编程详解》学习笔记
 tags:
   - URL
-  - 计算机网络
-  - 网址
   - Computer-Networking
+  - 网址
 categories: [Networking]
 abbrlink: 29e62ba
 date: 2023-03-24

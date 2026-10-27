@@ -3,7 +3,7 @@
 title: Leetcode 0033.search-in-rotated-sorted-array(python)
 tags:
   - leetcode
-  - python
+  - Python
   - Array
   - Binary Search
 categories: [Algorithms, Leetcode-Python]

@@ -4,9 +4,8 @@
 title: 基于协议分析与抓包验证的 HTTP/HTTPS 通信机制研究
 tags:
   - URL
-  - 计算机网络
-  - 网址
   - Computer-Networking
+  - 网址
 categories: [Networking]
 abbrlink: a30c1e5
 date: 2023-03-19

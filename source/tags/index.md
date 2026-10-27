@@ -1,10 +1,9 @@
 ---
-title: 技术标签云
+title: 标签索引
 date: 2025-06-01 22:15:37
 layout: tags
 type: "tags"
-top_img: /img/002.gif
+top_img: /img/hero-fuhua.jpg
 comments: false
+aside: false
 ---
-
-![](/img/002.gif)

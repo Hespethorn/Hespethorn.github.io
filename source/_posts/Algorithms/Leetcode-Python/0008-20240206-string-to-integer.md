@@ -3,7 +3,7 @@
 title: Leetcode 0008. String to Integer (atoi) (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 字符串
   - 有限状态机
   - 整数溢出

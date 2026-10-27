@@ -3,7 +3,7 @@
 title: Leetcode 0025.Reverse Nodes in k-Group(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 链表
   - 迭代
   - 头插法

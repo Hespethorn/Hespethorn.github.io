@@ -3,7 +3,7 @@
 title: Leetcode 0021.Merge Two Sorted Lists(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 链表
   - 递归
   - 迭代

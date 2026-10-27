@@ -3,7 +3,7 @@
 title: Leetcode 0031.next-permutation(python)
 tags:
   - leetcode
-  - python
+  - Python
   - Array
   - Two Pointers
 categories: [Algorithms, Leetcode-Python]

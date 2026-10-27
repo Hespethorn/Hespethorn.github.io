@@ -3,7 +3,7 @@
 title: Leetcode 0032.longest-valid-parentheses(python)
 tags:
   - leetcode
-  - python
+  - Python
   - String
   - Stack
   - Dynamic Programming

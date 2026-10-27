@@ -3,7 +3,7 @@
 title: Leetcode 0009. Palindrome Number (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 数学
   - 回文数
   - 双指针

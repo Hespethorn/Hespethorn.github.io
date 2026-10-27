@@ -3,7 +3,7 @@
 title: Leetcode 0012. Integer to Roman (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 贪心算法
   - 字符串
   - match-case

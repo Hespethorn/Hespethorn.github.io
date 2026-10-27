@@ -3,7 +3,7 @@
 title: Leetcode 0017.Letter Combinations of a Phone Number(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 回溯
   - 递归
 categories: [Algorithms, Leetcode-Python]

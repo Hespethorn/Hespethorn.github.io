@@ -3,7 +3,7 @@
 title: Vibe Check 即一切：读 Olshansky《Vibe Checks Are All You Need》
 tags:
   - AI
-  - LLM
+  - 大语言模型
   - 评估
   - 工程实践
   - 读后感

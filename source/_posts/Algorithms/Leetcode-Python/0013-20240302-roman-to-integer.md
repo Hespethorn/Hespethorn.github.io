@@ -3,7 +3,7 @@
 title: Leetcode 0013. Roman to Integer (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 哈希表
   - 字符串
 categories: [Algorithms, Leetcode-Python]

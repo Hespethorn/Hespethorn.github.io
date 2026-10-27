@@ -3,7 +3,7 @@
 title: Leetcode 0029.Divide Two Integers(C++)
 tags:
   - leetcode
-  - c++
+  - C++
   - 位运算
   - 数学
 categories: [Algorithms, Leetcode-C++]

@@ -3,7 +3,7 @@
 title: Leetcode 0007. Reverse Integer (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 数学
   - 整数溢出
 categories: [Algorithms, Leetcode-Python]

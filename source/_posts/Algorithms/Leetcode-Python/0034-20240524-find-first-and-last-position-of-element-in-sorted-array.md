@@ -3,7 +3,7 @@
 title: Leetcode 0034.find-first-and-last-position-of-element-in-sorted-array(python)
 tags:
   - leetcode
-  - python
+  - Python
   - Array
   - Binary Search
 categories: [Algorithms, Leetcode-Python]

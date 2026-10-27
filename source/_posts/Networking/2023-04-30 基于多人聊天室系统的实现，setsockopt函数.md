@@ -4,9 +4,8 @@
 title: 基于多人聊天室系统的实现，学习 setsockopt 函数：从代码到实践
 tags:
   - 多人聊天
-  - 计算机网络
-  - setsockopt
   - Computer-Networking
+  - setsockopt
 categories: [Networking]
 abbrlink: 9c7e901d
 date: 2023-04-30

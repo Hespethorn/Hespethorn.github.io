@@ -3,7 +3,7 @@
 title: Leetcode 0006. Zigzag Conversion (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 字符串
   - 模拟
 categories: [Algorithms, Leetcode-Python]

@@ -3,7 +3,7 @@
 title: Leetcode 0028.Implement strStr()(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 字符串匹配
   - KMP
   - 暴力匹配

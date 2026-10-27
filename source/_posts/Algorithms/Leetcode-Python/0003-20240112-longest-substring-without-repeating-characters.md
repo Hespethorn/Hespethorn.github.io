@@ -3,7 +3,7 @@
 title: Leetcode 0003. Longest Substring Without Repeating Characters (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 哈希数组
   - 滑动窗口
 categories: [Algorithms, Leetcode-Python]

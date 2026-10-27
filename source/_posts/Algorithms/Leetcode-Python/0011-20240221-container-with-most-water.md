@@ -3,7 +3,7 @@
 title: Leetcode 0011. Container With Most Water (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 双指针
   - 贪心算法
   - 数组

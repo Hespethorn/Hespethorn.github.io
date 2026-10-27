@@ -3,7 +3,7 @@
 title: Leetcode 0004. Median of Two Sorted Arrays (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 二分查找
   - 双指针
 categories: [Algorithms, Leetcode-Python]

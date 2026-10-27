@@ -3,7 +3,7 @@
 title: Leetcode 0030.Substring with Concatenation of All Words(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 滑动窗口
   - 哈希表
   - 字符串

@@ -3,7 +3,7 @@
 title: Leetcode 0035.search-insert-position(python)
 tags:
   - leetcode
-  - python
+  - Python
   - Array
   - Binary Search
 categories: [Algorithms, Leetcode-Python]

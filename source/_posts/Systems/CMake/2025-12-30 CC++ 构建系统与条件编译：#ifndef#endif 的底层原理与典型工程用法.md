@@ -6,7 +6,6 @@ tags:
   - ifndef
   - endif
   - CMake
-  - Cmake
 categories: [Systems, CMake]
 abbrlink: a795a26a
 date: 2025-12-30

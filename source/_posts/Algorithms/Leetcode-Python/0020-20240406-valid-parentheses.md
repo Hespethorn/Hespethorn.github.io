@@ -3,7 +3,7 @@
 title: Leetcode 0020.Valid Parentheses(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 栈
   - 字符串
 categories: [Algorithms, Leetcode-Python]

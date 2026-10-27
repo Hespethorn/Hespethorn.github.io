@@ -3,7 +3,7 @@
 title: Leetcode 0014. Longest Common Prefix (python)
 tags:
   - leetcode
-  - python
+  - Python
   - 字符串
   - 二分查找
 categories: [Algorithms, Leetcode-Python]

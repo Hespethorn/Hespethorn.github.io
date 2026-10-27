@@ -3,7 +3,7 @@
 title: Leetcode 0030.Substring with Concatenation of All Words(C++)
 tags:
   - leetcode
-  - c++
+  - C++
   - 滑动窗口
   - 哈希表
   - 字符串

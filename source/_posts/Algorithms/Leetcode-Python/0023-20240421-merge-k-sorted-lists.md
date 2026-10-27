@@ -3,7 +3,7 @@
 title: Leetcode 0023.Merge k Sorted Lists(python)
 tags:
   - leetcode
-  - python
+  - Python
   - 链表
   - 分治
   - 堆

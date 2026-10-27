@@ -4,7 +4,7 @@ tags:
   - 文章
   - 大语言模型
   - 提示工程
-  - CoT
+  - Chain-of-Thought
   - 论文解读
 categories: [AI-ML, AI-App]
 abbrlink: cf051ed8
