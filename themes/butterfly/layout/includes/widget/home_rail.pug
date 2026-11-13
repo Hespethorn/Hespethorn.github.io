@@ -1,36 +1,131 @@
-- const hspRailPosts = site.posts.sort('date', -1).data
-- const hspNowPost = hspRailPosts.find(post => post.categories.data.some(c => c.name === 'CS-Principles'))
+// A + C 首页侧栏：一张身份主卡 + 一张数据卡
+// 统计只在这里算（首页模板每构建只渲染一次），不放进通用 widget，
+// 避免 site.posts 被 2000+ 个页面各遍历一遍。
+-
+  const hspRailPosts = site.posts.sort('date', -1).data
+  const hspNowPost = hspRailPosts.find(post => post.categories.data.some(c => c.name === 'CS-Principles'))
+  const hspCatMap = new Map()
+  const hspMonthMap = new Map()
+  hspRailPosts.forEach(function (post) {
+    ;(post.categories.data || []).forEach(function (c) {
+      const item = hspCatMap.get(c.name) || { path: c.path, count: 0 }
+      item.count += 1
+      hspCatMap.set(c.name, item)
+    })
+    const key = post.date.format('YYYY-MM')
+    hspMonthMap.set(key, (hspMonthMap.get(key) || 0) + 1)
+  })
+  const hspTopCats = Array.from(hspCatMap, function (entry) {
+    return { name: entry[0], path: entry[1].path, count: entry[1].count }
+  }).sort(function (a, b) { return b.count - a.count }).slice(0, 6)
+  const hspMaxCat = hspTopCats.length ? hspTopCats[0].count : 1
+  const hspNow = new Date()
+  const hspMonths = []
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(hspNow.getFullYear(), hspNow.getMonth() - i, 1)
+    const y = String(d.getFullYear())
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const key = y + '-' + m
+    const count = hspMonthMap.get(key) || 0
+    const level = count === 0 ? 0 : count <= 5 ? 1 : count <= 15 ? 2 : count <= 35 ? 3 : count <= 60 ? 4 : 5
+    hspMonths.push({ key: key, year: y, month: m, count: count, level: level })
+  }
+  const hspPeak = hspMonths.reduce(function (a, b) { return b.count > a.count ? b : a }, hspMonths[0])
+  const hspLatest = hspRailPosts.length ? hspRailPosts[0].date.format('YYYY-MM-DD').slice(5).replace('-', '.') : '--.--'
+  // 四条主线来自 _BLOG-MAINLINES-2026.md，是编排口径而非统计口径
+  const hspMainlines = 4
+  const hspLoveSince = theme.love_since || '2021-08-08T00:00:00'
+  const hspLoveDays = Math.max(0, Math.floor((hspNow.getTime() - new Date(hspLoveSince).getTime()) / 86400000))
 
 .home-rail
-  !=partial('includes/widget/card_author', {}, {cache: true})
+  article.card-widget.home-identity
+    .home-identity-top
+      .avatar-img
+        img(src=url_for(theme.avatar.img) alt=config.author + ' 的头像')
+      .home-identity-copy
+        h2= config.author
+        p= config.subtitle
+        span.home-identity-tag 四条主线 · 持续更新
 
-  article.card-widget.home-now
-    span.eyebrow NOW
-    h3 正在写
-    if hspNowPost
-      p.home-now-title= hspNowPost.title
-      a.home-now-link(href=url_for(hspNowPost.path)) 读这一章
-    else
-      p.home-now-title 最近在整理原则章。
-    .home-now-meter
-      span(style='width:62%')
-    .home-now-foot
-      span 每周五更新
-      span CS-Principles
+    .home-pulse
+      a(href=url_for(config.archive_dir) + '/' title='全部文章')
+        b= site.posts.length
+        span 篇文章
+      a(href='/categories/' title='按主线浏览')
+        b= hspMainlines
+        span 条主线
+      a(href=url_for(config.archive_dir) + '/' title='最近更新')
+        b= hspLatest
+        span 最近更新
 
-  article.card-widget.home-letters
-    img(src='/img/loading.gif' alt='')
-    div
-      span.eyebrow 家书
-      h3 写给父亲，也写给她
-      p 不放进时间流，单独收着。
-      a(href='/posts/FamilyProse/') 父亲的与子书 ↗
-      a(href='/posts/LoveDays/') 给女友的情书 ↗
+    .home-now-line
+      span.eyebrow NOW
+      if hspNowPost
+        a(href=url_for(hspNowPost.path) title=hspNowPost.title)= hspNowPost.title
+        span.home-now-date= hspNowPost.date.format('MM-DD')
+      else
+        span.home-now-empty 最近在整理原则章。
 
-  article.card-widget.home-index
-    h3 索引
-    .home-index-grid
-      a(href='/archives/') 归档 2026 ↗
-      a(href='/tags/') 标签索引 ↗
-      a(href='/link/') 收藏夹 ↗
-      a(href='/atom.xml') RSS ↗
+    .home-rail-subscribe
+      span.home-rail-label 订阅 · 联系
+      .card-info-social-icons
+        !=partial('includes/header/social', {}, {cache: true})
+
+    .home-rail-love(data-love-since=hspLoveSince)
+      .love-faces
+        img(src=url_for('/img/fox.jpg') alt='狐狸')
+        i.fa-solid.fa-heart-pulse(aria-hidden='true')
+        img(src=url_for('/img/ciwei.jpg') alt='刺猬')
+      .love-clock
+        span.love-clock-line 情丝初系，相思始长
+        span.love-clock-num
+          b(data-love-days)= hspLoveDays
+          |  天
+          span(data-love-hms)
+
+  article.card-widget.home-stats
+    .home-stats-head
+      h3 站点体检
+      span 构建期统计
+
+    .home-stats-section
+      .home-stats-title
+        span 分类分布
+        span 按分类名计数
+      .home-bars
+        each cat in hspTopCats
+          a.home-bar(href=url_for(cat.path) title=cat.name + ' · ' + cat.count + ' 篇')
+            span.home-bar-name= cat.name
+            span.home-bar-track
+              span(style='width:' + Math.round(cat.count / hspMaxCat * 100) + '%')
+            span.home-bar-num= cat.count
+
+    .home-stats-section
+      .home-stats-title
+        span 更新密度
+        span 最近 14 个月
+      .home-heat
+        each mo in hspMonths
+          if mo.count > 0
+            a.home-heat-cell(class='lv-' + mo.level href=url_for('archives/' + mo.year + '/' + mo.month + '/') title=mo.key + ' · ' + mo.count + ' 篇' aria-label=mo.key + ' 更新 ' + mo.count + ' 篇')
+          else
+            span.home-heat-cell.lv-0(title=mo.key + ' · 暂无更新' aria-label=mo.key + ' 暂无更新')
+      .home-heat-axis
+        span= hspMonths[0].key
+        if hspPeak.count > 0
+          span 峰值 #{hspPeak.count} 篇 · #{hspPeak.key}
+        else
+          span 近 14 个月暂无更新
+        span= hspMonths[13].key
+      .home-heat-legend
+        span 少
+        each lv in [1, 2, 3, 4, 5]
+          i(class='lv-' + lv)
+        span 多
+
+    .home-stats-foot
+      span 一篇可归多类，计数不互斥
+      .home-rail-links
+        a(href='/archives/') 归档
+        a(href='/tags/') 标签
+        a(href='/link/') 收藏夹
