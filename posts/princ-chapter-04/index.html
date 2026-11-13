@@ -1,0 +1,765 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#F4F7F4"><meta name="description" content="惰性求值、解释与编译、可观测性、语义化版本、停机问题，分属语言运行时、工程运维、协作约定与计算理论。它们的做法看上去也不搭界——推迟计算、提前翻译、事后追查、写进数字、承认做不到。 共同的问法是：一个判断，你打算在什么时候做出。  惰性求值把「这个值要不要算」推迟到「真的要用它」那一刻； 解释与编译把「翻译成机器码」放在发布之前、加载之时，还是每次执行； 可观测性三支柱不预设你要问什么，把「该问什">
+<meta property="og:type" content="article">
+<meta property="og:title" content="计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-chapter-04/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="惰性求值、解释与编译、可观测性、语义化版本、停机问题，分属语言运行时、工程运维、协作约定与计算理论。它们的做法看上去也不搭界——推迟计算、提前翻译、事后追查、写进数字、承认做不到。 共同的问法是：一个判断，你打算在什么时候做出。  惰性求值把「这个值要不要算」推迟到「真的要用它」那一刻； 解释与编译把「翻译成机器码」放在发布之前、加载之时，还是每次执行； 可观测性三支柱不预设你要问什么，把「该问什">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-11-05T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-11-13T03:20:35.600Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="CS-Principles">
+<meta property="article:tag" content="语言运行时">
+<meta property="article:tag" content="工程运维">
+<meta property="article:tag" content="版本管理">
+<meta property="article:tag" content="计算理论">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题",
+  "url": "https://hespethorn.github.io/posts/princ-chapter-04/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-11-05T16:00:00.000Z",
+  "dateModified": "2026-11-13T03:20:35.600Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-chapter-04/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1E3A33')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F4F7F4')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link href="/self/base.css" rel="stylesheet"><link href="/self/redesign.css" rel="stylesheet"><link href="/self/contact-popup.css" rel="stylesheet"><link href="/self/elegant-code.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-color: #edf2ec;"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">839</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1122</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/hero-fuhua.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/chibi-2.png" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div class="hero-corner-mask"></div><div id="post-info"><h1 class="post-title">计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">发表于</span><time datetime="2026-11-05T16:00:00.000Z" title="发表于 2026-11-06 00:00:00">2026-11-06</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">总字数:</span><span class="word-count">10.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>36分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>惰性求值、解释与编译、可观测性、语义化版本、停机问题，分属语言运行时、工程运维、协作约定与计算理论。它们的做法看上去也不搭界——推迟计算、提前翻译、事后追查、写进数字、承认做不到。</p>
+<p>共同的问法是：<strong>一个判断，你打算在什么时候做出。</strong></p>
+<ul>
+<li><strong>惰性求值</strong>把「这个值要不要算」推迟到「真的要用它」那一刻；</li>
+<li><strong>解释与编译</strong>把「翻译成机器码」放在发布之前、加载之时，还是每次执行；</li>
+<li><strong>可观测性三支柱</strong>不预设你要问什么，把「该问什么问题」推迟到故障发生之后；</li>
+<li><strong>语义化版本</strong>反过来，把「这次升级会不会破坏你」提前写进三个数字，让它在发布那一刻就生效；</li>
+<li><strong>停机问题</strong>给出边界：有些判断，放在哪个时刻都做不出来。</li>
+</ul>
+<p>前四条讲的是选时机，第五条讲的是时机本身解决不了的那部分。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    Q[&quot;五条原则的共同问法&lt;br/&gt;这个判断&lt;br/&gt;放在事前还是事后&quot;]
+    Q --&gt; A[&quot;惰性求值&lt;br/&gt;算不算&lt;br/&gt;推迟到用不用&quot;]
+    Q --&gt; B[&quot;解释与编译&lt;br/&gt;翻不翻译&lt;br/&gt;发布前还是运行时&quot;]
+    Q --&gt; C[&quot;可观测性三支柱&lt;br/&gt;问什么问题&lt;br/&gt;推迟到故障之后&quot;]
+    Q --&gt; D[&quot;语义化版本&lt;br/&gt;兼不兼容&lt;br/&gt;提前写进三个数字&quot;]
+    Q --&gt; E[&quot;停机问题&lt;br/&gt;有些判断&lt;br/&gt;哪个时刻都做不出&quot;]
+    A --&gt; M[&quot;判定的时刻&lt;br/&gt;决定这笔成本付几次&quot;]
+    B --&gt; M
+    C --&gt; M
+    D --&gt; M
+    E --&gt; N[&quot;时机不是万能的&lt;br/&gt;只能设上限、给近似&quot;]</code></pre>
+
+<p>判断放在什么时候，等于在决定「这笔成本付几次」。下面五节各自成立，每节都带本机实跑输出，模型类结论会注明是模拟。</p>
+<h2 id="一、惰性求值：把计算推迟到非做不可"><a href="#一、惰性求值：把计算推迟到非做不可" class="headerlink" title="一、惰性求值：把计算推迟到非做不可"></a>一、惰性求值：把计算推迟到非做不可</h2><p>β-归约的次序在 λ 演算里从一开始就有得选。最左最外归约（normal order，先代换再归约）与先求值实参（applicative order）在纯函数语义下结果相同，但终止性不同：前者在更多程序上能停下来。Haskell 1990 把这套按需归约定为默认语义，非严格（non-strict）成了这门语言的身份特征。</p>
+<p>工程里更常见的是库级形态——Python 的生成器与 <code>itertools</code>、Rust 的 <code>Iterator</code>、Java 的 <code>Stream</code>、SQL 的执行计划、Spark 的 RDD。它们都没有改变语言的求值模型，只是把「算」这个动作从「构造集合的那一刻」挪到了「取下一个元素的那一刻」。</p>
+<p>它要解决的问题很直白——不是所有算出来的值都会被用到。对五百万个数求和，中间那四百九十九万个元素只是过客，算出来、放进内存、被加一次、然后被丢掉。如果每一步只保留当前这一个值，中间状态根本不必同时存在。</p>
+<p><strong>本质一句话：惰性求值把「算」和「用」拆成两个时刻，省下的是永远不会被用到的那部分计算，付出的是这两个时刻之间的一切不确定性——异常、副作用、资源释放，全都跟着值一起被推迟。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph S[&quot;严格求值：三个时刻重合&quot;]
+      S1[&quot;构造列表&lt;br/&gt;500 万个元素一次算完&quot;] --&gt; S2[&quot;全部驻留&lt;br/&gt;峰值 41.9 MiB&quot;]
+      S2 --&gt; S3[&quot;逐个求和&lt;br/&gt;算完即弃&quot;]
+    end
+    subgraph L[&quot;惰性求值：三个时刻分开&quot;]
+      L1[&quot;构造生成器&lt;br/&gt;函数体一行未执行&quot;] --&gt; L2[&quot;每取一个值&lt;br/&gt;才算一个&quot;]
+      L2 --&gt; L3[&quot;用完即丢&lt;br/&gt;峰值 0 MiB&quot;]
+    end</code></pre>
+
+<p>本机用同一笔加法做了对照，N &#x3D; 5,000,000：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">【1】严格求值 vs 惰性求值：同一笔加法的内存与时间（N = 5,000,000）</span><br><span class="line">  list 先建后求和           结果   14999995  峰值     41.9 MiB  耗时   977.6 ms</span><br><span class="line">  generator 流式求和       结果   14999995  峰值      0.0 MiB  耗时   958.4 ms</span><br></pre></td></tr></table></figure>
+
+<p>两个结果一致，内存差了 41.9 MiB，耗时只差 19 毫秒。这个 41.9 MiB 值得算一下——五百万个小整数在 CPython 里是缓存的单例，列表真正占的是指针数组，五百万个 8 字节指针正好 40 MB，加上列表本身的开销对上了。换成五百万个字符串，这个数字会涨到几百 MB，而生成器那一列仍然是 0。</p>
+<p>耗时那一列是第一个反直觉的地方。<strong>惰性求值没有让它变快。</strong> 977.6 与 958.4 只差 2.0%，落在测量噪声里。生成器每取一个值都要走一次迭代器协议，开销把省下的那部分内存分配抵消了。惰性在这里换到的是峰值内存，不是时间。</p>
+<p>第二个反直觉的地方在时间轴上。生成器对象创建出来的那一刻，函数体一行都没执行：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【2】求值时机：创建生成器的那一刻，函数体一行都没执行</span><br><span class="line">  刚创建时 events = []</span><br><span class="line">  第一次 next 返回 1，events = [&#x27;函数体开始执行&#x27;]</span><br><span class="line">  第二次 next 返回 2，events = [&#x27;函数体开始执行&#x27;, &#x27;第一次恢复之后&#x27;]</span><br></pre></td></tr></table></figure>
+
+<p><code>gen()</code> 只是造了一个对象，把参数和栈帧挂上去，然后返回。真正的执行要等到 <code>next()</code> 把它推进到第一个 <code>yield</code>。这个延迟本身是好东西——没人消费就一次都不算——但它把「创建」和「求值」拆成了两件事，接下来所有的麻烦都从这个缝隙里长出来。</p>
+<p>第一件麻烦是异常位置漂移。<code>try</code> 包在创建处，抓不到任何东西：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">【3】异常位置漂移：try 包在创建处，抓不到惰性求值抛出的错</span><br><span class="line">  创建 boom() 成功，异常没有在这里出现</span><br><span class="line">  异常实际发生在第二次 next：第二个元素才炸</span><br></pre></td></tr></table></figure>
+
+<p>在严格求值里，<code>boom()</code> 调用点就是异常抛出点，栈回溯直接指向业务代码。在惰性求值里，异常抛在消费方的 <code>next()</code> 或 <code>for</code> 循环里，栈回溯指向的是那行看起来毫无问题的迭代代码。中间隔着多少个调用层级，取决于这个生成器被传了多远。</p>
+<p>第二件麻烦是一次性。生成器是一条单向的流，走完就空了：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">【4】一次性：同一个生成器迭代两次，第二次是空的</span><br><span class="line">  第一次 sum = 3，第二次 sum = 0</span><br><span class="line">  对照组 list：第一次 3，第二次 3</span><br></pre></td></tr></table></figure>
+
+<p>第二次得到 0 而不是报错，这是最坏的一种失败形态——错得很安静。一个函数收下生成器参数、内部迭代了两次，第一次结果正常，第二次结果为零，日志里一切正常。</p>
+<p>第三件麻烦是空间泄漏。生成器停在 <code>yield</code> 处时，它的整个栈帧都还活着，局部变量一个都不会释放：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">【5】空间泄漏：生成器停在 yield 处时，局部变量一个都不会释放</span><br><span class="line">  取走第一个元素（52428800），生成器停在 yield 处</span><br><span class="line">  gc.collect() 之后，缓冲区依然没被回收 —— 生成器对象还持有它的栈帧</span><br><span class="line">  现在丢弃生成器：</span><br><span class="line">    [50 MiB 缓冲区] 此刻才被回收</span><br></pre></td></tr></table></figure>
+
+<p>显式调用 <code>gc.collect()</code> 也没有用，因为这不是循环引用，是活引用——生成器对象本身就是那个引用的持有者。缓冲区要等到生成器被丢弃、或者被推进到函数末尾、或者被 <code>close()</code>，才会释放。Haskell 里把这件事叫 space leak，成因一模一样：一个未求值的表达式（thunk）挂在那里，它捕获的环境跟着一起挂在那里。<code>foldl</code> 与 <code>foldl&#39;</code> 的区别、<code>seq</code> 与 <code>deepseq</code> 的存在，都是为了处理这个缝隙。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>惰性不省时间，通常还更慢</strong>。上面 977.6 与 958.4 说明在纯加法这种廉价操作上两者打平；一旦每步的计算量小于迭代器协议的开销，惰性就纯亏。判断标准是「单步计算量 &#x2F; 单步调度开销」这个比值。</li>
+<li><strong>副作用顺序失控</strong>。严格求值里，副作用的顺序就是代码顺序。惰性求值里，顺序由消费方决定，可能倒过来，可能交错，可能根本不发生。Haskell 用 IO monad 把副作用隔离出去，其他语言只能靠约定。</li>
+<li><strong>异常位置漂移，调试栈失去意义</strong>。上面第 3 组就是它的最小形态。工程上的缓解办法是在生成器内部包一层 <code>try/except</code> 再重新抛出，把业务信息补进去。</li>
+<li><strong>不可重放</strong>。生成器、迭代器、<code>Stream</code> 都是一次性的。需要重放的场合要么物化成列表，要么在工厂函数里重新创建。</li>
+<li><strong>空间泄漏比严格求值更隐蔽</strong>。严格求值的泄漏是「忘了释放」，看得见；惰性的泄漏是「还没轮到释放」，看不见，内存曲线还是缓慢爬升，不像一次性分配那么刺眼。</li>
+<li><strong>共享 thunk 在多线程下要加锁</strong>。GHC 用一个叫 blackhole 的机制标记「这个 thunk 正在被求值」，其他线程撞上就阻塞等待。省下的重复计算，换来的是同步开销和一种新的死锁形态。</li>
+<li><strong>短序列上不要用</strong>。三个元素的列表，惰性求值省不下任何内存，只是多了一层协议开销。</li>
+</ul>
+<h2 id="二、解释与编译：同一段代码，翻译放在什么时候"><a href="#二、解释与编译：同一段代码，翻译放在什么时候" class="headerlink" title="二、解释与编译：同一段代码，翻译放在什么时候"></a>二、解释与编译：同一段代码，翻译放在什么时候</h2><p>1952 年 Grace Hopper 的 A-0 系统把符号代码翻译成机器码，那是「提前翻译」的起点。1958 年 LISP 的 <code>eval</code> 提供了另一种可能——代码在运行时才被解释。1960 年代的 FORTRAN 与 COBOL 编译器确立了 AOT（ahead-of-time）的主流地位，此后三十年「编译」几乎等同于「发布前做一次翻译」。</p>
+<p>1995 年 Java 把这根时间轴拆成了两段——<code>javac</code> 把源码翻译成字节码，放在发布前；JVM 在运行时把字节码翻译成机器码，放在执行中。Python 的 <code>.pyc</code> 是同一件事的简化版——首次导入时把源码编译成字节码存盘，之后每次启动只做反序列化，不做解析。</p>
+<p>它要解决的是一个成本归属问题。翻译的代价与源码规模成正比，与输入数据无关；执行的代价与输入规模成正比。这两笔钱的性质完全不同，放在同一个时刻收，总有一方要为另一方让步。</p>
+<p><strong>本质一句话：解释与编译的差别不在「有没有翻译」，而在翻译结果被复用了多少次——翻完就丢是解释，存下来反复用是编译，运行中按热度决定要不要再翻一遍是即时编译。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    SRC[&quot;源码&quot;] --&gt;|&quot;发布前：javac / gcc&quot;| BIN[&quot;机器码&quot;]
+    SRC --&gt;|&quot;首次导入：Python&quot;| PYC[&quot;字节码 .pyc&quot;]
+    SRC --&gt;|&quot;每次执行：纯解释器&quot;| IR[&quot;逐行解析并执行&quot;]
+    BIN --&gt; RUN1[&quot;直接执行&quot;]
+    PYC --&gt;|&quot;每次启动：反序列化&quot;| VM[&quot;虚拟机执行字节码&quot;]
+    PYC --&gt;|&quot;热点方法达到阈值&quot;| JIT[&quot;JIT 编译成机器码&quot;]
+    JIT --&gt; RUN2[&quot;直接执行，带预热期&quot;]</code></pre>
+
+<p>先看翻译这笔钱到底有多大。本机造了一个 6002 行、2000 个函数的模块，把「解析 + 生成字节码」和「执行字节码」分开计时：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">【1】模块规模：6002 行，99.4 KiB，2000 个函数</span><br><span class="line"></span><br><span class="line">【2】把源码翻译成字节码，与真正执行字节码，各花多少</span><br><span class="line">  compile() 解析 + 生成字节码           22.92 ms</span><br><span class="line">  exec() 执行模块顶层（2000 个 def）     0.94 ms</span><br><span class="line">  翻译占「翻译+执行」的比例              96.1 %</span><br><span class="line">  翻译一次的钱，够调用函数 f1000         3371 次</span><br></pre></td></tr></table></figure>
+
+<p>96.1% 的时间花在翻译上，真正「执行」只占 0.94 毫秒——因为模块顶层只有两千个 <code>def</code>，每个 <code>def</code> 在字节码层面就是一条 <code>MAKE_FUNCTION</code> 加一次赋值，几乎不做事。一次翻译的 22.92 毫秒，够把这个模块里的函数调用三千多次。</p>
+<p>这就是「翻译该放在什么时候」的全部张力：<strong>如果这段代码只跑一次，翻译成本占九成以上，任何缓存都救不了它；如果它要跑一百万次，22.92 毫秒摊到每次是 23 纳秒，可以忽略。</strong></p>
+<p>把翻译结果存盘，就是 <code>.pyc</code>。同一个模块，有无缓存各 import 五次取最优：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【3】字节码缓存：去掉 pyc 与保留 pyc，import 这个模块各花多少</span><br><span class="line">  无 pyc：解析 2000 个函数并编译         26.69 ms（importtime self）</span><br><span class="line">  有 pyc：直接反序列化字节码              2.08 ms（importtime self）</span><br><span class="line">  省下                                   24.61 ms（92.2%）</span><br></pre></td></tr></table></figure>
+
+<p>26.69 到 2.08，省掉 92.2%。省掉的正好是「解析」这一段，反序列化只要 2 毫秒。注意 <code>.pyc</code> 一点没有让执行变快，它只是把翻译从每次启动挪到了首次运行。<strong>这就是最朴素的预编译：不改变总工作量，只改变它发生的次数。</strong></p>
+<p>再往前一步是 JIT。同一份 <code>.class</code> 文件，用纯解释模式与默认的分层编译各跑一遍，循环 2000 万次，取五轮里最快的一轮：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">【1】同一份字节码，两种执行方式（20,000,000 次循环，五轮取最优）</span><br><span class="line">  默认（分层编译 + C2 JIT）       16.8 ms</span><br><span class="line">  纯解释（-Xint）               351.3 ms</span><br><span class="line">  倍数                           20.9 倍</span><br><span class="line"></span><br><span class="line">【2】进程级全程耗时（含启动与预热）</span><br><span class="line">  java -version（只启动，不做业务）      47.7 ms</span><br><span class="line">  java Bench 默认 JIT                  159.4 ms</span><br><span class="line">  java Bench 纯解释 -Xint             1840.8 ms</span><br><span class="line">  python -c pass（解释器启动）          151.3 ms</span><br><span class="line">  javac 编译 Bench.java                302.9 ms（一次性）</span><br><span class="line">  全程倍数                              11.5 倍</span><br></pre></td></tr></table></figure>
+
+<p>单轮 20.9 倍，全程只有 11.5 倍（1840.8 &#x2F; 159.4）。差的那部分就是启动开销与预热：JVM 起来要 47.7 毫秒，JIT 要把方法跑到阈值才编译，编译完成之前执行的还是解释版本。<strong>JIT 不是「编译比解释快 21 倍」这么简单，它是「用前几十毫秒的慢，换后面所有时间的快」。</strong></p>
+<p>JIT 之所以能赢 <code>javac</code>，靠的是它多一份信息。<code>javac</code> 看到的只有源码，不知道这个方法在线上被调用时 <code>this</code> 具体是哪个子类、哪个分支命中率更高；JIT 看得见，于是能做去虚拟化、能按实际类型生成特化代码、能把大概率走的分支排到前面。代价是这份信息随时可能失效——加载了一个新的子类，之前生成的代码就得作废重来，这就是 deoptimization。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>冷启动场景里 JIT 是纯成本</strong>。命令行工具、Serverless 函数、一次性脚本，进程活不过几百毫秒，预热期占掉大半。GraalVM 的 native-image、Java 的 AppCDS、.NET 的 ReadyToRun 都是把翻译提前，用「放弃运行时优化」换「省掉预热」。</li>
+<li><strong>解释器在极短任务上更快</strong>。一段跑 10 毫秒的脚本，编译要 20 毫秒，明显是亏的。判断标准不是「哪个更先进」，是「总执行时间 &#x2F; 编译时间」这个比值。</li>
+<li><strong>字节码不是「半编译」</strong>。它把翻译切成两段，但没有减少总工作量，只是让第一段可以存盘复用、第二段可以按需触发。</li>
+<li><strong>JIT 需要可写可执行内存</strong>，与 W^X、SELinux 的 <code>deny_execmem</code>、iOS 的代码签名策略天然冲突。安全加固做得越彻底，JIT 越难做。</li>
+<li><strong>类型信息缺失会让投机失效</strong>。动态语言里一个变量这轮是整数下轮是字符串，JIT 生成的整数特化代码就得分支预测失败、退回通用路径。CPython 3.11 起的 specializing interpreter 是同一思路的弱化版：不生成机器码，只把字节码特化成针对常见类型的分支。</li>
+<li><strong>AOT 看不到运行时分布，做不了去虚拟化</strong>，所以它在面向对象密集的代码上系统性落后于 JIT。反过来，JIT 在数值密集、分支稳定的代码上优势最小，这也是为什么科学计算领域 AOT 依然是主流。</li>
+</ul>
+<h2 id="三、可观测性三支柱：指标、日志、追踪各管一段"><a href="#三、可观测性三支柱：指标、日志、追踪各管一段" class="headerlink" title="三、可观测性三支柱：指标、日志、追踪各管一段"></a>三、可观测性三支柱：指标、日志、追踪各管一段</h2><p>「可观测性」这个词借自控制论，1960 年 Kalman 用它描述「能否从输出反推内部状态」。2017 年前后，Cindy Sridharan 把它带进分布式系统语境，用来区分两件常被混为一谈的事——监控（monitoring）回答的是你事先想到的问题，可观测性回答的是你事先没想到的问题。2019 年 CNCF 把 OpenTracing 与 OpenCensus 合并成 OpenTelemetry，指标、日志、追踪这三根支柱成了事实标准。</p>
+<p>它要解决的是一个信息论问题。分布式系统里，一次请求穿过若干个服务，每个服务都可能以你没想到的方式失败。故障发生之前，你不知道该采集什么；故障发生之后，没采集的字段补不回来。「三支柱」不是三个工具的堆叠，而是三种不同保真度的数据，各自保留了不同的信息。</p>
+<p><strong>本质一句话：三支柱的分工不按数据形态分，按问题的时间粒度分——指标回答「这一类请求整体怎么样」，日志回答「这一次具体发生了什么」，追踪回答「这一次的时间花在哪一段」。缺一根，就会出现「知道出事了但查不出原因」，或者「查出了原因但不知道有多大」。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    REQ[&quot;一次请求&quot;] --&gt; H[&quot;svc.http&quot;]
+    H --&gt; O[&quot;svc.order&quot;]
+    O --&gt; C[&quot;cache.get&quot;]
+    O --&gt; D[&quot;db.query&quot;]
+    H -.-&gt; M1[&quot;指标&lt;br/&gt;请求数 +1&lt;br/&gt;延迟落进直方图&quot;]
+    D -.-&gt; M2[&quot;指标&lt;br/&gt;慢查询计数 +1&quot;]
+    O -.-&gt; L1[&quot;日志&lt;br/&gt;INFO rows=38&quot;]
+    D -.-&gt; L2[&quot;日志&lt;br/&gt;WARN 慢查询 16.5 ms&quot;]
+    H -.-&gt; T[&quot;追踪&lt;br/&gt;一条 trace，四个 span&lt;br/&gt;带父子与时长&quot;]</code></pre>
+
+<p>本机搭了一个三层服务——<code>svc.http</code> → <code>svc.order</code> → <code>svc.db</code> 与 <code>svc.cache</code>，下游是一个二十万行的 SQLite 表。跑 300 个请求，其中约 6% 命中一次全表扫描，约 2% 触发业务校验失败。先看指标：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">【1】指标：300 个请求被压成几个数字</span><br><span class="line">  请求数        300</span><br><span class="line">  错误数        5</span><br><span class="line">  数据库调用    300，其中慢查询 17 次（5.7%）</span><br><span class="line">  延迟 p50/p90/p95/p99/max  0.05 / 0.11 / 11.81 / 14.11 / 16.52 ms</span><br><span class="line">  直方图       [0, 5) : 283 个</span><br><span class="line">  直方图      [5, 20) :  17 个</span><br><span class="line">  直方图     [20, 50) :   0 个</span><br><span class="line">  直方图    [50, 100) :   0 个</span><br><span class="line">  直方图  [100, +inf) :   0 个</span><br></pre></td></tr></table></figure>
+
+<p>三行数字把问题框住了——p50 是 0.05 毫秒，p99 是 14.11 毫秒，差 280 倍；直方图只有两个非零桶，283 个请求在 5 毫秒以内，17 个落在 5 到 20 毫秒之间。5.7% 的请求慢了两个数量级，其余 94.3% 完全正常。</p>
+<p>这就是指标的强项，也是它的全部——它能告诉你「有多少、差多少」，不能告诉你「是谁、为什么」。5 个错误、17 次慢查询，这两组数字背后可能是完全不同的原因。</p>
+<p>日志负责把「这一次」摊开：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">【2】日志：顺着一个 trace_id 把这一次串起来</span><br><span class="line">  慢查询那一次  trace_id = 0707ce3e</span><br><span class="line">    [WARN ] user=166 慢查询 16.5 ms，扫描全表返回 38 行</span><br><span class="line">    [INFO ] user=166 订单查询完成 rows=38</span><br><span class="line">  报错那一次  trace_id = 32838959</span><br><span class="line">    [ERROR] user=71  ValueError: 单笔金额 952239 分超过上限 900000 分</span><br></pre></td></tr></table></figure>
+
+<p>同样是「出错」，一条是性能问题（全表扫描），一条是业务规则问题（金额超限）。指标把两者都记成一次异常，日志把它们分开。日志还能给出用户、参数、原始异常，这些是高基数信息，不可能塞进指标。</p>
+<p>追踪负责切开时间：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">【3】追踪：把一次请求的耗时按代码路径切开</span><br><span class="line">  trace_id = 0707ce3e，全程 16.52 ms</span><br><span class="line">    svc.http     全长   16.52 ms  自身    0.00 ms  占全程 100.0%</span><br><span class="line">      svc.order    全长   16.52 ms  自身    0.04 ms  占全程 100.0%</span><br><span class="line">        cache.get    全长    0.00 ms  自身    0.00 ms  占全程   0.0%</span><br><span class="line">        db.query     全长   16.48 ms  自身   16.48 ms  占全程  99.7%</span><br></pre></td></tr></table></figure>
+
+<p>16.52 毫秒里有 16.48 毫秒在 <code>db.query</code>，缓存命中耗时 0.00 毫秒，业务层自身 0.04 毫秒。定位到这一步，优化方向不需要讨论。<strong>指标告诉你这 17 个请求慢，追踪告诉你慢在一个 span 上，日志告诉你那个 span 执行了什么 SQL。</strong></p>
+<p>三种数据的成本结构也不同，最直接的约束是基数：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">【4】把 user_id 加进指标标签的代价</span><br><span class="line">  当前序列数                4 条</span><br><span class="line">  按 user_id 拆分           4 x 200 = 800 条</span><br><span class="line">  再加 region(8)、ver(5)    4 x 200 x 8 x 5 = 32000 条</span><br></pre></td></tr></table></figure>
+
+<p>300 个请求撑不起 32000 条时间序列。每一条序列都要独立存储、独立索引、独立计算聚合，而大部分序列在这 300 个请求里只出现过一次。高基数维度属于日志和追踪，不属于指标——这条分工不是风格问题，是存储模型决定的。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>指标是预聚合的，聚合了就问不出新问题</strong>。这是它与日志、追踪最本质的差别。你在埋点时就决定了按哪个维度聚合，事后想按用户分、按版本分，只能重新埋点重跑。</li>
+<li><strong>日志成本与流量成正比，采样会丢证据</strong>。全量日志一天几个 TB，采样 1% 又刚好丢掉那条唯一的报错。常见做法是「错误全留、正常采样」，但错误的判定规则本身要维护。</li>
+<li><strong>追踪的采样率决定了你能不能看见长尾</strong>。1% 采样下，17 个慢请求里期望只采到 0.17 条，很可能一条都没有。慢请求恰恰是长尾，而长尾是采样最先丢掉的部分。所以有 tail-based sampling：先把整条 trace 缓下来，跑完再按耗时决定留不留。</li>
+<li><strong>没埋的字段，事后补不回来</strong>。这是可观测性与监控的分水岭：监控的指标体系是事先设计好的，可观测性要求原始数据保真度足够高，高到你能回答没预想过的问题。</li>
+<li><strong>三支柱必须靠同一个标识串起来</strong>。缺了 trace_id，日志是一堆孤立行，指标与日志之间也对不上号。OpenTelemetry 的核心贡献与其说是三个 SDK，不如说是统一了上下文传播。</li>
+<li><strong>可观测性不能替代测试</strong>。它只在生产环境有效，而生产环境的故障代价远高于测试环境。两者是不同阶段的措施，不是替代关系。</li>
+</ul>
+<h2 id="四、语义化版本：把兼容判断写进三个数字"><a href="#四、语义化版本：把兼容判断写进三个数字" class="headerlink" title="四、语义化版本：把兼容判断写进三个数字"></a>四、语义化版本：把兼容判断写进三个数字</h2><p>2013 年 Tom Preston-Werner 在 semver.org 上提出 SemVer 2.0.0。动机很具体——RubyGems 的 <code>~&gt;</code> 与 npm 早期的版本号没有统一语义，一个 <code>1.2</code> 到底意味着「至少 1.2」还是「1.2 这一支」，全看维护者心情。在此之前，Linux 内核的「never break userspace」与 Debian 的版本策略表达的是同一个诉求，只是没有提炼成通用规范。</p>
+<p>它要解决的是一道除法。一个有 500 个依赖的项目，每次升级前都要判断「这次能不能直接升」。没有约定时，唯一可靠的办法是读 changelog、读 diff、跑全量测试，成本与依赖数量成正比；500 个依赖就是 500 次判断，没人做得完。版本号把这项工作从「每个消费者每次都做」变成「发布方做一次」。</p>
+<p><strong>本质一句话：版本号不是标签，是承诺。MAJOR 加一承诺这次有不兼容变更，MINOR 加一承诺只增不改，PATCH 加一承诺只修 bug——它把「能不能直接升」的判断从消费者手里收归发布方，做一次，写成三个数字。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    V[&quot;1.4.2&quot;] --&gt; MA[&quot;MAJOR = 1&lt;br/&gt;不兼容变更&quot;]
+    V --&gt; MI[&quot;MINOR = 4&lt;br/&gt;新增功能，向后兼容&quot;]
+    V --&gt; PA[&quot;PATCH = 2&lt;br/&gt;修 bug，向后兼容&quot;]
+    MA --&gt; C1[&quot;消费者&lt;br/&gt;必须改代码、读迁移指南&quot;]
+    MI --&gt; C2[&quot;消费者&lt;br/&gt;可以直接升&quot;]
+    PA --&gt; C3[&quot;消费者&lt;br/&gt;可以自动升&quot;]</code></pre>
+
+<p>承诺要能被机器执行，才有意义。本机写了一个区间匹配器，跑了十一条真值：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">【1】区间匹配的真值表（含 0.x 与预发布两条特例）</span><br><span class="line">  版本          区间              期望   实测   一致</span><br><span class="line">  1.2.3         ^1.2.3            True   True   OK</span><br><span class="line">  1.9.9         ^1.2.3            True   True   OK</span><br><span class="line">  2.0.0         ^1.2.3            False  False  OK</span><br><span class="line">  0.2.9         ^0.2.3            True   True   OK</span><br><span class="line">  0.3.0         ^0.2.3            False  False  OK</span><br><span class="line">  0.0.3         ^0.0.3            True   True   OK</span><br><span class="line">  0.0.4         ^0.0.3            False  False  OK</span><br><span class="line">  1.2.9         ~1.2.3            True   True   OK</span><br><span class="line">  1.3.0         ~1.2.3            False  False  OK</span><br><span class="line">  1.3.0-rc.1    ^1.2.3            False  False  OK</span><br><span class="line">  1.5.0         &gt;=1.2.3 &lt;2.0.0    True   True   OK</span><br></pre></td></tr></table></figure>
+
+<p>十一行里有两行值得单独看。<code>^0.2.3</code> 不匹配 <code>0.3.0</code>——因为 <code>0.x</code> 表示「契约还没定」，规范把 0.x 的 minor 位当 major 位用，<code>^0.2.3</code> 只覆盖到 <code>0.2.x</code>。<code>^0.0.3</code> 更窄，只覆盖 <code>0.0.3</code> 这一个版本。这条规则常被抱怨「反直觉」，但它诚实地反映了一件事：0.x 阶段没有兼容性承诺可言。</p>
+<p>另一行是 <code>1.3.0-rc.1</code> 不满足 <code>^1.2.3</code>。预发布版本被默认挡在所有普通区间之外，只有区间里显式写了 <code>-</code> 才放行。这是保护机制——让 <code>npm install</code> 不会因为某个包发了预发布版就把你的生产依赖升上去。</p>
+<p>排序规则也全是坑：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">【2】预发布的排序（semver.org 官方给出的那串例子）</span><br><span class="line">  1.0.0-alpha &lt; 1.0.0-alpha.1 &lt; 1.0.0-alpha.beta &lt; 1.0.0-beta &lt; 1.0.0-beta.2 &lt; 1.0.0-beta.11 &lt; 1.0.0-rc.1 &lt; 1.0.0</span><br><span class="line">  相邻比较共 7 对，全部严格递增：是</span><br><span class="line">  beta.2 &lt; beta.11 成立，说明数字段按数值比而不是字符串比（字符串下 &#x27;11&#x27; &lt; &#x27;2&#x27;）</span><br><span class="line">  1.0.0-rc.1 &lt; 1.0.0 成立，说明带预发布的版本永远小于同号的正式版</span><br></pre></td></tr></table></figure>
+
+<p><code>beta.2 &lt; beta.11</code> 这条，如果按字符串比较会得出相反结论，这是自己写版本比较最容易踩的地方。<code>rc.1 &lt; 1.0.0</code> 这条则保证了「预发布永远早于正式版」这个直觉。</p>
+<p>承诺能不能自动校验？把「这次改动该升哪一位」写成一次 AST 比对就行：提取两个版本里所有公开函数的签名，比对参数增删、默认值变化、参数顺序。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">【3】把「版本号是不是诚实」变成一次可执行的比对</span><br><span class="line">  改动 A（加参数、加函数）  判定 MINOR</span><br><span class="line">      - charge() 新增带默认值的参数 idempotency_key=None</span><br><span class="line">      - 新增公开函数 query()</span><br><span class="line">  改动 B（删参数、删函数）  判定 MAJOR</span><br><span class="line">      - charge() 删掉参数 currency</span><br><span class="line">      - charge() 删掉参数 idempotency_key</span><br><span class="line">      - 删除公开函数 refund()</span><br><span class="line">      - query() 新增带默认值的参数 verbose=False</span><br><span class="line">  改动 C（手标成 2.1.0 的那次）  判定 MAJOR</span><br><span class="line">      - query() 删掉参数 verbose</span><br><span class="line">      - charge() 新增带默认值的参数 currency=&#x27;USD&#x27;</span><br><span class="line">      - 新增公开函数 refund()</span><br></pre></td></tr></table></figure>
+
+<p>改动 A 是标准的 MINOR——加了一个带默认值的参数、加了一个新函数，老调用方一行不用改。改动 B 是标准的 MAJOR——删参数、删函数。</p>
+<p>改动 C 是这套工具的价值所在。如果只看 diff 的表面，这次改动像是在「加东西」——补了一个 <code>currency</code> 参数、恢复了 <code>refund</code> 函数、还多了个默认值，看起来像个 feature 版本，维护者很可能就手标成 <code>2.1.0</code> 发出去了。但 <code>query()</code> 上原本那个 <code>verbose</code> 参数被删掉了，所有传了它的调用方会在运行时收到 <code>TypeError</code>。工具判定 MAJOR，因为删除参数这件事与「看起来加了什么」无关。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>语义化版本只管 API 形状，不管行为</strong>。函数签名一个字节没变，返回值从「元」变成「分」、从「升序」变成「降序」，工具完全看不出来，只有测试和契约测试能挡。这是版本号承诺最大的漏洞，也是「minor 版本引入 bug」这类事故的主要来源。</li>
+<li><strong>0.x 的保护范围窄到接近无效</strong>。<code>^0.2.3</code> 只覆盖 <code>0.2.x</code>，任何 minor 升级都要人工介入。这意味着 0.x 阶段的包实际上没有自动升级能力，与「版本号降低维护成本」的初衷相反。</li>
+<li><strong>major 号通货膨胀会让承诺失效</strong>。一个内部包每周发一次 major，消费者很快就会学会无视这个数字，改成写死版本或者用 lockfile 锁住。承诺的价值与它的可信度成正比，与发布频率成反比。</li>
+<li><strong>lockfile 的存在本身就是对 semver 的不信任投票</strong>。如果版本区间声明足够可靠，就不需要把整棵依赖树的精确版本固化下来。现实中几乎每个生态都有 lockfile，说明承诺在传播链路上会衰减。</li>
+<li><strong>传递依赖不认你的承诺</strong>。你 pin 住了直接依赖，它引用的那个包破了你的运行环境，你的版本号依然是干净的。</li>
+<li><strong>不同生态对形式做了改写</strong>。Go 用 <code>/v2</code> 路径后缀而不是改版本号，Rust 对 <code>0.x</code> 有专门规则，Python 生态里大量包长期停在 0.x。语义一致，形式不同，跨生态协作时不要假设规则通用。</li>
+</ul>
+<h2 id="五、停机问题：有些判断，任何时刻都做不出"><a href="#五、停机问题：有些判断，任何时刻都做不出" class="headerlink" title="五、停机问题：有些判断，任何时刻都做不出"></a>五、停机问题：有些判断，任何时刻都做不出</h2><p>1936 年，图灵在《On Computable Numbers, with an Application to the Entscheidungsproblem》里回答了大卫·希尔伯特 1928 年提出的判定问题：是否存在一个通用算法，能对任意数学命题判定真假。答案是否定的，而停机问题是这个否定结论的核心引理。同一年，丘奇用 λ 演算给出了等价结论。1953 年，Rice 把它推广成一条更强的定理：程序的任何非平凡语义性质都不可判定。</p>
+<p>证明的骨架是自指。假设存在判定器 <code>H(P, I)</code>，能在有限步内回答「程序 P 在输入 I 上会不会停」。构造另一个程序 <code>D(P)</code>：调用 <code>H(P, P)</code>，如果它回答「会停」，<code>D</code> 就进入死循环；如果它回答「不停」，<code>D</code> 就立即返回。然后问 <code>H(D, D)</code> 会怎么答——两种回答都导致矛盾，所以 <code>H</code> 不存在。</p>
+<p>为什么工程上要讲这个。日常工作中天天在问类似的问题——这段代码会不会死循环、这个查询会不会一直返回、这个递归有没有终止条件、这个 <code>while</code> 循环会不会永远转下去。这些问题的形态与停机问题完全同构。</p>
+<p><strong>本质一句话：停机问题的结论不是「判定很难」，而是「不存在这样的判定器」。能做的只有两件事：对受限的子集给出可靠但不完备的判定，或者设一个上限，把「不确定」当成一种合法结果返回。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    P[&quot;任意程序 P 与输入 I&quot;] --&gt; ASK&#123;&quot;存在通用判定器？&quot;&#125;
+    ASK --&gt;|&quot;1936 图灵：不存在&quot;| NO[&quot;没有第三条路&quot;]
+    NO --&gt; R1[&quot;受限子集&lt;br/&gt;可靠但不完备&lt;br/&gt;类型系统 / 终止性检查&quot;]
+    NO --&gt; R2[&quot;设上限&lt;br/&gt;把不确定变成结果&lt;br/&gt;超时 / 预算 / watchdogs&quot;]
+    NO --&gt; R3[&quot;自指构造&lt;br/&gt;判定器判定自身即矛盾&quot;]
+    R1 --&gt; OK1[&quot;说「确定不停」时可信&lt;br/&gt;说「未知」时什么都不代表&quot;]
+    R2 --&gt; OK2[&quot;超时不是判定的近似&lt;br/&gt;是第三种合法输出&quot;]</code></pre>
+
+<p>本机实现了一台四寄存器的寄存器机（<code>INC</code> &#x2F; <code>SET</code> &#x2F; <code>DECJZ</code> &#x2F; <code>JMP</code> &#x2F; <code>HALT</code>，与 Minsky 机等价，图灵完备），拿四个程序，把观察窗口从 10 步逐步放大到 10 万步：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">【1】同一批程序，把观察窗口从 10 步放大到 10 万步</span><br><span class="line">  程序                            上限10步            上限100步           上限1000步         上限100000步</span><br><span class="line">  P1 立即停                     HALT(0)           HALT(0)           HALT(0)           HALT(0)</span><br><span class="line">  P2 约 1503 步                    未判定               未判定               未判定        HALT(1502)</span><br><span class="line">  P3 永不停                         未判定               未判定               未判定               未判定</span><br><span class="line">  P4 约 60003 步                   未判定               未判定               未判定       HALT(60002)</span><br></pre></td></tr></table></figure>
+
+<p>窗口从 10 步放大到 10 万步，能下结论的程序从一个变成三个。<code>P3</code> 在四列里全是「未判定」——而它到底是「还没停」还是「永远不会停」，这张表本身给不出答案。任何有限窗口都给不出。</p>
+<p>有人会说，那就把窗口开得足够大。这条路走不通，成本还按状态数爆炸。二符号图灵机的忙碌海狸函数给出了量化：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">【2】有限窗口要多大才够？（2 符号图灵机，状态数 n）</span><br><span class="line">  n = 1：最长运行            1 步才停</span><br><span class="line">  n = 2：最长运行            6 步才停</span><br><span class="line">  n = 3：最长运行           21 步才停</span><br><span class="line">  n = 4：最长运行          107 步才停</span><br><span class="line">  n = 5：最长运行   47,176,870 步才停</span><br></pre></td></tr></table></figure>
+
+<p>状态数从 1 加到 4，最长运行步数从 1 涨到 107，还在直觉范围内。加到 5，直接跳到 4717 万。这个数字是 2024 年用 Coq 形式化验证出来的结论，此前六十年里没有人能证明它。含义很直接：<strong>要判定一台 5 状态 2 符号的图灵机「会不会停」，你可能得先跑 4717 万步。</strong> 而 6 状态的下界已经远超 10 的 10 次方量级。状态数每加一，需要的观察窗口按天文数字膨胀，「多跑几步就知道了」这条路在第 5 个状态上就断了。</p>
+<p>工程上真正在用的是受限子集。本机写了一个最小的静态检测器——扫 AST，找到 <code>while</code> 条件为常量真、且循环体内不存在 <code>break</code> &#x2F; <code>return</code> &#x2F; <code>raise</code> 的节点，判定「确定不停」；其余一律返回「未知」。十个程序，静态判定与 1 秒观察窗的实际结果对照：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">【3】用 AST 写一个「显然不停」检测器，能覆盖多少</span><br><span class="line">  程序              静态判定    实际运行（1 秒观察窗）</span><br><span class="line">  f1 空转            确定不停       1 秒内未停</span><br><span class="line">  f2 while 1       确定不停       1 秒内未停</span><br><span class="line">  f3 计数循环          未知         已返回</span><br><span class="line">  f4 立即 break      未知         已返回</span><br><span class="line">  f5 条件 return     未知         已返回</span><br><span class="line">  f6 Collatz 27    未知         已返回</span><br><span class="line">  f7 周期轨道          确定不停       1 秒内未停</span><br><span class="line">  f8 内层 break      确定不停       1 秒内未停</span><br><span class="line">  f9 条件恒真          未知         1 秒内未停</span><br><span class="line">  f10 长度不变         未知         1 秒内未停</span><br><span class="line"></span><br><span class="line">  静态判定为「确定不停」：4 个，其中实际未停 4 个</span><br><span class="line">  实际未停的：6 个，静态只认出 4 个（覆盖 67%）</span><br><span class="line">  判错（说它不停、其实会停）：0 个</span><br></pre></td></tr></table></figure>
+
+<p>四判四中，零误判，覆盖率 67%。漏掉的两个恰好是最有代表性的：<code>f9</code> 是 <code>while n &lt; 10: pass</code>，循环变量从不改变，条件恒真，但 AST 上看不出「n 不会变」这件事；<code>f10</code> 是 <code>while len(s) &gt; 0: s[0] = 1</code>，列表长度永远是一，条件同样恒真，规则更看不出来。<strong>静态规则只认字面形态，不认语义。</strong></p>
+<p>这个 67% 与 0 误判的组合，正好刻画了受限子集判定的性质：它给的是充分条件。说「确定不停」时可信，说「未知」时什么也不代表——既可能是会停，也可能是不会停。它永远不会给出「一定停」的结论，那需要证明，而证明本身在一般情形下不可能。</p>
+<p>再看动态观察那一列。<code>f9</code> 和 <code>f10</code> 都显示「1 秒内未停」，这只能说明一秒内没停，不能说明永远不停。动态分析给的是必要条件。<strong>充分条件与必要条件之间那条缝，就是停机问题留给工程的位置。</strong></p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>Rice 定理比停机问题更强</strong>。「这个程序会不会抛异常」「这个变量会不会为空」「这两个函数是否等价」，全部不可判定。日常遇到的静态检查工具做的都是近似，不是判定。</li>
+<li><strong>真实计算机是有限状态机，所以停机问题在物理上「可判定」</strong>。内存有限，状态数有限，理论上穷举所有状态就能判定。但状态数是 2 的内存位数次方，这个「可判定」在实践上等于不存在。这个细节常被用来抬杠，它不改变任何工程结论。</li>
+<li><strong>超时不是判定的近似，是第三种合法输出</strong>。把「不确定」显式建模成一个结果（<code>Timeout</code>、<code>Unknown</code>、<code>BudgetExceeded</code>），比假装能判定要诚实得多，也让上层能针对这种情况设计兜底。</li>
+<li><strong>「不可判定」不构成不写检查的借口</strong>。类型系统、终止性检查（Coq 的 guard condition、Agda 的 termination checker）、SQL 递归 CTE 的终止要求，都是在受限子集上做的可靠判定。它们不完备，但极有用。</li>
+<li><strong>受限子集的代价是表达能力</strong>。强归一化的类型系统保证程序终止，代价是不能写通用递归；SQL 要求递归查询有终止条件，代价是某些图算法写起来别扭。这不是缺陷，是交易。</li>
+<li><strong>动态分析的结论有时效性</strong>。今天跑一小时没崩，不代表明天不会崩。压力测试给出的置信度与测试时长相关，与「证明」无关。</li>
+</ul>
+<h2 id="六、五条原则的横向对照与小结"><a href="#六、五条原则的横向对照与小结" class="headerlink" title="六、五条原则的横向对照与小结"></a>六、五条原则的横向对照与小结</h2><table>
+<thead>
+<tr>
+<th>原则</th>
+<th>判断放在什么时候</th>
+<th>拿什么换什么</th>
+<th>代价结构的关键量</th>
+<th>失效边界</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>惰性求值</td>
+<td>推迟到「真的要用这个值」</td>
+<td>峰值内存换求值时机的确定性</td>
+<td>单步计算量 &#x2F; 迭代器协议开销</td>
+<td>异常漂移 &#x2F; 一次性 &#x2F; 空间泄漏</td>
+</tr>
+<tr>
+<td>解释与编译</td>
+<td>发布前、加载时、运行时三选一</td>
+<td>预热期换稳定的执行速度</td>
+<td>执行总时长 &#x2F; 翻译耗时</td>
+<td>冷启动 &#x2F; 可执行内存限制 &#x2F; 类型不稳定</td>
+</tr>
+<tr>
+<td>可观测性三支柱</td>
+<td>推迟到故障发生之后</td>
+<td>采集与存储成本换「事后能问新问题」</td>
+<td>采样率、标签基数、保留时长</td>
+<td>高基数 &#x2F; 采样丢长尾 &#x2F; 没埋的字段</td>
+</tr>
+<tr>
+<td>语义化版本</td>
+<td>提前写进三个数字，发布时生效</td>
+<td>承诺纪律换「升级前不必读代码」</td>
+<td>承诺可信度、发布频率</td>
+<td>行为变更 &#x2F; 0.x &#x2F; major 通胀 &#x2F; 传递依赖</td>
+</tr>
+<tr>
+<td>停机问题</td>
+<td>任何时刻都做不到（一般情形）</td>
+<td>表达能力换可靠判定</td>
+<td>受限子集的覆盖范围</td>
+<td>Rice 定理 &#x2F; 动态结论的时效性</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>五条原则</th>
+<th>一句话判据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>惰性求值</td>
+<td>这个值真的会被用到吗，用到之前它占着多少东西</td>
+</tr>
+<tr>
+<td>解释与编译</td>
+<td>这段代码要跑几次，翻译成本摊到每次还剩多少</td>
+</tr>
+<tr>
+<td>可观测性三支柱</td>
+<td>我要问的是「多少」、「哪一次」，还是「慢在哪一段」</td>
+</tr>
+<tr>
+<td>语义化版本</td>
+<td>这次改动，老调用方一行代码不改能不能跑</td>
+</tr>
+<tr>
+<td>停机问题</td>
+<td>我要的是判定，还是一个可靠的上限</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：这五条原则分属语言运行时、工程运维、协作约定与计算理论，做法各不相同——推迟计算、挪动翻译、事后追查、写进数字、承认不可判定。落到根上，它们都在回答同一个问题：<strong>这个判断，你打算在什么时候做出，代价付几次。</strong></p>
+<p>惰性求值把「算不算」推迟到「用不用」，所以它必须承受求值时机脱离控制的全部后果：异常从别处冒出来、生成器只能走一遍、栈帧攥着五十兆不撒手。解释与编译把「翻译」挪到发布前、加载时或运行时，所以它必须算清这笔固定成本摊到每次执行还剩多少：6002 行的模块翻译一次 22.92 毫秒，够调用三千多次函数；纯解释与即时编译在同一份字节码上差 20.9 倍，但全程只差 11.5 倍，差值全在预热里。可观测性把「该问什么」推迟到故障之后，所以它必须为「没预想到的问题」保留原始数据，代价是高基数维度进不了指标、1% 采样最先丢掉长尾。语义化版本把判断提前，写成三个数字，所以它必须为这三个数字负责——删掉一个带默认值的参数，表面看是加了个新特性，判定仍是 MAJOR。</p>
+<p>停机问题站在这一串的外面。它说的是：有些判断，无论你把它放在事前、事中还是事后，都做不出来。这时候正确的做法不是加大窗口、换更强的工具，而是承认这类判断不存在，把问题改写成「设一个上限，超出就当不确定处理」。超时、预算、watchdog、资源配额，全都属于这一类——它们不判定，只兜底。</p>
+<p>回过头看这五条，选择时机的判据其实只有一句：<strong>这个判断需要多少信息，这些信息在哪个时刻才齐。</strong> 信息在发布前就齐，提前判定最便宜（编译、版本号）；信息要等运行时才有，推迟判定最准确（JIT、追踪）；信息永远不会齐，就别判定了，设个上限。</p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-chapter-03/">计算机原则五讲（三）：纵深防御、摊还分析、AIMD、虚拟内存、测试金字塔</a></li>
+<li><a href="/posts/princ-chapter-02/">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</a></li>
+<li><a href="/posts/princ-chapter-01/">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</a></li>
+<li><a href="/posts/princ-jit/">JIT：让程序在奔跑中变快</a></li>
+<li><a href="/posts/princ-refcount-vs-gc/">引用计数 vs 垃圾回收：谁来负责释放</a></li>
+<li><a href="/posts/princ-dbc/">契约式设计：把应该写成必须</a></li>
+<li><a href="/posts/princ-big-o/">大 O 复杂度：增长率的语言，不只是面试题</a></li>
+<li><a href="/posts/princ-fail-fast/">快速失败：让 Bug 早点现形</a></li>
+<li><a href="/posts/princ-least-astonishment/">最少惊讶原则：接口设计的隐形标准</a></li>
+<li><a href="/posts/9aed61e6/">基于 CMake 和 git 提交数自动管理版本号</a></li>
+<li><a href="/posts/c61b0101/">Java 的编译运行机制与静态类型</a></li>
+<li><a href="/posts/3fa74aea/">Python 生成器与协程底层深度解析</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-chapter-04/">https://hespethorn.github.io/posts/princ-chapter-04/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="external nofollow noreferrer" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://Hespethorn.github.io" target="_blank">HespethornのBlog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/CS-Principles/">CS-Principles</a><a class="post-meta__tags" href="/tags/%E8%AF%AD%E8%A8%80%E8%BF%90%E8%A1%8C%E6%97%B6/">语言运行时</a><a class="post-meta__tags" href="/tags/%E5%B7%A5%E7%A8%8B%E8%BF%90%E7%BB%B4/">工程运维</a><a class="post-meta__tags" href="/tags/%E7%89%88%E6%9C%AC%E7%AE%A1%E7%90%86/">版本管理</a><a class="post-meta__tags" href="/tags/%E8%AE%A1%E7%AE%97%E7%90%86%E8%AE%BA/">计算理论</a></div><div class="post-share"><div class="social-share" data-image="https://hespethorn.github.io/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related is-prev" href="/posts/ai-news-20261030/" title="AI 新闻速递（周更精选 2026-10-30）"><img class="pagination-art" src="/img/prev-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">AI 新闻速递（周更精选 2026-10-30）</div></div><div class="info-2"><div class="info-item-1"> 本周精选摘要：这一周的主旋律是「能力越强，越要可被治理」。模型一边冲进搜索广告、办公套件、代码仓库和真实系统——Alphabet 因 AI Mode 变现不及预期单日蒸发约 5000 亿美元，Gemini 开始直接改文件，Claude 研究模型在五大平台挖出漏洞并串联攻击链，Wiz 曝光智能体已参与真实入侵；另...</div></div></div></a><a class="pagination-related is-next" href="/posts/ai-news-20261106/" title="AI 新闻速递（周更精选 2026-11-06）"><img class="pagination-art" src="/img/next-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">AI 新闻速递（周更精选 2026-11-06）</div></div><div class="info-2"><div class="info-item-1"> 本周精选摘要：本周是「监管与市场同时收紧、技术与落地却加速」的高度分化一周。① 美国中期选举民主党横扫两院，44 项地方数据中心暂停提案 43 项通过，美股单日蒸发约 3.2 万亿美元、纳指跌 5.52%、英伟达跌 9.3%，AI 叙事遭遇政策与资本双杀；② OpenAI 发布 GPT-6 Cyber 安防模型...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-14</div><div class="info-item-2">背压：慢消费者的保护机制</div></div><div class="info-2"><div class="info-item-1">线上有个很常见的死法：上游一慢，下游先崩。 下游没做错什么，它只是老老实实收下所有请求，放进队列，然后慢慢处理。结果队列越来越长，内存越来越满，延迟越来越高，最后 OutOfMemoryError 或者一次超时雪崩——监控图上，崩溃前那段&quot;吞吐还挺好看&quot;的时间，往往就是队列在替它挨打。 再对比...</div></div></div></a><a class="pagination-related" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-28</div><div class="info-item-2">布鲁克斯定律：给延期项目加人只会更晚</div></div><div class="info-2"><div class="info-item-1">1975 年，一本讲操作系统的书里，有一章不是讲技术，而是讲人。它的名字后来成了软件工程里最常被引用、也最常被无视的一句话：  Adding manpower to a late software project makes it later.向已经延期的软件项目增加人力，只会让它更晚。  这句话之所以反直觉，是...</div></div></div></a><a class="pagination-related" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-28</div><div class="info-item-2">大 O 复杂度：增长率的语言，不只是面试题</div></div><div class="info-2"><div class="info-item-1">先看三个真实反复发生的场面：  一段跑得飞快的代码，上线后数据量涨了 100 倍，直接超时——代码一个字没改； 一个&quot;优化&quot;把平均耗时从 3 毫秒降到 1 毫秒，但 P99 反而变差了——因为新的实现有更差的最坏情况； 面试里能默写&quot;快排平均 O(n log n)、最坏 O(n²)&...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">839</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1122</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="#wechat" target="_blank" title="微信"><i class="fa-brands fa-weixin" style="color: #07C160;"></i></a><a class="social-icon" href="https://www.zhihu.com/people/96-40-70-62-86" rel="external nofollow noreferrer" target="_blank" title="知乎"><i class="fa-brands fa-zhihu" style="color: #0084FF;"></i></a><a class="social-icon" href="https://personal-business-ca-wnd0.bolt.host/" rel="external nofollow noreferrer" target="_blank" title="主页"><i class="fas fa-house" style="color: #2f7d6d;"></i></a><a class="social-icon" href="/atom.xml" target="_blank" title="RSS"><i class="fas fa-rss" style="color: #f26522;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;" data-love-since="2021-08-08T00:00:00"></div><script>// 起点统一读 _config.butterfly.yml 的 love_since，避免与首页侧栏漂移
+const loveTimeElement = document.getElementById('love-time');
+const startDate = new Date(loveTimeElement.dataset.loveSince || '2021-08-08T00:00:00');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E6%83%B0%E6%80%A7%E6%B1%82%E5%80%BC%EF%BC%9A%E6%8A%8A%E8%AE%A1%E7%AE%97%E6%8E%A8%E8%BF%9F%E5%88%B0%E9%9D%9E%E5%81%9A%E4%B8%8D%E5%8F%AF"><span class="toc-number">1.</span> <span class="toc-text">一、惰性求值：把计算推迟到非做不可</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81%E8%A7%A3%E9%87%8A%E4%B8%8E%E7%BC%96%E8%AF%91%EF%BC%9A%E5%90%8C%E4%B8%80%E6%AE%B5%E4%BB%A3%E7%A0%81%EF%BC%8C%E7%BF%BB%E8%AF%91%E6%94%BE%E5%9C%A8%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99"><span class="toc-number">2.</span> <span class="toc-text">二、解释与编译：同一段代码，翻译放在什么时候</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E5%8F%AF%E8%A7%82%E6%B5%8B%E6%80%A7%E4%B8%89%E6%94%AF%E6%9F%B1%EF%BC%9A%E6%8C%87%E6%A0%87%E3%80%81%E6%97%A5%E5%BF%97%E3%80%81%E8%BF%BD%E8%B8%AA%E5%90%84%E7%AE%A1%E4%B8%80%E6%AE%B5"><span class="toc-number">3.</span> <span class="toc-text">三、可观测性三支柱：指标、日志、追踪各管一段</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81%E8%AF%AD%E4%B9%89%E5%8C%96%E7%89%88%E6%9C%AC%EF%BC%9A%E6%8A%8A%E5%85%BC%E5%AE%B9%E5%88%A4%E6%96%AD%E5%86%99%E8%BF%9B%E4%B8%89%E4%B8%AA%E6%95%B0%E5%AD%97"><span class="toc-number">4.</span> <span class="toc-text">四、语义化版本：把兼容判断写进三个数字</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E5%81%9C%E6%9C%BA%E9%97%AE%E9%A2%98%EF%BC%9A%E6%9C%89%E4%BA%9B%E5%88%A4%E6%96%AD%EF%BC%8C%E4%BB%BB%E4%BD%95%E6%97%B6%E5%88%BB%E9%83%BD%E5%81%9A%E4%B8%8D%E5%87%BA"><span class="toc-number">5.</span> <span class="toc-text">五、停机问题：有些判断，任何时刻都做不出</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AD%E3%80%81%E4%BA%94%E6%9D%A1%E5%8E%9F%E5%88%99%E7%9A%84%E6%A8%AA%E5%90%91%E5%AF%B9%E7%85%A7%E4%B8%8E%E5%B0%8F%E7%BB%93"><span class="toc-number">6.</span> <span class="toc-text">六、五条原则的横向对照与小结</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-backpressure/" title="背压：慢消费者的保护机制">背压：慢消费者的保护机制</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-brooks/" title="布鲁克斯定律：给延期项目加人只会更晚">布鲁克斯定律：给延期项目加人只会更晚</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-big-o/" title="大 O 复杂度：增长率的语言，不只是面试题">大 O 复杂度：增长率的语言，不只是面试题</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-end-to-end/" title="端到端原则：TCP 为什么把可靠性放在两端">端到端原则：TCP 为什么把可靠性放在两端</a><time datetime="2026-09-06T16:00:00.000Z" title="发表于 2026-09-07 00:00:00">2026-09-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pareto/" title="二八定律（Pareto）：热点总是集中">二八定律（Pareto）：热点总是集中</a><time datetime="2026-09-03T16:00:00.000Z" title="发表于 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-pigeonhole/" title="鸽巢原理：从哈希冲突到抽屉">鸽巢原理：从哈希冲突到抽屉</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cache-coherence/" title="缓存一致性：多核与多副本的同一个问题">缓存一致性：多核与多副本的同一个问题</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源">计算机原则五讲（二）：信息隐藏、关注点分离、逃逸分析、两阶段提交、单一事实源</a><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-03/" title="计算机原则五讲（三）：纵深防御、摊还分析、AIMD、虚拟内存、测试金字塔">计算机原则五讲（三）：纵深防御、摊还分析、AIMD、虚拟内存、测试金字塔</a><time datetime="2026-10-29T16:00:00.000Z" title="发表于 2026-10-30 00:00:00">2026-10-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-04/" title="计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题">计算机原则五讲（四）：惰性求值、解释与编译、可观测性、语义化版本、停机问题</a><time datetime="2026-11-05T16:00:00.000Z" title="发表于 2026-11-06 00:00:00">2026-11-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：哈希与碰撞、一致性哈希、崩溃一致性、多数派共识、12-Factor">计算机原则五讲（五）：哈希与碰撞、一致性哈希、崩溃一致性、多数派共识、12-Factor</a><time datetime="2026-11-12T16:00:00.000Z" title="发表于 2026-11-13 00:00:00">2026-11-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明">计算机原则五讲（一）：分治、顺序与随机、分代回收、失败安全、引用透明</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-locality/" title="局部性原理——从哪来、为什么、有什么用">局部性原理——从哪来、为什么、有什么用</a><time datetime="2026-09-01T16:00:00.000Z" title="发表于 2026-09-02 00:00:00">2026-09-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-conway/" title="康威定律：架构复制沟通结构">康威定律：架构复制沟通结构</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-space-time/" title="空间换时间：哈希、缓存与索引的共同母题">空间换时间：哈希、缓存与索引的共同母题</a><time datetime="2026-09-08T16:00:00.000Z" title="发表于 2026-09-09 00:00:00">2026-09-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-fail-fast/" title="快速失败：让 Bug 早点现形">快速失败：让 Bug 早点现形</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-postel/" title="鲁棒性原则（Postel）：接收要宽松，发送要严格">鲁棒性原则（Postel）：接收要宽松，发送要严格</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-metcalfe/" title="梅特卡夫定律：网络价值与 n² 的迷思">梅特卡夫定律：网络价值与 n² 的迷思</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="发表于 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-idempotency/" title="幂等性：让重试变得安全">幂等性：让重试变得安全</a><time datetime="2026-09-07T16:00:00.000Z" title="发表于 2026-09-08 00:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-murphy/" title="墨菲定律：会出错的总会出错">墨菲定律：会出错的总会出错</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-parkinson/" title="帕金森定律：工作会膨胀到占满时间">帕金森定律：工作会膨胀到占满时间</a><time datetime="2026-09-27T16:00:00.000Z" title="发表于 2026-09-28 00:00:00">2026-09-28</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-dbc/" title="契约式设计：把应该写成必须">契约式设计：把应该写成必须</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-sliding-window/" title="停等与滑动窗口：让管道不空转">停等与滑动窗口：让管道不空转</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-wal/" title="写前日志 WAL：先记账、后落库">写前日志 WAL：先记账、后落库</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-refcount-vs-gc/" title="引用计数与垃圾回收：谁来负责释放">引用计数与垃圾回收：谁来负责释放</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-astonishment/" title="最少惊讶原则：接口设计的隐形标准">最少惊讶原则：接口设计的隐形标准</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-least-privilege/" title="最小权限原则：安全的第一道闸">最小权限原则：安全的第一道闸</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-eventual-consistency/" title="最终一致性：不一致是常态，收敛才是目标">最终一致性：不一致是常态，收敛才是目标</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-acid-base/" title="ACID 与 BASE：两种一致性契约">ACID 与 BASE：两种一致性契约</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-amdahl/" title="Amdahl 定律——从哪来、为什么、有什么用">Amdahl 定律——从哪来、为什么、有什么用</a><time datetime="2026-09-02T16:00:00.000Z" title="发表于 2026-09-03 00:00:00">2026-09-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-cap/" title="CAP 定理：分布式的取舍三角">CAP 定理：分布式的取舍三角</a><time datetime="2026-09-10T16:00:00.000Z" title="发表于 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-jit/" title="JIT：让程序在奔跑中变快">JIT：让程序在奔跑中变快</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：哈希与碰撞、一致性哈希、崩溃一致性、多数派共识、12-Factor">计算机原则五讲（五）：哈希与碰撞、一致性哈希、崩溃一致性、多数派共识、12-Factor</a><time datetime="2026-11-12T16:00:00.000Z" title="发表于 2026-11-13 00:00:00">2026-11-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20261113/" title="AI 新闻速递（周更精选 2026-11-13）">AI 新闻速递（周更精选 2026-11-13）</a><time datetime="2026-11-12T16:00:00.000Z" title="发表于 2026-11-13 00:00:00">2026-11-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-layout-03/" title="文件该放在哪（3）：三处边界，三种不进">文件该放在哪（3）：三处边界，三种不进</a><time datetime="2026-11-09T16:00:00.000Z" title="发表于 2026-11-10 00:00:00">2026-11-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-layout-04/" title="文件该放在哪（4）：谁能被 import">文件该放在哪（4）：谁能被 import</a><time datetime="2026-11-09T16:00:00.000Z" title="发表于 2026-11-10 00:00:00">2026-11-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/design-and-judgment-as-foundation/" title="设计与判断：不会过时的地基">设计与判断：不会过时的地基</a><time datetime="2026-11-08T16:00:00.000Z" title="发表于 2026-11-09 00:00:00">2026-11-09</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="footer-code-wrap"><div class="footer-elegant-code elegant-code" data-elegant-code="data-elegant-code"></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_footer" href="#footer-wrap" title="直达页脚" aria-label="直达页脚"><i class="fas fa-arrow-down"></i></a><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script data-pjax src="/self/contact-popup.js"></script><script data-pjax src="/self/elegant-code.js"></script><script data-pjax src="/self/footer-jump.js"></script><script data-pjax src="/self/home-rail-love.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
