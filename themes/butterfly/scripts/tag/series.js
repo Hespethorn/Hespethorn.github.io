@@ -21,7 +21,8 @@ hexo.extend.filter.register('before_post_render', data => {
     groups[series].push({
       title: data.title,
       path: data.path,
-      date: data.date.unix()
+      date: data.date.unix(),
+      order: data.order
     })
   }
   return data
@@ -45,6 +46,12 @@ function series (args) {
   const isSortByTitle = series.orderBy === 'title'
 
   const compareFn = (a, b) => {
+    // front-matter order 优先：同一系列按自定义序号排，同日多篇也能定序
+    if (typeof a.order === 'number' && typeof b.order === 'number' && a.order !== b.order) {
+      const cmp = a.order < b.order ? -1 : 1
+      return isAsc ? cmp : -cmp
+    }
+
     const itemA = isSortByTitle ? a.title.toUpperCase() : a.date
     const itemB = isSortByTitle ? b.title.toUpperCase() : b.date
 
