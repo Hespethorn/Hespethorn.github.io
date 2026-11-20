@@ -1,0 +1,734 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>DRY：同一份知识只留一处 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#F4F7F4"><meta name="description" content="一、四个现场手上有个设备管控项目，八十八天，八十八次提交。它是一个典型的嵌入式服务端：C++ 主进程、几个 shell 脚本管构建和安装、一份 YAML 配置描述接哪些硬件。 翻它的提交记录，能挑出四组和 DRY 直接相关的动作。四组里有三组是在削减重复，一组是在制造重复，而那一组的提交标题，恰好写着「统一」。    现场 日期 提交 动作 净行数    配置合并 11-12 663e329 两份">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DRY：同一份知识只留一处">
+<meta property="og:url" content="https://hespethorn.github.io/posts/dry-knowledge-single-source/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="一、四个现场手上有个设备管控项目，八十八天，八十八次提交。它是一个典型的嵌入式服务端：C++ 主进程、几个 shell 脚本管构建和安装、一份 YAML 配置描述接哪些硬件。 翻它的提交记录，能挑出四组和 DRY 直接相关的动作。四组里有三组是在削减重复，一组是在制造重复，而那一组的提交标题，恰好写着「统一」。    现场 日期 提交 动作 净行数    配置合并 11-12 663e329 两份">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-11-19T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-11-20T09:17:54.872Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="工程实践">
+<meta property="article:tag" content="代码重构">
+<meta property="article:tag" content="配置管理">
+<meta property="article:tag" content="DRY">
+<meta property="article:tag" content="技术债">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "DRY：同一份知识只留一处",
+  "url": "https://hespethorn.github.io/posts/dry-knowledge-single-source/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-11-19T16:00:00.000Z",
+  "dateModified": "2026-11-20T09:17:54.872Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://hespethorn.github.io/posts/dry-knowledge-single-source/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1E3A33')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F4F7F4')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'DRY：同一份知识只留一处',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link href="/self/base.css" rel="stylesheet"><link href="/self/redesign.css" rel="stylesheet"><link href="/self/contact-popup.css" rel="stylesheet"><link href="/self/elegant-code.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-color: #edf2ec;"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">823</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/hero-fuhua.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/chibi-2.png" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">DRY：同一份知识只留一处</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div class="hero-corner-mask"></div><div id="post-info"><h1 class="post-title">DRY：同一份知识只留一处</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">发表于</span><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Systems/">Systems</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/Systems/Dev-Practice/">Dev-Practice</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">总字数:</span><span class="word-count">5.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>18分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="一、四个现场"><a href="#一、四个现场" class="headerlink" title="一、四个现场"></a>一、四个现场</h2><p>手上有个设备管控项目，八十八天，八十八次提交。它是一个典型的嵌入式服务端：C++ 主进程、几个 shell 脚本管构建和安装、一份 YAML 配置描述接哪些硬件。</p>
+<p>翻它的提交记录，能挑出四组和 DRY 直接相关的动作。四组里有三组是在削减重复，一组是在<strong>制造</strong>重复，而那一组的提交标题，恰好写着「统一」。</p>
+<table>
+<thead>
+<tr>
+<th>现场</th>
+<th>日期</th>
+<th>提交</th>
+<th>动作</th>
+<th>净行数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>配置合并</td>
+<td>11-12</td>
+<td><code>663e329</code></td>
+<td>两份电源设备配置块合成一份</td>
+<td>全仓库 −5</td>
+</tr>
+<tr>
+<td>脚本抽取</td>
+<td>09-28</td>
+<td><code>5b81ed0</code></td>
+<td>装&#x2F;卸脚本抽出公共文件</td>
+<td>三个脚本合计 −6</td>
+</tr>
+<tr>
+<td>白名单删除</td>
+<td>11-11</td>
+<td><code>929fdfe</code></td>
+<td>删掉 broker 的主题 ACL</td>
+<td>该文件 −21</td>
+</tr>
+<tr>
+<td>「统一」补零</td>
+<td>10-28</td>
+<td><code>bcb1866</code></td>
+<td>设备 ID 补零规则统一</td>
+<td>+55</td>
+</tr>
+</tbody></table>
+<p>表格里最扎眼的是第四行：标题写「统一」，实际净增五十五行，因为那条规则被写进了三个文件。而前三行加起来，净减少不到二十行。</p>
+<p>这就是本文要处理的问题。DRY 被反复讲成「别复制粘贴」，可如果按这个标准去量，前三组重构几乎什么都没干：行数没少，代码量没降。反过来，第四组明明复制了三份，作者还觉得自己在消除差异。</p>
+<p>所以真正的判据不是「像不像」，是另外一句。</p>
+<pre><code class="highlight mermaid">flowchart TB
+    Q[&quot;同一段文本，&lt;br/&gt;出现两次&quot;]
+    Q --&gt; A[&quot;改一处，&lt;br/&gt;另一处必须跟着改&quot;]
+    Q --&gt; B[&quot;两处会各自演化，&lt;br/&gt;改一处不该动另一处&quot;]
+    A --&gt; A1[&quot;是同一份知识&lt;br/&gt;→ 合并 / 生成&quot;]
+    B --&gt; B1[&quot;是两份知识&lt;br/&gt;→ 保留，但换个名字&quot;]
+    A1 --&gt; A2[&quot;判据：&lt;br/&gt;分叉了会不会出错&quot;]
+    B1 --&gt; B2[&quot;判据：&lt;br/&gt;合并后会不会互相绑架&quot;]</code></pre>
+
+<h2 id="二、配置合并"><a href="#二、配置合并" class="headerlink" title="二、配置合并"></a>二、配置合并</h2><p>这个项目的配置支持块级复用：一个配置块可以整体引用另一个块，只写自己特有的字段。电源部分原本长这样：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ===== 电源设备（CAN 总线）=====</span></span><br><span class="line"><span class="attr">power_device:</span> <span class="string">&amp;power</span>        <span class="comment"># 开出可复用的块</span></span><br><span class="line">  <span class="attr">link:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">can:</span></span><br><span class="line">    <span class="attr">interface:</span> <span class="string">can6</span></span><br><span class="line">    <span class="attr">baudrate:</span> <span class="number">500000</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># ===== SSPC 电源保护 =====</span></span><br><span class="line"><span class="attr">sspc_device:</span></span><br><span class="line">  <span class="string">&lt;&lt;:</span> <span class="string">*power</span>                <span class="comment"># 复用 power_device 的配置块</span></span><br><span class="line">  <span class="attr">link:</span> <span class="literal">false</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># ===== PBOX 配电盒 =====</span></span><br><span class="line"><span class="attr">pbox_device:</span></span><br><span class="line">  <span class="string">&lt;&lt;:</span> <span class="string">*power</span>                <span class="comment"># 复用 power_device 的 CAN 配置</span></span><br><span class="line">  <span class="attr">link:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">reclose:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+
+<p>注意这里已经做过一次 DRY 了：块引用把 CAN 接口和波特率收进了 <code>power_device</code>，两个子块只留自己特有的字段。按「消灭重复文本」的标准，这个配置已经相当干净，<code>can.interface</code> 只出现一次。</p>
+<p>问题出在 <code>link</code>。两个子块各有一个 <code>link</code>，两个都可以写成 <code>true</code>。而硬件上这两种电源设备接在同一条 CAN 总线上，同一时刻只能存在一台。这个约束在配置里没有位置，只活在一句注释和一段运行时检查里：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 互斥选择：PowerBox 作为当前活动电源设备（若两者同时 link，后者生效并 WARN）</span></span><br><span class="line"><span class="keyword">if</span> (active_power_status_) &#123;</span><br><span class="line">    LOG_WARN &lt;&lt; <span class="string">&quot;[DeviceManager] both sspc_device and pbox_device are linked; &quot;</span></span><br><span class="line">                <span class="string">&quot;pbox_device takes precedence&quot;</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>十一月十二日上午有个提交 <code>ca52729</code>，干的事就一行：把这条日志从 <code>LOG_WARN</code> 改成 <code>LOG_ERROR</code>。</p>
+<p>把警告升级成错误，通常意味着现场真撞上了。同一天下午四点三十四分，<code>663e329</code> 进来了，配置变成：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ===== 电源设备（CAN 总线，二选一）=====</span></span><br><span class="line"><span class="comment"># type 决定实际创建的配电设备：0=SSPC，1=PBOX（新增配电类型时追加编号，并在 DeviceManager 中扩展分支）</span></span><br><span class="line"><span class="attr">power_device:</span></span><br><span class="line">  <span class="attr">link:</span> <span class="literal">true</span></span><br><span class="line">  <span class="attr">type:</span> <span class="number">1</span>                  <span class="comment"># 配电类型：0=SSPC，1=PBOX</span></span><br><span class="line">  <span class="attr">can:</span></span><br><span class="line">    <span class="attr">interface:</span> <span class="string">can6</span></span><br><span class="line">    <span class="attr">baudrate:</span> <span class="number">500000</span></span><br><span class="line">  <span class="attr">reclose:</span> <span class="literal">true</span>            <span class="comment"># PBOX 专用（type=1）：短路保护后是否自动重合闸</span></span><br></pre></td></tr></table></figure>
+
+<p>三个顶层块变一个，七个键变六个，配置模板里从十五行压到八行。代码侧把两个 <code>if</code> 换成一个 <code>switch</code>，然后那段「两者同时 link」的冲突分支被整段删掉——不是修好了，是不需要了：结构上只有一个 <code>link</code>，写不出两个都开的状态。</p>
+<p>全仓库的账是 <code>+51 / −56</code>，净减五行。</p>
+<h3 id="合并的收益"><a href="#合并的收益" class="headerlink" title="合并的收益"></a>合并的收益</h3><p>净减五行这个数字，如果拿去跟「复制粘贴」的标准对账，几乎证明不了什么。但它换来了三样东西：</p>
+<p><strong>第一，互斥关系从运行时检测变成编译期写不出。</strong> 原来那段冲突处理逻辑要一直留着，因为配置是运行期读的，随时可能被运维改成两个都开。现在这个状态在 schema 层面不存在，代码里那八行分支连同它的日志、它的优先级规则一起消失了。</p>
+<p><strong>第二，新增一种电源类型时的改动点收敛。</strong> 原来加第三种设备，要复制一整块配置模板、复制一整段 <code>createDevice</code>、再改冲突判断里那句「后者生效」。现在只加一个 <code>case</code> 分支和一个 <code>type</code> 编号。</p>
+<p><strong>第三，也是最容易被忽略的：配置文档里少了一行需要人记住的规则。</strong> 原来的 README 写着「<code>sspc_device</code> &#x2F; <code>pbox_device</code>：是否启用、是否自动重合闸」，读者必须自己推断这两者互斥。改完之后那一行变成「<code>type</code>（0&#x3D;SSPC &#x2F; 1&#x3D;PBOX）」，互斥写在类型里，不用推断。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph L1[&quot;第一层：值&quot;]
+        A1[&quot;can.interface&lt;br/&gt;can.baudrate&quot;] --&gt; A2[&quot;块引用&lt;br/&gt;已消除&quot;]
+    end
+    subgraph L2[&quot;第二层：结构&quot;]
+        B1[&quot;两个 link 字段&quot;] --&gt; B2[&quot;两份顶层块&lt;br/&gt;删掉一个&quot;]
+    end
+    subgraph L3[&quot;第三层：约束&quot;]
+        C1[&quot;同一时刻只能有一台&quot;] --&gt; C2[&quot;type 枚举&lt;br/&gt;写不出两台&quot;]
+    end
+    A2 --&gt; B2 --&gt; C2</code></pre>
+
+<p>块引用解决的是第一层，<code>663e329</code> 解决的是第二层和第三层。这也是为什么这次改动行数几乎不变：第一层的重复早在引入块引用时就消掉了，剩下的重复是<strong>结构重复</strong>和<strong>约束缺失</strong>，它们不吃行数，吃的是「读者要在脑子里维护多少条不变量」。</p>
+<p>前一天的 <code>ca52729</code> 值得单独说一句。把 WARN 升成 ERROR，是在承认「这个不可能状态会发生」；第二天把结构改掉，是不再承认它。两句之间隔了不到一天，方向完全相反：一句在加固检查，一句在删除检查。真正做完 DRY 之后，那些防御性代码会显得多余——这不是它们写错了，是它们守的那个漏洞被填上了。</p>
+<h2 id="三、脚本抽取"><a href="#三、脚本抽取" class="headerlink" title="三、脚本抽取"></a>三、脚本抽取</h2><p>九月二十八日的 <code>5b81ed0</code> 动了十二个文件，<code>+423 / −759</code>。看起来是一次大瘦身，但拆开看，其中的主体是删掉一个 288 行的旧配置生成脚本、删掉 41 行已经废弃的服务文件，真正属于「抽公共代码」的部分只有三个脚本：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>改前</th>
+<th>改后</th>
+<th>变化</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>install.sh</code></td>
+<td>255</td>
+<td>196</td>
+<td>−59</td>
+</tr>
+<tr>
+<td><code>uninstall.sh</code></td>
+<td>168</td>
+<td>92</td>
+<td>−76</td>
+</tr>
+<tr>
+<td><code>common.sh</code></td>
+<td>0</td>
+<td>129</td>
+<td>+129</td>
+</tr>
+<tr>
+<td>合计</td>
+<td>423</td>
+<td>417</td>
+<td>−6</td>
+</tr>
+</tbody></table>
+<p>又是净减六行。流传了三十年的「重构能减少代码量」这个预期，在这里第二次落空。</p>
+<p>抽出去的东西里，最有代表性的是服务清单和安装路径。安装脚本要遍历模块逐个装服务，卸载脚本要遍历同一批模块逐个停服务，两份清单在各自的文件里各写一遍。这类重复的危险不在于难看，在于<strong>漏改</strong>：新增一个模块只加进安装清单，卸载时那个服务就留在系统里，下次重装撞端口。</p>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph before[&quot;抽取前&quot;]
+        I1[&quot;install.sh&lt;br/&gt;MODULES=(a b c)&quot;]
+        U1[&quot;uninstall.sh&lt;br/&gt;MODULES=(a b c)&quot;]
+    end
+    subgraph after[&quot;抽取后&quot;]
+        C[&quot;common.sh&lt;br/&gt;MODULES=(a b c)&quot;]
+        I2[&quot;install.sh&lt;br/&gt;source common.sh&quot;]
+        U2[&quot;uninstall.sh&lt;br/&gt;source common.sh&quot;]
+        C --&gt; I2
+        C --&gt; U2
+    end
+    before --&gt; after</code></pre>
+
+<p>收益不在行数，在「改一处，两处生效」这个性质。这份清单从两份独立演化，变成了一份有单一作者的清单。</p>
+<p>但抽完并没有抽干净。同一次提交里，<code>install.sh</code> 和 <code>uninstall.sh</code> 各自还留着两个同名函数。这件事放到第六节说，它比我预想的更能说明问题。</p>
+<h2 id="四、白名单删除"><a href="#四、白名单删除" class="headerlink" title="四、白名单删除"></a>四、白名单删除</h2><p>十一月十一日那次提交，标题是「改为随包交付 RTSP 服务」，主体是一件交付方式的调整。里面夹着一段顺手的删除，删的是 broker 的主题白名单。</p>
+<p>原来的设计里，权限控制分两处写：</p>
+<ul>
+<li><strong>代码层</strong>：进程内的路由表决定哪些主题允许转发，规则写在 <code>topics.yaml</code> 里；</li>
+<li><strong>配置层</strong>：broker 自己的 <code>acl</code> 文件，逐条列出允许读写的主题。</li>
+</ul>
+<p>两边表达的是同一件事：「谁可以碰哪些主题」。作者在删掉 <code>acl</code> 时留了一段注释，把理由写在配置模板头顶：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"># 不做主题级 ACL：两个 broker 进程互相隔离，主题路由由业务代码决定，</span><br><span class="line"># broker 再设一层白名单只会与代码重复演进</span><br></pre></td></tr></table></figure>
+
+<p>「与代码重复演进」这六个字，是这一节的全部内容。</p>
+<p>一份知识写在两个地方，除了维护成本翻倍，还有一个更隐蔽的问题：<strong>两份实现会分叉，而分叉之后没有谁对谁错</strong>。代码里允许转发某个主题，<code>acl</code> 里忘了加，现象是消息静默丢弃；<code>acl</code> 里加了，代码里已经删掉那条路由，现象还是静默丢弃。两个方向都是沉默的，排查时只能靠猜。</p>
+<p>删掉之后安全等级降了吗？需要看那层白名单原本防的是什么。它的威胁模型是「broker 上有个客户端试图订阅不该订阅的主题」。而这两个 broker 进程之间的隔离是进程级的：主 broker 只绑回环和现场内网，对外那个只绑回环和一个专用端口，两者之间只有一条单向桥，桥只搬一类主题。也就是说，越权订阅在进程边界上就走不通，<code>acl</code> 那层是在一道已经关上的门后面再加一道插销。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph Code[&quot;代码层（保留）&quot;]
+        M[&quot;业务代码&lt;br/&gt;按规则决定路由&quot;]
+        T[&quot;topics.yaml&lt;br/&gt;主题清单&quot;]
+        M --&gt; T
+    end
+    subgraph Conf[&quot;配置层（删除）&quot;]
+        A[&quot;broker acl&lt;br/&gt;逐条允许&quot;]
+        A -.-&gt; R2[&quot;与代码层高度重叠&quot;]
+    end
+    Code --&gt; Same[&quot;同一份知识：&lt;br/&gt;哪些主题可以走&quot;]
+    Conf --&gt; Same
+    A -.-&gt;|&quot;删除&quot;| Gone[&quot;只留一处&quot;]</code></pre>
+
+<p>这一节的判据可以写得更直白：<strong>当两份实现表达同一份知识，且其中一份的失败是静默的，删掉它比同步它更安全。</strong> 同步要求每次改动都记得改两边，而人的记性不是可靠机制；删除只需要一次。</p>
+<p>顺带一提，这次删除之后，那个配置模板的注释里多了一句「broker 再设一层白名单只会与代码重复演进」。这类注释值得写：它记录的不是代码做什么，而是<strong>为什么这里故意没有东西</strong>。后面接手的人看到没有 ACL，第一反应多半是「漏了吧」，这句注释就是答案。</p>
+<h2 id="五、失败的统一"><a href="#五、失败的统一" class="headerlink" title="五、失败的统一"></a>五、失败的统一</h2><p>十月二十八日有个提交，标题是「统一设备 ID 规范化逻辑，不足 3 位自动左补 0」。</p>
+<p>设备 ID 是三位数字，<code>1</code> 要写成 <code>001</code>。这条规则出现在三个地方：</p>
+<ul>
+<li><code>build.sh</code> 解析 <code>--id</code> 参数时补零，用于包名和配置；</li>
+<li><code>gen_dev_key.sh</code> 生成密钥文件时要补零，文件名是 <code>dev_&lt;id&gt;_sm2.key</code>；</li>
+<li><code>aarch64_build.sh</code> 在宿主侧先补零，再传给容器里的 <code>build.sh</code>。</li>
+</ul>
+<p>提交做的事，是把这条规则在三个文件里各写了一遍，然后用注释互相点名。跑个脚本扫一下现在的状态：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">==============================================================</span><br><span class="line">实验 1：设备 ID 补零规则在多少个脚本里各写了一遍</span><br><span class="line">==============================================================</span><br><span class="line">  src/shell/aarch64_build.sh:82</span><br><span class="line">      while [ &quot;$&#123;#raw_id&#125;&quot; -lt 3 ]; do</span><br><span class="line">  src/shell/build.sh:1138</span><br><span class="line">      while [ $&#123;#id&#125; -lt 3 ]; do</span><br><span class="line">  src/shell/gen_dev_key.sh:108</span><br><span class="line">      while [ &quot;$&#123;#id&#125;&quot; -lt 3 ]; do</span><br><span class="line">  合计：3 处，分布在 3 个文件</span><br></pre></td></tr></table></figure>
+
+<p>三处。其中两处是裸循环，一处封装成了 <code>pad_device_id()</code> 函数——同一个规则，三种形态。</p>
+<p>按「复制粘贴」的标准，这是一次典型的 DRY 违背。但读完注释，判断会变。<code>aarch64_build.sh</code> 里那段写着：</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 设备 ID 规范化：与 build.sh / gen_dev_key.sh 一致，不足 3 位左补 0（-i 2 → 002）</span></span><br><span class="line"><span class="comment"># - 宿主侧先用它生成密钥、容器内 build.sh 也用同一个 id，两边必须写同一种形式，</span></span><br><span class="line"><span class="comment">#   否则 keys/dev_2_sm2.* 与 keys/dev_002_sm2.* 会分裂成两套密钥</span></span><br></pre></td></tr></table></figure>
+
+<p>最后半句是真实故障模式，不是假想：两处补零规则不一致，密钥文件会分裂成两套，终端按 <code>002</code> 预置的公钥对不上 <code>2</code> 签出来的密文，现场表现是「认证失败」，而日志里一切正常。</p>
+<h3 id="未抽取的理由"><a href="#未抽取的理由" class="headerlink" title="未抽取的理由"></a>未抽取的理由</h3><p>三个脚本确实可以 <code>source common.sh</code>。但代价是：</p>
+<p><strong>第一，可执行性。</strong> <code>gen_dev_key.sh</code> 要在构建机上独立运行，<code>aarch64_build.sh</code> 在宿主跑、<code>build.sh</code> 在容器里跑。容器构建时只挂载部分目录，<code>common.sh</code> 不一定在。一个脚本能不能独立执行，是运维层面的硬约束。</p>
+<p><strong>第二，<code>set -euo pipefail</code> 会传染。</strong> <code>common.sh</code> 里如果带了 <code>set -e</code>，被 source 之后会改变调用方的错误处理行为。这类隐式副作用在 shell 里极难排查。</p>
+<p><strong>第三，也是最实际的：这段逻辑只有五行。</strong> 抽一个函数、维护一个依赖、处理 source 顺序，成本高于在三个地方各写五行。而这个规则已经稳定——补到三位、不转数值（避免 <code>008</code> 被当八进制）、超长保持原样，三个约束没变过。</p>
+<p>所以这里的重复是<strong>合理重复</strong>：它不是「忘了抽」，是「算了账，不抽更便宜」。</p>
+<p>但必须承认一个事实：<strong>这三份是靠注释维持一致的。</strong> 注释里写着「与 build.sh &#x2F; gen_dev_key.sh 一致」，这句话没有任何机制保证。改动其中一处而不改另两处，编译器不会报错，测试大概率也不会挂——只有在现场，用 <code>-i 2</code> 构建、按 <code>002</code> 预置终端时，问题才会出现。</p>
+<p>这正是 DRY 讨论里最容易被跳过的一层：<strong>当你决定复制，你同时决定了一件更贵的事——用文档替代编译器。</strong></p>
+<pre><code class="highlight mermaid">flowchart TB
+    D[&quot;同一份规则&lt;br/&gt;要出现在 N 处&quot;]
+    D --&gt; Q1&#123;&quot;能否共享&lt;br/&gt;同一份实现&quot;&#125;
+    Q1 --&gt;|能| S[&quot;抽函数 / source&lt;br/&gt;成本：耦合&quot;]
+    Q1 --&gt;|不能：进程/容器边界| Q2&#123;&quot;规则是否稳定&quot;&#125;
+    Q2 --&gt;|稳定，且短| C[&quot;复制 + 注释点名&lt;br/&gt;成本：靠人维持&quot;]
+    Q2 --&gt;|会变| G[&quot;生成：模板 / 脚本产出&lt;br/&gt;成本：构建期多一步&quot;]
+    C --&gt; R[&quot;风险最高&lt;br/&gt;分叉时无报错&quot;]</code></pre>
+
+<h2 id="六、同名不同体"><a href="#六、同名不同体" class="headerlink" title="六、同名不同体"></a>六、同名不同体</h2><p><code>5b81ed0</code> 抽了 <code>common.sh</code>，但没有抽干净。残留的是两个同名函数，<code>install.sh</code> 和 <code>uninstall.sh</code> 各一份。用 <code>difflib</code> 量一下它们的相似度：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">============================================================</span><br><span class="line">同名函数的内容相似度（HEAD，difflib.SequenceMatcher）</span><br><span class="line">============================================================</span><br><span class="line">  pre_check                 22 行 vs   6 行   相似度 35.7%</span><br><span class="line">  remove_dpkg_if_managed    27 行 vs  26 行   相似度 83.0%</span><br><span class="line">  error                      3 行 vs   3 行   相似度 100.0%</span><br><span class="line">  info                       3 行 vs   1 行   相似度  0.0%</span><br></pre></td></tr></table></figure>
+
+<p>四行结果，四种情况，值得逐个看。</p>
+<p><code>error</code> 相似度 100%，三行，逐字相同。这是最标准的 DRY 目标：两份实现完全一致，抽出去零风险。</p>
+<p><code>pre_check</code> 相似度 35.7%，22 行对 6 行。差异是这样的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">--- uninstall.sh</span><br><span class="line">+++ install.sh</span><br><span class="line">@@ -2,5 +2,21 @@</span><br><span class="line"> if [ &quot;$(id -u)&quot; -ne 0 ]; then</span><br><span class="line">-echo &quot;❌ 请使用root权限运行（sudo ./Uninstall.sh）&quot;</span><br><span class="line">+echo &quot;❌ 请使用root权限运行（sudo ./Install.sh）&quot;</span><br><span class="line"> exit 1</span><br><span class="line"> fi</span><br><span class="line">+</span><br><span class="line">+REQUIRED_DIRS=()</span><br><span class="line">+for dir in &quot;$&#123;REQUIRED_DIRS[@]&#125;&quot;; do</span><br><span class="line">...</span><br><span class="line">+REQUIRED_FILES=(&quot;bin/config.yaml&quot; &quot;bin/topics.yaml&quot;)</span><br><span class="line">+for file in &quot;$&#123;REQUIRED_FILES[@]&#125;&quot;; do</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<p>卸载版只检查 root，安装版还检查必需目录和必需文件。这个差异其实是合理的：卸载不该因为缺文件而拒绝执行，否则用户永远卸不掉一个装坏的系统。但<strong>名字一样</strong>，读到 <code>pre_check</code> 的人会默认两边行为一致。</p>
+<p><code>remove_dpkg_if_managed</code> 相似度 83%，27 行对 26 行。逐行对完会发现，两边<strong>逻辑完全一致</strong>，差异只有五个动作词：日志里一处「安装」对「卸载」，提示里两处 <code>Install.sh</code> 对 <code>Uninstall.sh</code>，结尾两处「继续 tar 安装」对「继续 tar 卸载」。也就是说，这是同一份逻辑被抄了两遍，只换了动词。相似度 83% 没到位，是因为五个词恰好散在五行里。</p>
+<p>最后一行最反直觉。<code>info</code> 相似度 0.0%，三行对一行，文本上一个字都不重合。但把两份摊开看，它们是同一个东西：<code>deploy_dist.sh</code> 写 <code>function info() &#123; echo &quot;[部署] $*&quot;; &#125;</code>，<code>gen_dev_key.sh</code> 写 <code>info() &#123; echo &quot;$&#123;C_CYN&#125;[INFO]$&#123;C_RST&#125; $*&quot;; &#125;</code>。都是给消息加个前缀打到标准输出，一个用中文方括号，一个加彩色标记。</p>
+<p>相似度 0%，知识却是同一份。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    N[&quot;同名函数&lt;br/&gt;两处定义&quot;]
+    N --&gt; A[&quot;同名同体&lt;br/&gt;error 100%&quot;]
+    N --&gt; B[&quot;同名异体&lt;br/&gt;pre_check 35.7%&quot;]
+    N --&gt; C[&quot;同名近体&lt;br/&gt;remove_dpkg 83%&quot;]
+    N --&gt; D[&quot;同名同义&lt;br/&gt;info 0%&quot;]
+    A --&gt; A1[&quot;真重复&lt;br/&gt;抽出去&quot;]
+    B --&gt; B1[&quot;该拆名&lt;br/&gt;install_pre_check /&lt;br/&gt;uninstall_pre_check&quot;]
+    C --&gt; C1[&quot;该抽骨架&lt;br/&gt;差异做参数&quot;]
+    D --&gt; D1[&quot;该合并&lt;br/&gt;相似度测不出&quot;]</code></pre>
+
+<h3 id="同名的代价"><a href="#同名的代价" class="headerlink" title="同名的代价"></a>同名的代价</h3><p>代码一样，读两遍能发现。名字一样但行为不同，读一遍就以为自己懂了。</p>
+<p><code>pre_check</code> 这种结构在排障时可能变成这样：现场反馈「卸载脚本报缺文件，装不了」，工程师打开 <code>install.sh</code> 看到 <code>pre_check</code> 只检查 root，判断「不是这的问题」，因为 <code>install.sh</code> 里那个版本确实宽松。真正的检查在 <code>uninstall.sh</code> 里，只是它也叫 <code>pre_check</code>。</p>
+<p>这类问题的成本不在修复，在定位。而 DRY 的讨论通常只关心「有没有重复」，不关心「重复的东西叫什么名字」。</p>
+<p>这四行结果加起来，说明文本相似度不能当判据，只能当线索。100% 的是真重复（<code>error</code>）；0% 的也可能是真重复（<code>info</code>）；83% 那个同样是真重复，只是动作词换了（<code>remove_dpkg_if_managed</code>）。四行里只有 35.7% 的 <code>pre_check</code> 是真正的两件事——安装要校验目录和配置齐全，卸载只要求 root。</p>
+<p>真正的分叉不在相似度最低的那一格，在语义。而相似度既不告诉你哪格是分叉，也不告诉你该合还是该拆。</p>
+<p>所以相似度只能回答一个问题：值不值得翻开看一眼。翻完还是要回到那句判据：改一处，另一处是否必须改。</p>
+<h2 id="七、判据"><a href="#七、判据" class="headerlink" title="七、判据"></a>七、判据</h2><p>把四组现场摊开，处置方式其实是五种，按相似度和语义两个维度分：</p>
+<table>
+<thead>
+<tr>
+<th>情形</th>
+<th>判据</th>
+<th>处置</th>
+<th>本文案例</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>文本相同，语义相同，无边界障碍</td>
+<td>改一处是否必须改另一处</td>
+<td>抽取</td>
+<td><code>error</code> 100%</td>
+</tr>
+<tr>
+<td>结构相同，约束缺失</td>
+<td>是否存在「不该同时成立」的状态</td>
+<td>合并到枚举&#x2F;类型</td>
+<td><code>663e329</code> 电源配置</td>
+</tr>
+<tr>
+<td>跨层表达同一知识，且一份失败静默</td>
+<td>两份分叉后能否发现</td>
+<td>删掉冗余那份</td>
+<td><code>929fdfe</code> broker ACL</td>
+</tr>
+<tr>
+<td>语义相同，但存在进程&#x2F;容器边界</td>
+<td>共享实现是否破坏独立可执行</td>
+<td>复制 + 注释点名</td>
+<td><code>bcb1866</code> 补零规则</td>
+</tr>
+<tr>
+<td>名字相同，语义分叉</td>
+<td>读到名字的人会不会误判行为</td>
+<td>先改名，再判断是否合并</td>
+<td><code>pre_check</code> 35.7%</td>
+</tr>
+</tbody></table>
+<p>如果只能记一句：<strong>DRY 的对象是知识，不是文本。判断方法是问「改一处，另一处是否必须改」——答「必须」才合并，答「不该」就改名，答不上来就先去把测试补上。</strong></p>
+<p>三次正经的重构，净行数分别是 −5、−6、−21。这个数字本身就是结论：DRY 做完之后，代码量几乎不变，变的是「有多少条规则需要人记在脑子里」。配置合并删掉了一条互斥规则，脚本抽取删掉了一份要同步的清单，白名单删除删掉了一份会静默分叉的权限表。</p>
+<p>反过来，那唯一一次「统一」净增五十五行，因为它在三个进程边界之间共享一条五行规则——账算下来，复制更便宜。这不是妥协，是判断。</p>
+<p>🐾 <strong>小结</strong>：这个仓库八十八天里，真正被 DRY 掉的东西都不在行数上。电源配置从「两块 + 一句注释 + 一段冲突日志」变成「一块 + 一个 type」，收益是第二天再也不会有人写出两个 <code>link: true</code>；装&#x2F;卸脚本抽走一份模块清单，收益是新增模块时只改一处；删掉 broker 的 ACL，收益是权限知识只剩一个作者。而那次标题写着「统一」的提交，把一条五行规则写进三个文件——它没有做错，只是它优化的是「读起来一致」，不是「改起来一致」。</p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-chapter-12/">计算机原则五讲（十二）：省下的开销算在谁账上</a></li>
+<li><a href="/posts/c610829b/">设计模式真的很烂吗：读《Design Patterns Suck》有感</a></li>
+<li><a href="/posts/fce0fcae/">通用代码审查清单整理</a></li>
+<li><a href="/posts/princ-chapter-08/">计算机原则五讲（八）：同一份东西该存在几处</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/dry-knowledge-single-source/">https://hespethorn.github.io/posts/dry-knowledge-single-source/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="external nofollow noreferrer" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://Hespethorn.github.io" target="_blank">HespethornのBlog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%B7%A5%E7%A8%8B%E5%AE%9E%E8%B7%B5/">工程实践</a><a class="post-meta__tags" href="/tags/%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84/">代码重构</a><a class="post-meta__tags" href="/tags/%E9%85%8D%E7%BD%AE%E7%AE%A1%E7%90%86/">配置管理</a><a class="post-meta__tags" href="/tags/DRY/">DRY</a><a class="post-meta__tags" href="/tags/%E6%8A%80%E6%9C%AF%E5%80%BA/">技术债</a></div><div class="post-share"><div class="social-share" data-image="https://hespethorn.github.io/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related is-prev" href="/posts/ai-news-20261120/" title="AI 新闻速递（周更精选 2026-11-20）"><img class="pagination-art" src="/img/prev-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">AI 新闻速递（周更精选 2026-11-20）</div></div><div class="info-2"><div class="info-item-1"> 本周精选摘要：本周主线是「纸面估值落到真金白银，安全与治理同时收紧」——上一期还在路演与定价的 Anthropic，这一期完成挂牌首日交易；与此同时独立评测把前沿模型在模拟战场的表现摆上桌面，多国监管从原则文本走向硬立法。① Anthropic 11-19 正式挂牌纳斯达克：代码 ANT、发行价 83 美元、开...</div></div></div></a><a class="pagination-related is-next" href="/posts/kiss-yagni-prepaid-cost/" title="KISS 与 YAGNI：可逆的复杂度"><img class="pagination-art" src="/img/next-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">KISS 与 YAGNI：可逆的复杂度</div></div><div class="info-2"><div class="info-item-1">一、两条原则KISS 和 YAGNI 经常被并排提起，好像说的是同一件事：少写点。但它们的指向不同。YAGNI 管的是要不要做：这个需求还没来，先不做；KISS 管的是做的过程，已经决定要做了，别顺手加三层抽象。 两条原则共用一句潜台词：复杂度是有价格的，而你付的价格通常高于预期。 这句话听上去无可反驳，难的是落...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：规模一上来，系数说了算"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-20</div><div class="info-item-2">计算机原则五讲（五）：规模一上来，系数说了算</div></div><div class="info-2"><div class="info-item-1">这五条原则常被当成格言引用，但它们真正的价值在于都能算。  康威定律：架构是沟通结构的投影，改架构先改沟通路径； 墨菲定律：非零错误率在足够多次重复下必然兑现，1 - (1-p)^n； 帕金森定律：额度会被需求侧填满，多给的时间不会变成更多的价值； 布鲁克斯定律：沟通线是 n(n-1)/2，加人先增成本； 梅特卡...</div></div></div></a><a class="pagination-related" href="/posts/princ-chapter-12/" title="计算机原则五讲（十二）：省下的开销算在谁账上"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-20</div><div class="info-item-2">计算机原则五讲（十二）：省下的开销算在谁账上</div></div><div class="info-2"><div class="info-item-1">流水线、预取、约定优于配置、DRY、KISS 与 YAGNI，前两条在处理器内部，后三条在代码仓库里。做法差别很大：把指令拆成五段错开走、在还没用到时把数据搬上来、把重复写十遍的配置项变成默认值、把抄了三份的税率收成一个常量、把还没人提的需求直接不做。 共同的问法是：哪一份开销可以省掉，省掉之后谁付账。  流水线...</div></div></div></a><a class="pagination-related" href="/posts/princ-chapter-04/" title="计算机原则五讲（四）：把没说出口的约定写下来"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-20</div><div class="info-item-2">计算机原则五讲（四）：把没说出口的约定写下来</div></div><div class="info-2"><div class="info-item-1">这四条原则看似分属交互设计、安全、容错与类型理论，实际都在做同一件事：把默会的前提写成显式的、可检查的东西。  最少惊讶把「用户会怎么理解这个接口」这个隐含假设，变成对行为的硬约束； 最小权限把「每一层都可信」这个隐含假设，换成「每一层都会失守」； 快速失败把「错误迟早会被发现」这个隐含假设，改成「在错误发生的现...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">823</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="#wechat" target="_blank" title="微信"><i class="fa-brands fa-weixin" style="color: #07C160;"></i></a><a class="social-icon" href="https://www.zhihu.com/people/96-40-70-62-86" rel="external nofollow noreferrer" target="_blank" title="知乎"><i class="fa-brands fa-zhihu" style="color: #0084FF;"></i></a><a class="social-icon" href="https://personal-business-ca-wnd0.bolt.host/" rel="external nofollow noreferrer" target="_blank" title="主页"><i class="fas fa-house" style="color: #2f7d6d;"></i></a><a class="social-icon" href="/atom.xml" target="_blank" title="RSS"><i class="fas fa-rss" style="color: #f26522;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;" data-love-since="2021-08-08T00:00:00"></div><script>// 起点统一读 _config.butterfly.yml 的 love_since，避免与首页侧栏漂移
+const loveTimeElement = document.getElementById('love-time');
+const startDate = new Date(loveTimeElement.dataset.loveSince || '2021-08-08T00:00:00');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E5%9B%9B%E4%B8%AA%E7%8E%B0%E5%9C%BA"><span class="toc-number">1.</span> <span class="toc-text">一、四个现场</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81%E9%85%8D%E7%BD%AE%E5%90%88%E5%B9%B6"><span class="toc-number">2.</span> <span class="toc-text">二、配置合并</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%90%88%E5%B9%B6%E7%9A%84%E6%94%B6%E7%9B%8A"><span class="toc-number">2.1.</span> <span class="toc-text">合并的收益</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E8%84%9A%E6%9C%AC%E6%8A%BD%E5%8F%96"><span class="toc-number">3.</span> <span class="toc-text">三、脚本抽取</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81%E7%99%BD%E5%90%8D%E5%8D%95%E5%88%A0%E9%99%A4"><span class="toc-number">4.</span> <span class="toc-text">四、白名单删除</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E5%A4%B1%E8%B4%A5%E7%9A%84%E7%BB%9F%E4%B8%80"><span class="toc-number">5.</span> <span class="toc-text">五、失败的统一</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%9C%AA%E6%8A%BD%E5%8F%96%E7%9A%84%E7%90%86%E7%94%B1"><span class="toc-number">5.1.</span> <span class="toc-text">未抽取的理由</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AD%E3%80%81%E5%90%8C%E5%90%8D%E4%B8%8D%E5%90%8C%E4%BD%93"><span class="toc-number">6.</span> <span class="toc-text">六、同名不同体</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%90%8C%E5%90%8D%E7%9A%84%E4%BB%A3%E4%BB%B7"><span class="toc-number">6.1.</span> <span class="toc-text">同名的代价</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%83%E3%80%81%E5%88%A4%E6%8D%AE"><span class="toc-number">7.</span> <span class="toc-text">七、判据</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fcebd492/" title="《Personal Development for Smart People》学习笔记">《Personal Development for Smart People》学习笔记</a><time datetime="2022-12-18T16:00:00.000Z" title="发表于 2022-12-19 00:00:00">2022-12-19</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/2f551e47/" title="从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法">从玩具到基础设施：Mesh 网络规模化部署的工程挑战与 Reticulum 解法</a><time datetime="2026-06-04T16:00:00.000Z" title="发表于 2026-06-05 00:00:00">2026-06-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/81ad67c7/" title="单元测试在软件工程中的核心价值">单元测试在软件工程中的核心价值</a><time datetime="2025-04-06T16:00:00.000Z" title="发表于 2025-04-07 00:00:00">2025-04-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/86d86550/" title="读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划">读 Kent Beck《Hey, N00b, We Didn't Hire You to Complete Tasks》有感——新人如何工作学习与职业规划</a><time datetime="2026-05-22T16:00:00.000Z" title="发表于 2026-05-23 00:00:00">2026-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-drogon-pr2598/" title="给 Drogon 提第一个 PR：从一行 curl 到 255 行合并">给 Drogon 提第一个 PR：从一行 curl 到 255 行合并</a><time datetime="2026-09-28T16:00:00.000Z" title="发表于 2026-09-29 00:00:00">2026-09-29</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bf9549bc/" title="后端开发除了增删改查还有什么？从日常问题到工程思路">后端开发除了增删改查还有什么？从日常问题到工程思路</a><time datetime="2026-08-23T16:00:00.000Z" title="发表于 2026-08-24 00:00:00">2026-08-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/hybrid-arch-core-native-edge-dynamic/" title="混合架构：核心原生+边缘动态的双引擎架构之道">混合架构：核心原生+边缘动态的双引擎架构之道</a><time datetime="2026-05-02T16:00:00.000Z" title="发表于 2026-05-03 00:00:00">2026-05-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/57868517/" title="警惕 “虚假精通”，守住技术人的核心竞争力">警惕 “虚假精通”，守住技术人的核心竞争力</a><time datetime="2025-08-26T16:00:00.000Z" title="发表于 2025-08-27 00:00:00">2025-08-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-network-pdd-shopping-guide/" title="零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线">零基础自组网实践：从拼多多采购到第一个 LoRa Mesh 节点上线</a><time datetime="2026-05-31T16:00:00.000Z" title="发表于 2026-06-01 00:00:00">2026-06-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dynamic-lib-hotplug-architecture/" title="模块动态下发：基于动态链接库的热插拔架构设计">模块动态下发：基于动态链接库的热插拔架构设计</a><time datetime="2026-05-04T16:00:00.000Z" title="发表于 2026-05-05 00:00:00">2026-05-05</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/lightweight-sandbox-threadpool/" title="轻量级沙箱+线程池：榨干单机性能的插件隔离架构">轻量级沙箱+线程池：榨干单机性能的插件隔离架构</a><time datetime="2026-05-03T16:00:00.000Z" title="发表于 2026-05-04 00:00:00">2026-05-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/mesh-networks-meshtastic-reticulum/" title="去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》">去中心化通信宣言：读 Jonah Aragon《I'm Getting Into Mesh Networks》</a><time datetime="2026-05-30T16:00:00.000Z" title="发表于 2026-05-31 00:00:00">2026-05-31</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/fce0fcae/" title="通用代码审查清单整理">通用代码审查清单整理</a><time datetime="2025-05-22T16:00:00.000Z" title="发表于 2025-05-23 00:00:00">2025-05-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/d12eb845/" title="相机 RGA 硬件加速实战：把图像预处理从 CPU 搬到 2D 加速单元">相机 RGA 硬件加速实战：把图像预处理从 CPU 搬到 2D 加速单元</a><time datetime="2026-08-13T16:00:00.000Z" title="发表于 2026-08-14 00:00:00">2026-08-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/b3e4a71c/" title="在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i">在 Windows 上打出 arm64 的 deb 包：从 WSL 交叉编译到板子上一行 dpkg -i</a><time datetime="2026-09-13T16:00:00.000Z" title="发表于 2026-09-14 00:00:00">2026-09-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/1db0a89f/" title="主题修改记录">主题修改记录</a><time datetime="2022-01-31T16:00:00.000Z" title="发表于 2022-02-01 00:00:00">2022-02-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f0b1bd1f/" title="CUDA编程模型深度解析——从线程层次到性能优化实战">CUDA编程模型深度解析——从线程层次到性能优化实战</a><time datetime="2026-08-11T16:00:00.000Z" title="发表于 2026-08-12 00:00:00">2026-08-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dry-knowledge-single-source/" title="DRY：同一份知识只留一处">DRY：同一份知识只留一处</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/f9d777ad/" title="Hello World 系统化学习之旅">Hello World 系统化学习之旅</a><time datetime="2022-01-03T16:00:00.000Z" title="发表于 2022-01-04 00:00:00">2022-01-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/kiss-yagni-prepaid-cost/" title="KISS 与 YAGNI：可逆的复杂度">KISS 与 YAGNI：可逆的复杂度</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/pipeline-pattern/" title="Pipeline 模式：流水线架构的设计与实现">Pipeline 模式：流水线架构的设计与实现</a><time datetime="2026-05-05T16:00:00.000Z" title="发表于 2026-05-06 00:00:00">2026-05-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/bf01d313/" title="SAX vs. DOM：流式处理与树状模型">SAX vs. DOM：流式处理与树状模型</a><time datetime="2024-09-23T16:00:00.000Z" title="发表于 2024-09-24 00:00:00">2024-09-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dev-sm2-sm3-sm4/" title="SM2、SM3、SM4：国密三件套各管哪一段，以及五个只有跑起来才发现的坑">SM2、SM3、SM4：国密三件套各管哪一段，以及五个只有跑起来才发现的坑</a><time datetime="2026-10-19T16:00:00.000Z" title="发表于 2026-10-20 00:00:00">2026-10-20</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：这笔投入能换回什么">计算机原则五讲（一）：这笔投入能换回什么</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-03/" title="计算机原则五讲（三）：责任放在哪一层">计算机原则五讲（三）：责任放在哪一层</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：故障发生时还剩什么保证">计算机原则五讲（二）：故障发生时还剩什么保证</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：规模一上来，系数说了算">计算机原则五讲（五）：规模一上来，系数说了算</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-06/" title="计算机原则五讲（六）：没有免费的优化">计算机原则五讲（六）：没有免费的优化</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="footer-code-wrap"><div class="footer-elegant-code elegant-code" data-elegant-code="data-elegant-code"></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_footer" href="#footer-wrap" title="直达页脚" aria-label="直达页脚"><i class="fas fa-arrow-down"></i></a><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script data-pjax src="/self/contact-popup.js"></script><script data-pjax src="/self/elegant-code.js"></script><script data-pjax src="/self/footer-jump.js"></script><script data-pjax src="/self/home-rail-love.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>

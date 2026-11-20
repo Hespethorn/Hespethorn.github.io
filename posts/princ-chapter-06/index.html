@@ -1,0 +1,708 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>计算机原则五讲（六）：没有免费的优化 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#F4F7F4"><meta name="description" content="这四条原则看起来分属数据结构、编译优化、组合数学与内存管理，但它们处理的是同一件事：代价守恒，只是分期方式不同。  空间换时间把计算成本提前付掉，换成使用时更便宜的「取」； JIT 把编译成本从启动时分摊到运行期，用预热换稳态吞吐； 鸽巢原理说明容量不够时重复是必然的，代价只能推迟，不能取消； 引用计数与 GC 决定释放成本是摊在每次赋值，还是集中在一个时刻。  四条合起来给出一条判断：没有免费的">
+<meta property="og:type" content="article">
+<meta property="og:title" content="计算机原则五讲（六）：没有免费的优化">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-chapter-06/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="这四条原则看起来分属数据结构、编译优化、组合数学与内存管理，但它们处理的是同一件事：代价守恒，只是分期方式不同。  空间换时间把计算成本提前付掉，换成使用时更便宜的「取」； JIT 把编译成本从启动时分摊到运行期，用预热换稳态吞吐； 鸽巢原理说明容量不够时重复是必然的，代价只能推迟，不能取消； 引用计数与 GC 决定释放成本是摊在每次赋值，还是集中在一个时刻。  四条合起来给出一条判断：没有免费的">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-11-19T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-11-20T09:17:54.846Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="性能优化">
+<meta property="article:tag" content="算法">
+<meta property="article:tag" content="数据结构">
+<meta property="article:tag" content="内存管理">
+<meta property="article:tag" content="运行时">
+<meta property="article:tag" content="编译原理">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "计算机原则五讲（六）：没有免费的优化",
+  "url": "https://hespethorn.github.io/posts/princ-chapter-06/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-11-19T16:00:00.000Z",
+  "dateModified": "2026-11-20T09:17:54.846Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-chapter-06/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1E3A33')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F4F7F4')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '计算机原则五讲（六）：没有免费的优化',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link href="/self/base.css" rel="stylesheet"><link href="/self/redesign.css" rel="stylesheet"><link href="/self/contact-popup.css" rel="stylesheet"><link href="/self/elegant-code.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-color: #edf2ec;"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">823</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/hero-fuhua.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/chibi-2.png" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">计算机原则五讲（六）：没有免费的优化</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div class="hero-corner-mask"></div><div id="post-info"><h1 class="post-title">计算机原则五讲（六）：没有免费的优化</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">发表于</span><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">总字数:</span><span class="word-count">7.4k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>25分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>这四条原则看起来分属数据结构、编译优化、组合数学与内存管理，但它们处理的是同一件事：<strong>代价守恒，只是分期方式不同。</strong></p>
+<ul>
+<li><strong>空间换时间</strong>把计算成本提前付掉，换成使用时更便宜的「取」；</li>
+<li><strong>JIT</strong> 把编译成本从启动时分摊到运行期，用预热换稳态吞吐；</li>
+<li><strong>鸽巢原理</strong>说明容量不够时重复是必然的，代价只能推迟，不能取消；</li>
+<li><strong>引用计数与 GC</strong> 决定释放成本是摊在每次赋值，还是集中在一个时刻。</li>
+</ul>
+<p>四条合起来给出一条判断：<strong>没有免费的优化，只有换一种付法。</strong> 说某个方案「更快」而不说它把成本挪到了哪里，通常意味着那个地方还没被观测到。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    Q[&quot;一份成本&lt;br/&gt;总得有人付&quot;] --&gt; A[&quot;提前付：预计算 / 建表&quot;]
+    Q --&gt; B[&quot;运行时付：预热 / 编译&quot;]
+    Q --&gt; C[&quot;推迟付：扩容 / 稀释&quot;]
+    Q --&gt; D[&quot;分期付：每次赋值 / 集中扫描&quot;]
+    A --&gt; A2[&quot;空间换时间&lt;br/&gt;换来更快的取&quot;]
+    B --&gt; B2[&quot;JIT&lt;br/&gt;换来更高的稳态&quot;]
+    C --&gt; C2[&quot;鸽巢&lt;br/&gt;换来更大的容量&quot;]
+    D --&gt; D2[&quot;引用计数与 GC&lt;br/&gt;换来不同的停顿形状&quot;]</code></pre>
+
+<p>下面四节各自独立，实跑与推算分开标注。</p>
+<h2 id="一、空间换时间"><a href="#一、空间换时间" class="headerlink" title="一、空间换时间"></a>一、空间换时间</h2><p>「空间换时间」（space-time tradeoff）不是某个人在某一年提出的单一理论，而是计算这门手艺里最古老的经验之一，线索能拉得很长。</p>
+<p><strong>查表法</strong>在没有计算机的年代就已存在：水手算航海位置要靠对数表，把对数预先算好印成册子，用时翻书而不是现场算。这是最朴素的空间换时间——一本书的纸张，换掉每次航行里的重复计算。<strong>哈希表</strong>在 1953 年由 IBM 的 Hans Peter Luhn 在内部备忘录里提出，用散列把键映射到数组下标，让查找从线性扫描变成一步定位。<strong>存储层次</strong>在 1960 年代成型，寄存器到缓存到主存到磁盘，每一层都是用靠近 CPU 的宝贵空间缓存下一层的常用数据。<strong>索引</strong>在 1970 年由 Bayer 与 McCreight 的 B 树给出：额外一份有序结构，把随机查找换成树上的少量跳转。</p>
+<p>这四件事时代不同、层次不同，动作完全相同：<strong>先花一笔空间，把「算」变成「取」。</strong></p>
+<p><strong>本质一句话：空间换时间是把反复要用的计算结果提前算好、就近存好，让每次使用只花「取」的力气，不花「算」的力气。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    T[&quot;同一个需求的两种做法&quot;] --&gt; A[&quot;每次现算&lt;br/&gt;空间占用小&lt;br/&gt;耗时随调用次数线性增长&quot;]
+    T --&gt; B[&quot;预计算加查表&lt;br/&gt;先付一笔建表成本&lt;br/&gt;之后每次只付一次访存&quot;]
+    A --&gt; A2[&quot;总成本 = 调用次数 × 单次现算&quot;]
+    B --&gt; B2[&quot;总成本 = 建表 + 调用次数 × 单次访存&quot;]
+    A2 --&gt; X[&quot;回本点：调用次数 &gt; 建表成本 / 单次省下的时间&quot;]
+    B2 --&gt; X</code></pre>
+
+<p><strong>本机实跑：建表贵、查表便宜</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">【1】判定 [2, 200000) 内全部素数（实测，两种做法结果一致）</span><br><span class="line">  试除法逐个数现算          :   301.78 ms   17984 个</span><br><span class="line">  筛法建表 + 顺序查表       :     5.02 ms   17984 个</span><br><span class="line">    其中 建表 0.34 ms / 查表 4.68 ms</span><br><span class="line">  建表内存占用              :     0.19 MiB</span><br><span class="line">  一致 = True</span><br><span class="line"></span><br><span class="line">【2】只看单点是否素数（x = 199999，各重复 200 次取均值）</span><br><span class="line">  现算（试除到 √x）         :   0.0187 ms/次</span><br><span class="line">  查表（一次内存访问）      : 0.000028 ms/次</span><br><span class="line">  速度比                    :    667.1 倍</span><br><span class="line">  建表回本所需查询次数      :       18 次</span><br><span class="line"></span><br><span class="line">★ 查表快了两个数量级，但建表要先付一笔</span><br><span class="line">★ 回本点 = 建表成本 / 单次省下的时间；查不到这个次数，表就是纯开销</span><br></pre></td></tr></table></figure>
+
+<p>注意第二组里那行「回本所需查询次数：18」。这个数字改变了整件事的性质：<strong>同一个方案，查 18 次以上是优化，查 3 次就是浪费。</strong> 「用筛法比试除快」这句话之所以不完全对，就是因为它漏了这个条件。</p>
+<p>第一组则给出了另一面：判定 2 到 20 万之间全部素数时，筛法快 60 倍。差别不在算法优劣，而在<strong>调用次数</strong>——这里查了 18 万次，建表成本被彻底摊薄。</p>
+<p>落地形态在四个层次上都能找到：</p>
+<ul>
+<li><strong>语言层</strong>。Python 的 <code>dict</code> 用开放寻址加紧凑数组，把「按 key 找值」从 <code>O(n)</code> 变成 <code>O(1)</code>，代价是每个键值对都占着一段不存数据的表空间。</li>
+<li><strong>数据库层</strong>。B 树索引把随机磁盘查找换成树上几次跳转，代价是索引文件本身要占空间，并且每次写入都要维护它。</li>
+<li><strong>系统层</strong>。页缓存把磁盘数据常驻内存，用内存换 I&#x2F;O；预读把「下一次可能要用的块」提前搬进来，用带宽换延迟。</li>
+<li><strong>业务层</strong>。计数器、排行榜、物化视图，都是把「每次聚合」换成「每次读一个现成的数」。</li>
+</ul>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>写多读少时反噬</strong>。索引和缓存都假设读远多于写。若写入极频繁，每次写都要更新索引或失效缓存，维护成本会超过省下的查询时间——日志表、流水表通常刻意少建索引，就是这个道理。</li>
+<li><strong>新鲜度是隐形账单</strong>。缓存里的副本可能过期：缓存了用户资料，用户改完名，缓存没失效，就查到旧名字。你换来的时间，有一部分要用「保证一致」的复杂度去还。</li>
+<li><strong>空间本身稀缺时，买卖要反过来</strong>。数据量大到放不进内存时，人们反而用时间换空间：gzip 用 CPU 时间换存储，稀疏矩阵只存非零元，流式处理宁可重复算也不存全量。原则永远是双向的，方向由哪头更贵决定。</li>
+<li><strong>最坏情况不买账</strong>。哈希表平均 <code>O(1)</code>，但恶意构造的键能全部撞进同一桶，退化成 <code>O(n)</code>，这就是 HashDoS 的由来；索引在选择性差的列上（比如性别）也形同虚设。<strong>空间花出去了、时间没换回来，是这条原则最典型的失败形态。</strong></li>
+</ul>
+<h2 id="二、JIT-即时编译"><a href="#二、JIT-即时编译" class="headerlink" title="二、JIT 即时编译"></a>二、JIT 即时编译</h2><p>JIT 的直系祖先是动态语言的实现者，因为只有他们非这么做不可——解释执行太慢，而静态编译又拿不到运行时的类型信息。</p>
+<ul>
+<li><strong>1984 年，Xerox PARC</strong>：Deutsch 与 Schiffman 的《Efficient Implementation of the Smalltalk-80 System》提出 dynamic translation，把字节码在运行时翻译成机器码。这是 JIT 作为透明优化手段的起点。</li>
+<li><strong>1987 到 1994 年，Self 语言</strong>：Ungar、Smith、Urs Hölzle、Chambers 等人做出完整形态的自适应优化。关键的 1994 年 PLDI 论文确立了今天所有 JIT 的核心机制：<strong>靠运行时类型反馈做优化决策，并允许优化失效后去优化回到安全状态。</strong></li>
+<li><strong>1999 年，Java HotSpot VM</strong>：Sun 收购了 Self 与 Strongtalk 团队创办的 Animorphic，C1 加 C2 的分层编译由此进入工业主流。</li>
+<li><strong>2008 年，V8</strong>：早期干脆不做解释器，直接全量编译；2015 年引入 Ignition 加 TurboFan 组成分层与去优化骨架；2021 年又补上 Sparkplug 与 Maglev，形成四级阶梯。</li>
+<li><strong>同一条路线的其他成员</strong>：PyPy、LuaJIT、PHP 8.0、.NET RyuJIT，以及 WebAssembly 规范里的分层编译。</li>
+</ul>
+<p><strong>本质一句话：JIT 用运行期的真实信息换更激进的优化——代价是预热成本、内存占用与去优化抖动，收益是稳态吞吐；它把编译从一次性开销变成了一个持续的投资决策。</strong></p>
+<p>「持续的投资决策」这个说法是关键。AOT 编译只决定一次：编还是不编、优化到什么程度。JIT 则在运行中反复决定：这段代码值不值得编译、值不值得按当前类型特化、什么时候作废重来。它优化的是<strong>决策质量</strong>，付出的是<strong>决策成本</strong>。</p>
+<pre><code class="highlight mermaid">flowchart TD
+    A[&quot;字节码 / 中间表示&quot;] --&gt; B[&quot;① 解释器 Ignition&lt;br/&gt;逐条分派执行&lt;br/&gt;启动最快 · 稳态最慢&lt;br/&gt;同时采集类型反馈与分支计数&quot;]
+    B --&gt;|&quot;函数反复被调用&lt;br/&gt;超过阈值&quot;| C[&quot;② 基线编译器 Sparkplug&lt;br/&gt;不做激进优化&lt;br/&gt;只把字节码快速翻译成机器码&quot;]
+    C --&gt;|&quot;更热 · 反馈更充分&quot;| D[&quot;③ 优化编译器 Maglev / TurboFan&lt;br/&gt;内联 · 类型特化 · 逃逸分析&quot;]
+    D --&gt;|&quot;推测成立&quot;| E[&quot;稳定机器码&lt;br/&gt;稳态吞吐最高&quot;]
+    D --&gt;|&quot;推测失效：来了别的类型&lt;br/&gt;或对象形状变了&quot;| B
+    E --&gt;|&quot;新形态出现，守卫失败&quot;| B</code></pre>
+
+<p><strong>本机实跑：三档模式的差距</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">Node v22.22.2 / V8 12.4.254.21-node.39</span><br><span class="line">==============================================================================</span><br><span class="line">运行模式                    数值热循环 次/秒      单态调用 次/秒        多态调用 次/秒</span><br><span class="line">------------------------------------------------------------------------------</span><br><span class="line">默认（JIT 全开）               198656          2491096815       163037911</span><br><span class="line">--no-opt（禁用优化编译器）        27968            73888405        36827707</span><br><span class="line">--jitless（纯解释器）          15281            36918440        24029810</span><br><span class="line">==============================================================================</span><br><span class="line">相对默认模式的数值循环吞吐：</span><br><span class="line">  默认（JIT 全开）                1.00x</span><br><span class="line">  --no-opt（禁用优化编译器）          0.14x</span><br><span class="line">  --jitless（纯解释器）            0.08x</span><br></pre></td></tr></table></figure>
+
+<p>三行数字给出一个很容易被低估的量级：<strong>同一段代码，纯解释执行比 JIT 全开慢 12.5 倍。</strong> 更有意思的是「单态调用」那一列：默认模式 24.9 亿次每秒，纯解释器 3691 万次每秒，差 67 倍。这个差距不是来自「翻译成机器码」本身，而来自<strong>类型特化</strong>：JIT 看到这个调用点一直只遇到一种形状，就把它内联成一次内存偏移；解释器每次都还要查表。</p>
+<p><strong>预热不是抽象的代价，它能被逐次测出来：</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">默认模式：同一个 work(4000) 连续调用 400 次，逐次单次耗时（µs，越小越快）</span><br><span class="line">  第  1- 6 次:    76.8   225.7    91.1    61.2    64.3    63.7</span><br><span class="line">  第  7-12 次:    75.3    37.7    37.6    39.1    38.8    39.2</span><br><span class="line">  第 13-18 次:    38.1    51.2    36.7    36.2    37.4    44.2</span><br><span class="line">  第 19-24 次:    39.0    82.8     5.0     4.8     4.7     4.6</span><br><span class="line">  第 25-30 次:     4.7     4.7     4.7     4.7     4.6     4.7</span><br><span class="line">  第 31-36 次:     4.7    14.0     4.7     4.7     4.7     4.7</span><br><span class="line">  第 37-42 次:     4.7     4.7     4.7     4.7     4.7     4.7</span><br><span class="line">  第 43-48 次:     4.7     4.7     4.8     4.7     4.7     4.6</span><br><span class="line">  第 49-54 次:     4.7     4.7     4.7     4.6     4.7     4.7</span><br><span class="line">  第 55-60 次:     4.6     4.7     4.7     4.7     4.7     4.7</span><br><span class="line"></span><br><span class="line">  前 40 次平均 32.99 µs  /  第 200 次之后平均 4.52 µs  →  冷热差 7.30x</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">各模式的冷启动差距（前 40 次均值 ÷ 第 200 次之后均值）：</span><br><span class="line">  默认（JIT 全开）              7.30x   （前 40 次均 32.99 µs / 稳态 4.52 µs）</span><br><span class="line">  --no-opt（禁用优化编译器）       1.14x   （前 40 次均 41.81 µs / 稳态 36.74 µs）</span><br><span class="line">  --jitless（纯解释器）          2.27x   （前 40 次均 139.51 µs / 稳态 61.35 µs）</span><br></pre></td></tr></table></figure>
+
+<p>逐次序列里有两个台阶值得看：第 7 次左右从 60 多微秒降到 37 微秒，是基线编译生效；第 19 到 21 次之间从 39 微秒掉到 4.7 微秒，是优化编译器接手。<strong>这两次跃迁之间，同一段代码的执行路径完全不同</strong>，而代码本身一个字都没改。</p>
+<p>第二块表的 <code>--no-opt</code> 那行很说明问题：关闭优化编译器之后，冷热差只有 1.14 倍，也就是说<strong>大部分「冷热差」正是优化编译器带来的</strong>，而不是解释与编译的差别。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>JIT 对短命进程基本没有价值</strong>。编译器、CLI 工具、一次性脚本、批处理里的小任务，进程活不过预热期，付出的是纯成本。这也是 Go、Rust、C++ 在这类场景胜出的根本原因：AOT 不是更先进的编译，而是另一组取舍。</li>
+<li><strong>预热期就是尾延迟</strong>。服务刚发布、实例刚扩容、缓存刚失效时，请求正好落在还没优化的代码路径上，平均延迟好看，p99 难看。</li>
+<li><strong>去优化会造成性能断崖</strong>。一旦运行中出现新类型或新形状，优化代码被丢弃、回到解释器、重新预热。「通常很快」和「突然变慢」会在同一进程里交替出现，这在压测里常被误判为抖动。</li>
+<li><strong>内存成本是真实的</strong>。机器码、profile 数据、元数据，让 JIT 运行时的内存占用明显高于解释器。移动端与嵌入式设备上，这个成本经常比性能收益更关键。</li>
+<li><strong>它扩大了安全面</strong>。可写可执行内存带来 JIT spraying 这类攻击；推测执行侧信道也需要 JIT 生成的 gadget 才能发挥，很多运行时因此提供了关闭 JIT 的开关。</li>
+<li><strong>优化绝不能改变语义</strong>。浮点与 <code>NaN</code> 的处理、对象身份比较、GC 可见性、<code>eval</code> 与反射都会限制优化空间。<strong>如果某个优化会改变可观察行为，那它就不是优化，是 bug。</strong></li>
+</ul>
+<h2 id="三、鸽巢原理"><a href="#三、鸽巢原理" class="headerlink" title="三、鸽巢原理"></a>三、鸽巢原理</h2><p>这条原理的正式提出者是 <strong>Peter Gustav Lejeune Dirichlet（狄利克雷）</strong>，时间是 <strong>1834 年</strong>。他在研究用有理数逼近无理数时，需要一个「必然存在」的结论，不是「大概率存在」。他在论文里把它命名为 <strong>Schubfachprinzip</strong>，直译就是抽屉原理：如果把 n 件东西放进 m 个抽屉，且 <code>n &gt; m</code>，那么至少有一个抽屉里放了不止一件东西。</p>
+<p><strong>本质一句话：鸽巢原理讲的是规模超过容量时，重复不是意外而是必然——它把「会不会撞」这个问题，变成了一道只有加减乘除的算术题。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    Q[&quot;我要判断会不会撞&quot;] --&gt; A&#123;&quot;东西数大于格子数？&quot;&#125;
+    A --&gt;|&quot;是&quot;| B[&quot;必然有格子装不止一件&lt;br/&gt;纯计数，无需概率&quot;]
+    A --&gt;|&quot;否&quot;| C[&quot;可能不撞，也可能撞&quot;]
+    C --&gt; D&#123;&quot;格子数相对东西数&lt;br/&gt;有多宽裕&quot;&#125;
+    D --&gt;|&quot;刚好够&quot;| E[&quot;撞的概率接近一半&lt;br/&gt;生日悖论区&quot;]
+    D --&gt;|&quot;宽裕很多&quot;| F[&quot;撞的概率很低&lt;br/&gt;但不等于零&quot;]
+    B --&gt; G[&quot;工程动作：预留空位&lt;br/&gt;设计冲突处理&quot;]
+    E --&gt; G
+    F --&gt; H[&quot;工程动作：仍然要有冲突处理&lt;br/&gt;因为迟早会撞&quot;]</code></pre>
+
+<p><strong>本机实跑：从纯计数到概率</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">抽屉总数            : 365</span><br><span class="line">鸽子总数            : 366</span><br><span class="line">被占用的抽屉数      : 232</span><br><span class="line">单个抽屉的最大数量  : 5</span><br><span class="line">结论                : 366 &gt; 365，必然存在抽屉 &gt;= 2 只 （实测 5 只）</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">人数 n | 理论 P(碰撞) | 实测频率 | 位数</span><br><span class="line">-------|--------------|----------|------</span><br><span class="line">    10 |      0.1169  |   0.1163 |</span><br><span class="line">    20 |      0.4114  |   0.4079 |</span><br><span class="line">    23 |      0.5073  |   0.5099 | ★ 已过半</span><br><span class="line">    30 |      0.7063  |   0.7099 | ★ 已过半</span><br><span class="line">    40 |      0.8912  |   0.8910 | ★ 已过半</span><br><span class="line">    50 |      0.9704  |   0.9702 | ★ 已过半</span><br><span class="line">    57 |      0.9901  |   0.9908 | ★ 已过半</span><br><span class="line">    70 |      0.9992  |   0.9991 | ★ 已过半</span><br><span class="line"></span><br><span class="line">★ n=23 时两两组合数 C(23,2) = 253，远大于 23</span><br><span class="line">★ 每组重复 40000 次实验，实测频率与理论值吻合</span><br></pre></td></tr></table></figure>
+
+<p>第一组是原教旨版本：<code>366 &gt; 365</code>，所以必然有抽屉装了 2 只以上，实测最大是 5 只。注意「≥ 2」和「实测 5」的差别，那是原理本身的信息边界——<strong>它只保证存在，不保证有几个。</strong></p>
+<p>第二组是它在概率上的延伸，也就是常说的生日悖论：23 个人就有超过一半的概率撞生日。这里的关键数字不是 23，而是 <code>C(23,2) = 253</code>——<strong>虽然只有 23 个人，但两两配对的组合有 253 对</strong>，而抽屉只有 365 个。比较的对象从来不是人数与抽屉数，而是配对数与抽屉数。</p>
+<p>哈希表里的表现更贴近日常：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">哈希桶数 = 1000，插入元素数 = 1000（负载因子正好 1.0）</span><br><span class="line"></span><br><span class="line">实测（2000 轮平均）非空桶数 = 632.6 / 1000</span><br><span class="line">实测（2000 轮平均）空桶数   = 367.4</span><br><span class="line">★ 理论：空桶期望 = m·e^(-n/m) = 1000·e^(-1) ≈ 367.9</span><br><span class="line"></span><br><span class="line">同时，有约 368 次插入是「落进了已经有人占的桶」。</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">负载因子 | 平均链长 | 最长链长(2000 轮均值) | 相对 0.75 的查找成本</span><br><span class="line">---------|----------|------------------------|----------------------</span><br><span class="line">    0.50 |     0.50 |                    4.0 |                 0.86x</span><br><span class="line">    0.75 |     0.75 |                    4.8 |                 1.00x</span><br><span class="line">    1.00 |     1.00 |                    5.5 |                 1.14x</span><br><span class="line">    1.50 |     1.50 |                    6.8 |                 1.43x</span><br><span class="line">    2.00 |     2.00 |                    7.9 |                 1.71x</span><br><span class="line">    3.00 |     3.00 |                   10.0 |                 2.29x</span><br></pre></td></tr></table></figure>
+
+<p>这两块解释了哈希表为什么普遍把负载因子卡在 0.75 左右：<strong>桶数和元素数相等时，仍有 37% 的桶是空的，同时又有 37% 的插入发生了碰撞。</strong> 「浪费三成空间」和「承受三成碰撞」同时成立，看起来矛盾，其实是同一件事的两面——空桶不是浪费，它是把碰撞概率压下去所付的价。而负载因子从 0.75 涨到 3.0，查找成本涨 2.29 倍，这就是「省空间」要交的钱。</p>
+<p>这也解释了定向攻击为什么有效：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">场景：哈希函数只取低位（m = 64 桶），攻击者提交 64 个精心构造的 key</span><br><span class="line">非空桶数 = 1（总共 64 个桶）</span><br><span class="line">0 号桶链长 = 64</span><br></pre></td></tr></table></figure>
+
+<p>64 个元素全进一个桶，一次查找退化成遍历 64 个节点。<strong>鸽巢原理在这里没有教你「一定会撞」，它教你「攻击者可以决定撞在哪里」。</strong> 随机化哈希的作用就是把「撞在哪」变回不可控。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>它只管有重复，不管重复几次</strong>。366 只鸽子放进 365 个抽屉，原理只保证至少有一个抽屉装 2 只以上，实测可能是 5。想要更强的结论得用广义鸽巢原理：n 件放 m 个抽屉，必有抽屉不少于 <code>⌈n/m⌉</code> 件。</li>
+<li><strong>它不告诉你哪一对撞了</strong>。这是存在性证明的通病。工程上想定位冲突，只能靠记录与比对。</li>
+<li><strong>它假设格子是固定的</strong>。一旦格子能动态扩张（哈希表扩容、分片增加节点），冲突就可以被稀释——但扩容本身有成本，而且扩容只是把「必然撞」推迟到更大的规模，没有取消它。</li>
+<li><strong>拿它硬套会闹笑话</strong>。「50 个人里必有两人头发数相同」成立，因为头发数远小于 50 亿；「50 个人里必有两人身高相同」不成立，因为身高是连续量。「格子数有限」是前提，值域连续时这条原理要么不适用、要么得先量化精度。</li>
+<li><strong>它和随机是正交的</strong>。随机化能让单次碰撞概率可控，但消不掉必然性。正确姿势是双管齐下：用随机化哈希抵御定向攻击，用冲突处理（链地址、开放寻址、扩容）接住必然发生的那次碰撞。</li>
+<li><strong>它解释了唯一索引为什么不是银弹</strong>。唯一索引能防住重复，代价是插入时要查一次、冲突时要报错。把「不可能重复」换成「如果重复了怎么办」，正是因为按鸽巢原理，重复是迟早的事，只是这次撞在了业务键上，而不是哈希桶上。</li>
+</ul>
+<h2 id="四、引用计数与垃圾回收"><a href="#四、引用计数与垃圾回收" class="headerlink" title="四、引用计数与垃圾回收"></a>四、引用计数与垃圾回收</h2><p>很有意思的是，这两种方案<strong>诞生在同一年：1960 年</strong>。</p>
+<p><strong>引用计数</strong>：George E. Collins 在《A Method for Overlapping and Erasure of Lists》里提出，给每个对象记一个「有多少人在引用我」的计数，计数归零就释放。思路直观得像物理常识：没人拿着了，就可以扔了。<strong>追踪式 GC</strong>：同一年，John McCarthy 为 Lisp 实现 GC 时提出 mark-and-sweep，从一组确定的根（栈、寄存器、全局变量）出发，把所有能到达的对象标记一遍，没被标记的就是垃圾。</p>
+<p><strong>本质一句话：引用计数和追踪式 GC 回答的是同一个问题——这块内存还有用吗——但一个用「谁还引用我」这种局部信息来回答，另一个用「从根能不能到达」这种全局信息来回答；这个差异决定了一个没有停顿但有循环泄漏、另一个没有循环泄漏但有全局停顿。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph RC[&quot;引用计数：成本摊在每次赋值&quot;]
+        A1[&quot;每次赋值 / 出作用域&quot;] --&gt; A2[&quot;计数 +1 / -1&quot;]
+        A2 --&gt; A3&#123;&quot;计数归零？&quot;&#125;
+        A3 --&gt;|&quot;是&quot;| A4[&quot;立刻释放&quot;]
+        A3 --&gt;|&quot;否&quot;| A5[&quot;什么都不做&quot;]
+    end
+    subgraph GC[&quot;追踪式 GC：成本集中在一个时刻&quot;]
+        B1[&quot;平时分配&quot;] --&gt; B2[&quot;分配计数到阈值 / 内存吃紧&quot;]
+        B2 --&gt; B3[&quot;stop-the-world 扫描&quot;]
+        B3 --&gt; B4[&quot;标记：从根遍历可达对象&quot;]
+        B4 --&gt; B5[&quot;清除：回收不可达对象&quot;]
+    end
+    style A4 fill:#e6ffe6,stroke:#009900
+    style B3 fill:#ffe6e6,stroke:#cc0000</code></pre>
+
+<p><strong>本机实跑：确定性析构与循环死穴</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">[1] 引用计数：对象一被引用就 +1，引用离开就 -1，归零即释放</span><br><span class="line">  a = Cell()            → sys.getrefcount(a) = 2  （含 getrefcount 自己的临时引用）</span><br><span class="line">  b = a                 → sys.getrefcount(a) = 3</span><br><span class="line">  lst = [a, a, a]       → sys.getrefcount(a) = 6</span><br><span class="line"></span><br><span class="line">[2] 确定性析构：引用归零的时间点可精确观测</span><br><span class="line">  del x 之后 finalizer 是否已触发：True</span><br><span class="line">  从 del 到对象被回收的间隔：3.90 微秒（同一语句内完成）</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[3] 引用计数的死穴：循环引用，计数永远不为零</span><br><span class="line">  构造 p &lt;-&gt; q 环后，sys.getrefcount(p) = 3</span><br><span class="line">  del p, q 之后：环仍在，两个对象都无法被引用计数释放</span><br><span class="line">  当前 gc 垃圾计数 = (1259, 8, 0)  → 追踪式 GC 才能收割</span><br><span class="line">  gc.collect() 回收对象数 = 2，耗时 1.465 ms</span><br><span class="line">  回收后再 collect：0 个（环已被清掉）</span><br></pre></td></tr></table></figure>
+
+<p>那 3.90 微秒是引用计数最值钱的性质：<strong>它把「什么时候释放」从一个不可控的时刻，变成一个可以写进代码因果链的时刻。</strong> 这正是 C++ 的 RAII 与 Swift 的 ARC 能成立的基础——析构时机可预测，就能拿它做资源管理（关文件、放锁、提交事务）。</p>
+<p>而循环引用是它的结构性缺陷：计数是局部信息，两个对象互相引用时，各自的计数都不为零，但整体已经不可达。这不是实现不够聪明，是信息不足——<strong>局部信息无法判断全局可达性。</strong></p>
+<pre><code class="highlight mermaid">flowchart TD
+    N[&quot;新分配对象 → 进入 gen0&quot;] --&gt; Q&#123;&quot;活过一次 gen0 回收？&quot;&#125;
+    Q --&gt;|&quot;否，绝大多数&quot;| D[&quot;直接回收&quot;]
+    Q --&gt;|&quot;是，少数&quot;| G1[&quot;晋升 gen1&quot;]
+    G1 --&gt; Q2&#123;&quot;活过一次 gen1 回收？&quot;&#125;
+    Q2 --&gt;|&quot;否&quot;| D
+    Q2 --&gt;|&quot;是，更少&quot;| G2[&quot;晋升 gen2 老年代&quot;]
+    G2 --&gt; S[&quot;此后很少被扫描&lt;br/&gt;只在 Full GC 时处理&quot;]
+    style D fill:#f2f2f2,stroke:#888888
+    style G2 fill:#ffe6e6,stroke:#cc0000</code></pre>
+
+<p>追踪式 GC 的代价在暂停时间上，而暂停时间的形状很不一样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">[4] 暂停时间：引用计数释放 vs GC 一次完整回收</span><br><span class="line">  标量           | 操作                    |     耗时 | 说明</span><br><span class="line">  -------------+-------------------------+----------+------------------</span><br><span class="line">       100,000 | del 单向链表（引用计数）    |  2.917 ms | 逐对象立即释放，无扫描</span><br><span class="line">       300,000 | del 单向链表（引用计数）    |  9.050 ms | 逐对象立即释放，无扫描</span><br><span class="line">       600,000 | del 单向链表（引用计数）    | 16.008 ms | 逐对象立即释放，无扫描</span><br><span class="line">       100,000 | gc.collect()（追踪式）    | 18.542 ms | 必须遍历存活对象图</span><br><span class="line">       300,000 | gc.collect()（追踪式）    | 81.923 ms | 必须遍历存活对象图</span><br><span class="line">       600,000 | gc.collect()（追踪式）    | 144.070 ms | 必须遍历存活对象图</span><br></pre></td></tr></table></figure>
+
+<p>同样的 60 万个节点，引用计数 16 ms，追踪式一次完整回收 144 ms，差 9 倍。但结论不能只读到这一层：引用计数那 16 ms 是<strong>分散在 60 万次 del 里的</strong>，单次约 27 纳秒，平稳；追踪式那 144 ms 是<strong>一次停顿</strong>，业务线程完全停下。<strong>两者总成本接近，形状完全不同</strong>——而在线服务里，形状往往比总量更重要。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[5] 分代假说：绝大多数对象活不过第一代</span><br><span class="line">  分配 400,000 个临时对象后，三代回收次数：</span><br><span class="line">    gen0（新生代）:   366 次  ← 绝大多数对象死在这里</span><br><span class="line">    gen1（中年代）:    33 次  ← 活过 gen0 的才被扫</span><br><span class="line">    gen2（老年代）:     0 次  ← 长期存活的最后兜底</span><br><span class="line">    观察到的 GC 暂停次数：399，最大暂停 1.570 ms，总暂停 94.362 ms</span><br></pre></td></tr></table></figure>
+
+<p>分代回收是鸽巢原理的另一种形态：<strong>如果大多数对象很快死，就把扫描预算按存活概率分配。</strong> gen0 扫了 366 次，gen2 一次没扫，这正是把「反复扫描全堆」换成「频繁扫小堆、偶尔扫大堆」。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">  语言 / 运行时        主机制             循环处理            补充</span><br><span class="line">--------------------------------------------------------------------------------</span><br><span class="line">  CPython            引用计数            分代循环回收器       弱引用 / finalizer</span><br><span class="line">  Swift              引用计数(ARC)        需 weak/unowned 打断  编译期插入计数</span><br><span class="line">  C++ shared_ptr     引用计数            需 weak_ptr 打断      手动选择</span><br><span class="line">  Java HotSpot       追踪式(分代)        天然处理            G1 / ZGC 并发标记</span><br><span class="line">  Go                 追踪式(并发标记)     天然处理            低延迟目标</span><br><span class="line">  V8 (JS)            追踪式(分代)        天然处理            Orinoco 并发</span><br></pre></td></tr></table></figure>
+
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>引用计数不是没有停顿，只是停顿分散</strong>。一次 <code>del</code> 一个十万节点的树，照样有毫秒级卡顿。「无停顿」是相对追踪式的 stop-the-world 说的，不是绝对承诺。</li>
+<li><strong>追踪式的暂停也可能是假象</strong>。现代 JVM 的并发 GC（G1、ZGC）把大部分标记工作放在业务线程之外，暂停被压到毫秒甚至亚毫秒。「Java 一定有几百毫秒停顿」这个印象早已过时，选型要看具体收集器，不是看语言。</li>
+<li><strong>引用计数有计数溢出风险</strong>。32 位计数在极端场景下会回绕，一些实现为此在超大对象上改用 64 位或特殊处理。</li>
+<li><strong>循环不是唯一的麻烦，还有多线程下的原子计数</strong>。<code>+1/-1</code> 在多线程里必须原子，这个写屏障开销可能吃掉它相对追踪式的优势，这也是很多高并发运行时最终选追踪式加并发标记的原因。</li>
+<li><strong>分代假说不永远成立</strong>。如果程序大量分配长寿对象（比如启动期构建一个巨大缓存），分代策略会把大量对象搬来搬去，反而更慢。</li>
+<li><strong>别再问哪种更好，先问在优化什么</strong>。追求低延迟与可预测（实时系统、游戏引擎、音频处理），偏向引用计数或低停顿 GC；追求高吞吐（批处理、Web 后端），偏向分代加并发。同一个语言的不同 GC 实现，服务的就是不同的目标函数。</li>
+</ul>
+<h2 id="五、横向对照"><a href="#五、横向对照" class="headerlink" title="五、横向对照"></a>五、横向对照</h2><table>
+<thead>
+<tr>
+<th>原则</th>
+<th>把成本付在哪一刻</th>
+<th>一句话判据</th>
+<th>什么时候不成立</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>空间换时间</td>
+<td>提前付：预计算与建表</td>
+<td>调用次数能否过回本点</td>
+<td>写多读少，或散列不均匀</td>
+</tr>
+<tr>
+<td>JIT</td>
+<td>运行中付：预热与重编译</td>
+<td>进程活得够久吗</td>
+<td>短命进程，或形态频繁变化</td>
+</tr>
+<tr>
+<td>鸽巢</td>
+<td>推迟付：扩容与稀释</td>
+<td>配对数与格子数的比</td>
+<td>值域连续，或格子可动态扩张</td>
+</tr>
+<tr>
+<td>引用计数与 GC</td>
+<td>分期付：每次赋值或集中扫描</td>
+<td>要低延迟还是要高吞吐</td>
+<td>循环引用，或长寿对象过多</td>
+</tr>
+</tbody></table>
+<p>四条合起来，其实是一张「成本去哪儿了」的对照表：</p>
+<table>
+<thead>
+<tr>
+<th>看到的收益</th>
+<th>实际付掉的是</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>查表快 600 多倍</td>
+<td>建表时间加 0.19 MiB 内存，且查询次数要够多</td>
+</tr>
+<tr>
+<td>JIT 稳态快 12 倍</td>
+<td>前 40 次调用慢 7.3 倍，内存更高，还有去优化断崖</td>
+</tr>
+<tr>
+<td>哈希表 <code>O(1)</code></td>
+<td>37% 的空桶，以及一次必然发生的碰撞</td>
+</tr>
+<tr>
+<td>引用计数无全局停顿</td>
+<td>每次赋值的一次计数增减，加上循环引用的补充收集</td>
+</tr>
+</tbody></table>
+<p>这张表的用法很直接：<strong>下次看到「这个方案快多少倍」时，先问它把成本挪到哪一行。</strong> 挪到的地方如果正好是你的短板（内存、尾延迟、启动时间、写入频率），那这次优化对你就是负收益——尽管它在别人的场景里确实是优化。</p>
+<p>🐾 收尾一句：性能没有免费的午餐，只有不同的分期方案；看清分期，才知道这笔账该不该借。</p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-chapter-12/">计算机原则五讲（十二）：省下的开销算在谁账上</a></li>
+<li><a href="/posts/princ-chapter-01/">计算机原则五讲（一）：这笔投入能换回什么</a></li>
+<li><a href="/posts/princ-chapter-05/">计算机原则五讲（五）：规模一上来，系数说了算</a></li>
+<li><a href="/posts/princ0001/">每天一个计算机原则：专栏介绍</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-chapter-06/">https://hespethorn.github.io/posts/princ-chapter-06/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="external nofollow noreferrer" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://Hespethorn.github.io" target="_blank">HespethornのBlog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/">性能优化</a><a class="post-meta__tags" href="/tags/%E7%AE%97%E6%B3%95/">算法</a><a class="post-meta__tags" href="/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84/">数据结构</a><a class="post-meta__tags" href="/tags/%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/">内存管理</a><a class="post-meta__tags" href="/tags/%E8%BF%90%E8%A1%8C%E6%97%B6/">运行时</a><a class="post-meta__tags" href="/tags/%E7%BC%96%E8%AF%91%E5%8E%9F%E7%90%86/">编译原理</a></div><div class="post-share"><div class="social-share" data-image="https://hespethorn.github.io/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related is-prev" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：规模一上来，系数说了算"><img class="pagination-art" src="/img/prev-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">计算机原则五讲（五）：规模一上来，系数说了算</div></div><div class="info-2"><div class="info-item-1">这五条原则常被当成格言引用，但它们真正的价值在于都能算。  康威定律：架构是沟通结构的投影，改架构先改沟通路径； 墨菲定律：非零错误率在足够多次重复下必然兑现，1 - (1-p)^n； 帕金森定律：额度会被需求侧填满，多给的时间不会变成更多的价值； 布鲁克斯定律：沟通线是 n(n-1)/2，加人先增成本； 梅特卡...</div></div></div></a><a class="pagination-related is-next" href="/posts/princ-chapter-12/" title="计算机原则五讲（十二）：省下的开销算在谁账上"><img class="pagination-art" src="/img/next-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">计算机原则五讲（十二）：省下的开销算在谁账上</div></div><div class="info-2"><div class="info-item-1">流水线、预取、约定优于配置、DRY、KISS 与 YAGNI，前两条在处理器内部，后三条在代码仓库里。做法差别很大：把指令拆成五段错开走、在还没用到时把数据搬上来、把重复写十遍的配置项变成默认值、把抄了三份的税率收成一个常量、把还没人提的需求直接不做。 共同的问法是：哪一份开销可以省掉，省掉之后谁付账。  流水线...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：这笔投入能换回什么"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-20</div><div class="info-item-2">计算机原则五讲（一）：这笔投入能换回什么</div></div><div class="info-2"><div class="info-item-1">把四条原则放进一章，不是为了让篇幅好看。它们分属存储层次、并行计算、统计学与复杂度分析，问的却是同一件事：这笔投入，到底能换回多少。  局部性拿「数据放得近」换掉反复取数的开销； Amdahl 指出「有串行段」会锁住并行的天花板； 二八告诉你收益从来不是均匀分布的，先找那少数位置； 大 O 只承诺增长阶，不承诺当...</div></div></div></a><a class="pagination-related" href="/posts/8ca7f13c/" title="从线性表到分布式（Data-Structures）"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2022-05-15</div><div class="info-item-2">从线性表到分布式（Data-Structures）</div></div><div class="info-2"><div class="info-item-1"> 数据结构学习绪论线性表栈、队列、数组串树与二叉树图查找排序设计模式之禅 大话设计模式 数据结构与算法分析.C语言描述 大话数据结构 算法导论绪论线性表栈、队列、数组串树与二叉树图查找排序 </div></div></div></a><a class="pagination-related" href="/posts/princ-chapter-12/" title="计算机原则五讲（十二）：省下的开销算在谁账上"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-11-20</div><div class="info-item-2">计算机原则五讲（十二）：省下的开销算在谁账上</div></div><div class="info-2"><div class="info-item-1">流水线、预取、约定优于配置、DRY、KISS 与 YAGNI，前两条在处理器内部，后三条在代码仓库里。做法差别很大：把指令拆成五段错开走、在还没用到时把数据搬上来、把重复写十遍的配置项变成默认值、把抄了三份的税率收成一个常量、把还没人提的需求直接不做。 共同的问法是：哪一份开销可以省掉，省掉之后谁付账。  流水线...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">823</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="#wechat" target="_blank" title="微信"><i class="fa-brands fa-weixin" style="color: #07C160;"></i></a><a class="social-icon" href="https://www.zhihu.com/people/96-40-70-62-86" rel="external nofollow noreferrer" target="_blank" title="知乎"><i class="fa-brands fa-zhihu" style="color: #0084FF;"></i></a><a class="social-icon" href="https://personal-business-ca-wnd0.bolt.host/" rel="external nofollow noreferrer" target="_blank" title="主页"><i class="fas fa-house" style="color: #2f7d6d;"></i></a><a class="social-icon" href="/atom.xml" target="_blank" title="RSS"><i class="fas fa-rss" style="color: #f26522;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;" data-love-since="2021-08-08T00:00:00"></div><script>// 起点统一读 _config.butterfly.yml 的 love_since，避免与首页侧栏漂移
+const loveTimeElement = document.getElementById('love-time');
+const startDate = new Date(loveTimeElement.dataset.loveSince || '2021-08-08T00:00:00');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E7%A9%BA%E9%97%B4%E6%8D%A2%E6%97%B6%E9%97%B4"><span class="toc-number">1.</span> <span class="toc-text">一、空间换时间</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81JIT-%E5%8D%B3%E6%97%B6%E7%BC%96%E8%AF%91"><span class="toc-number">2.</span> <span class="toc-text">二、JIT 即时编译</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E9%B8%BD%E5%B7%A2%E5%8E%9F%E7%90%86"><span class="toc-number">3.</span> <span class="toc-text">三、鸽巢原理</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81%E5%BC%95%E7%94%A8%E8%AE%A1%E6%95%B0%E4%B8%8E%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6"><span class="toc-number">4.</span> <span class="toc-text">四、引用计数与垃圾回收</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E6%A8%AA%E5%90%91%E5%AF%B9%E7%85%A7"><span class="toc-number">5.</span> <span class="toc-text">五、横向对照</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="发表于 2026-09-01 00:00:00">2026-09-01</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：这笔投入能换回什么">计算机原则五讲（一）：这笔投入能换回什么</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：故障发生时还剩什么保证">计算机原则五讲（二）：故障发生时还剩什么保证</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-03/" title="计算机原则五讲（三）：责任放在哪一层">计算机原则五讲（三）：责任放在哪一层</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-04/" title="计算机原则五讲（四）：把没说出口的约定写下来">计算机原则五讲（四）：把没说出口的约定写下来</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：规模一上来，系数说了算">计算机原则五讲（五）：规模一上来，系数说了算</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-06/" title="计算机原则五讲（六）：没有免费的优化">计算机原则五讲（六）：没有免费的优化</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-07/" title="计算机原则五讲（七）：拿什么换什么">计算机原则五讲（七）：拿什么换什么</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-08/" title="计算机原则五讲（八）：同一份东西该存在几处">计算机原则五讲（八）：同一份东西该存在几处</a><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-09/" title="计算机原则五讲（九）：把负担摊开">计算机原则五讲（九）：把负担摊开</a><time datetime="2026-10-29T16:00:00.000Z" title="发表于 2026-10-30 00:00:00">2026-10-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-10/" title="计算机原则五讲（十）：判断在什么时候做">计算机原则五讲（十）：判断在什么时候做</a><time datetime="2026-11-05T16:00:00.000Z" title="发表于 2026-11-06 00:00:00">2026-11-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-11/" title="计算机原则五讲（十一）：状态归谁管">计算机原则五讲（十一）：状态归谁管</a><time datetime="2026-11-12T16:00:00.000Z" title="发表于 2026-11-13 00:00:00">2026-11-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-12/" title="计算机原则五讲（十二）：省下的开销算在谁账上">计算机原则五讲（十二）：省下的开销算在谁账上</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：这笔投入能换回什么">计算机原则五讲（一）：这笔投入能换回什么</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-03/" title="计算机原则五讲（三）：责任放在哪一层">计算机原则五讲（三）：责任放在哪一层</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：故障发生时还剩什么保证">计算机原则五讲（二）：故障发生时还剩什么保证</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：规模一上来，系数说了算">计算机原则五讲（五）：规模一上来，系数说了算</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-06/" title="计算机原则五讲（六）：没有免费的优化">计算机原则五讲（六）：没有免费的优化</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="footer-code-wrap"><div class="footer-elegant-code elegant-code" data-elegant-code="data-elegant-code"></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_footer" href="#footer-wrap" title="直达页脚" aria-label="直达页脚"><i class="fas fa-arrow-down"></i></a><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script data-pjax src="/self/contact-popup.js"></script><script data-pjax src="/self/elegant-code.js"></script><script data-pjax src="/self/footer-jump.js"></script><script data-pjax src="/self/home-rail-love.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
