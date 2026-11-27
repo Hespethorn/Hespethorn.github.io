@@ -1,0 +1,754 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>计算机原则五讲（十三）：模块之间该知道多少 | HespethornのBlog</title><meta name="author" content="Hespethorn"><meta name="copyright" content="Hespethorn"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#F4F7F4"><meta name="description" content="依赖倒置、接口隔离、里氏替换、迪米特法则、事件溯源。前四条是同一个问题的四种切法：一个模块到底该知道另一个模块的多少东西。第五条看着不像一伙的，它把「知道」换成了「记住」。  依赖倒置管方向：高层不该 import 低层，两边都朝抽象看齐，而抽象归调用方所有； 接口隔离管宽度：调用方只该看见自己用到的那几个方法，不该看见实现方的全部能力； 里氏替换管身份：调用方只按父类的契约写代码，换成哪个子类都">
+<meta property="og:type" content="article">
+<meta property="og:title" content="计算机原则五讲（十三）：模块之间该知道多少">
+<meta property="og:url" content="https://hespethorn.github.io/posts/princ-chapter-13/">
+<meta property="og:site_name" content="HespethornのBlog">
+<meta property="og:description" content="依赖倒置、接口隔离、里氏替换、迪米特法则、事件溯源。前四条是同一个问题的四种切法：一个模块到底该知道另一个模块的多少东西。第五条看着不像一伙的，它把「知道」换成了「记住」。  依赖倒置管方向：高层不该 import 低层，两边都朝抽象看齐，而抽象归调用方所有； 接口隔离管宽度：调用方只该看见自己用到的那几个方法，不该看见实现方的全部能力； 里氏替换管身份：调用方只按父类的契约写代码，换成哪个子类都">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://hespethorn.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-11-26T16:00:00.000Z">
+<meta property="article:modified_time" content="2026-11-27T08:04:26.240Z">
+<meta property="article:author" content="Hespethorn">
+<meta property="article:tag" content="软件工程">
+<meta property="article:tag" content="架构设计">
+<meta property="article:tag" content="设计模式">
+<meta property="article:tag" content="面向对象">
+<meta property="article:tag" content="代码重构">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://hespethorn.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "计算机原则五讲（十三）：模块之间该知道多少",
+  "url": "https://hespethorn.github.io/posts/princ-chapter-13/",
+  "image": "https://hespethorn.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-11-26T16:00:00.000Z",
+  "dateModified": "2026-11-27T08:04:26.240Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Hespethorn",
+      "url": "https://Hespethorn.github.io/"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://hespethorn.github.io/posts/princ-chapter-13/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//www.google-analytics.com" crossorigin=""/><meta/><meta/><meta/><!-- 引入 ECharts 库--><script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script><link rel="stylesheet" href="/css/index.css?v=5.3.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!true && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1E3A33')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F4F7F4')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          const mediaQueryDark = window.matchMedia('(prefers-color-scheme: dark)')
+          const mediaQueryLight = window.matchMedia('(prefers-color-scheme: light)')
+
+          if (theme === undefined) {
+            if (mediaQueryLight.matches) activateLightMode()
+            else if (mediaQueryDark.matches) activateDarkMode()
+            else {
+              const hour = new Date().getHours()
+              const isNight = hour <= 8 || hour >= 22
+              isNight ? activateDarkMode() : activateLightMode()
+            }
+            mediaQueryDark.addEventListener('change', () => {
+              if (saveToLocal.get('theme') === undefined) {
+                e.matches ? activateDarkMode() : activateLightMode()
+              }
+            })
+          } else {
+            theme === 'light' ? activateLightMode() : activateDarkMode()
+          }
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script async="async" src="https://www.googletagmanager.com/gtag/js?id=G-3GPB0TM8JH"></script><script>window.dataLayer = window.dataLayer || []
+function gtag(){dataLayer.push(arguments)}
+gtag('js', new Date())
+gtag('config', 'G-3GPB0TM8JH')
+btf.addGlobalFn('pjaxComplete', () => {
+  gtag('config', 'G-3GPB0TM8JH', {'page_path': window.location.pathname})
+}, 'google_analytics')
+</script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"未找到符合您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":null,"highlightFullpage":true,"highlightMacStyle":true},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '天',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'medium_zoom',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: true,
+  },
+  autoDarkmode: true
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '计算机原则五讲（十三）：模块之间该知道多少',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><link href="/self/btf.css" rel="stylesheet"><link href="/self/base.css" rel="stylesheet"><link href="/self/redesign.css" rel="stylesheet"><link href="/self/contact-popup.css" rel="stylesheet"><link href="/self/elegant-code.css" rel="stylesheet"><script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script><link rel="alternate" href="/atom.xml" title="HespethornのBlog" type="application/atom+xml">
+</head><body><div id="web_bg" style="background-color: #edf2ec;"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">825</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/hero-fuhua.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/chibi-2.png" alt="Logo" loading='lazy'><span class="site-name">HespethornのBlog</span></a><a class="nav-page-title" href="/"><span class="site-name">计算机原则五讲（十三）：模块之间该知道多少</span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> 搜索</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-layer-group"></i><span> 主线</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-file-lines"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-envelope"></i><span> 家书</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/posts/FamilyProse/"><i class="fa-fw fas fa-book"></i><span> 父亲的与子书</span></a></li><li><a class="site-page child" href="/posts/LoveDays/"><i class="fa-fw fas fa-heart"></i><span> 给女友的情书</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div class="hero-corner-mask"></div><div id="post-info"><h1 class="post-title">计算机原则五讲（十三）：模块之间该知道多少</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="fa-fw post-meta-icon far fa-calendar-alt"></i><span class="post-meta-label">发表于</span><time datetime="2026-11-26T16:00:00.000Z" title="发表于 2026-11-27 00:00:00">2026-11-27</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CS-Principles/">CS-Principles</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">总字数:</span><span class="word-count">8.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>28分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p>依赖倒置、接口隔离、里氏替换、迪米特法则、事件溯源。前四条是同一个问题的四种切法：一个模块到底该知道另一个模块的多少东西。第五条看着不像一伙的，它把「知道」换成了「记住」。</p>
+<ul>
+<li><strong>依赖倒置</strong>管方向：高层不该 import 低层，两边都朝抽象看齐，而抽象归调用方所有；</li>
+<li><strong>接口隔离</strong>管宽度：调用方只该看见自己用到的那几个方法，不该看见实现方的全部能力；</li>
+<li><strong>里氏替换</strong>管身份：调用方只按父类的契约写代码，换成哪个子类都得照旧能跑；</li>
+<li><strong>迪米特法则</strong>管距离：一行代码里不该出现从 A 走三步才到 D 的路径；</li>
+<li><strong>事件溯源</strong>管时间：不存「现在是什么」，存「发生过什么」，现在的样子由事件算出来。</li>
+</ul>
+<p>前四条都在删知识，第五条反着来，主动多存一份。不矛盾：前四条删的是空间上的耦合，第五条留的是时间上的事实，而事实这种东西，删掉以后就再也算不出来了。</p>
+<pre><code class="highlight mermaid">flowchart LR
+    Q[&quot;共同问法&lt;br/&gt;一个模块该知道对方多少&quot;]
+    Q --&gt; A[&quot;依赖倒置&lt;br/&gt;知道哪一层：只知道抽象&quot;]
+    Q --&gt; B[&quot;接口隔离&lt;br/&gt;知道多宽：只知道用到的方法&quot;]
+    Q --&gt; C[&quot;里氏替换&lt;br/&gt;知道是谁：只知道契约&quot;]
+    Q --&gt; D[&quot;迪米特法则&lt;br/&gt;隔多远：只知道直接朋友&quot;]
+    Q --&gt; E[&quot;事件溯源&lt;br/&gt;知道哪个时态：只记得事件&quot;]
+    A --&gt; S[&quot;删空间耦合&quot;]
+    B --&gt; S
+    C --&gt; S
+    D --&gt; S
+    E --&gt; T[&quot;存时间事实&quot;]</code></pre>
+
+<p>五组数字都是本机实跑，Python 3.13.14 与 SQLite 3.53.1，脚本和固化输出在 <code>.workbuddy/_tmp_princ13/</code>。第三组是 2000 组随机样本，其余四组是真实文件、真实模块与真实数据库。</p>
+<h2 id="一、依赖倒置"><a href="#一、依赖倒置" class="headerlink" title="一、依赖倒置"></a>一、依赖倒置</h2><p>1996 年 Robert Martin 在 C++ Report 的专栏里写下 Dependency Inversion Principle，几年后 Michael Feathers 把这五条的首字母凑成 SOLID。触发点很具体：1980 年代末的图形工具包，Motif 一类的 API 形状直接决定了业务代码怎么写，换一套界面库等于把上层重写一遍。Martin 举的例子更朴素：一个策略模块直接调用底层机制，机制一改，策略跟着改，而策略本该是最稳定的那一层。</p>
+<p>传统分层的依赖是单向向下的：策略 import 机制，机制 import 平台。编译期的箭头从上往下走，于是所有变化都从下往上顶。倒置不是把箭头画反过来，而是在中间插一个抽象，让两边都指向它。</p>
+<p>难办的地方在 import 那一行，不在调用的时候。app 直接 import infra，infra 的任何形状变化都会落到 app 头上；更要紧的是 app 没法脱离 infra 被验证。本机没有 MySQL，那三个断言的单测一条都跑不起来。这不是「测起来麻烦」，是根本测不了。</p>
+<p><strong>本质一句话：依赖倒置不是「加一个接口」，而是把抽象的所有权交给需要它的那一侧；方向由 import 语句决定，不是由类图上的虚线决定。</strong></p>
+<pre><code class="highlight mermaid">flowchart TB
+    subgraph A[&quot;A 直连：策略依赖机制&quot;]
+        A1[&quot;OrderService&quot;] --&gt; A2[&quot;MysqlRepo&quot;]
+    end
+    subgraph C[&quot;C 接口归实现方：接口在 infra 里&quot;]
+        C1[&quot;OrderService&quot;] --&gt; C2[&quot;infra.ports.Store&quot;]
+        C3[&quot;MysqlRepo&quot;] --&gt; C2
+    end
+    subgraph B[&quot;B 接口归调用方：接口在 app 里&quot;]
+        B1[&quot;OrderService&quot;] --&gt; B2[&quot;app.ports.Store&quot;]
+        B3[&quot;MysqlRepo&quot;] --&gt; B2
+    end</code></pre>
+
+<p>三个版本实现同一段业务：按用户汇总有效订单金额，再下一单。A 直连；C 有接口，但接口定义在 <code>infra/ports.py</code>；B 也有接口，接口定义在 <code>app/ports.py</code>，infra 反过来 import app。先看不连数据库时单测能跑几条：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">一、本机单测（不连 MySQL，注入内存替身，3 个断言）</span><br><span class="line">  A 直连          通过 0/3   ConnectionRefusedError: mysql 127.0.0.1:3306 -&gt; timed out</span><br><span class="line">  C 接口归实现方  通过 3/3</span><br><span class="line">  B 接口归调用方  通过 3/3</span><br></pre></td></tr></table></figure>
+
+<p>A 的三个断言全部倒在构造函数上，因为 <code>OrderService</code> 自己去 new 一个 <code>MysqlRepo</code>，没有可以插进去的口子。C 与 B 都能把内存替身塞进去。接着把存储换成内存实现，看 app 包被改了几行：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">二、换实现：MySQL -&gt; 内存</span><br><span class="line">  A 直连          app 改 2 行 / 装配改 0 行 / 改后通过 3/3</span><br><span class="line">  C 接口归实现方  app 改 0 行 / 装配改 2 行 / 改后通过 3/3</span><br><span class="line">  B 接口归调用方  app 改 0 行 / 装配改 2 行 / 改后通过 3/3</span><br></pre></td></tr></table></figure>
+
+<p>到这一步，C 和 B 打平。C 常常被当成「做了倒置」的样板：接口有了，依赖注入有了，单测也能跑。差别要在第三组才露出来。让 infra 团队把两个模块挪进子包 <code>infra/storage/</code>，app 没收到通知：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">三、infra 重组：mysql_repo.py 与 ports.py 挪进 infra/storage/（app 未收到通知）</span><br><span class="line">  A 直连          import 断裂 —— ModuleNotFoundError: No module named &#x27;infra.mysql_repo&#x27;    修复需改 app 1 行</span><br><span class="line">  C 接口归实现方  import 断裂 —— ModuleNotFoundError: No module named &#x27;infra.ports&#x27;         修复需改 app 1 行</span><br><span class="line">  B 接口归调用方  import 照旧                                                               修复需改 app 0 行</span><br></pre></td></tr></table></figure>
+
+<p>C 断得和 A 一样难看。它多出来的那个接口确实解决了可替换性，可 <code>app/service.py</code> 第一行仍然写着 <code>from infra.ports import ...</code>。app 还是得知道 infra 长什么样。把三条 import 边数出来更清楚：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">四、结构与体量</span><br><span class="line">  版本            app-&gt;infra 边   infra-&gt;app 边   抽象定义在        有效代码行</span><br><span class="line">  A 直连          1               0               无                43</span><br><span class="line">  C 接口归实现方  1               0               infra/ports.py    60</span><br><span class="line">  B 接口归调用方  0               1               app/ports.py      58</span><br></pre></td></tr></table></figure>
+
+<p>B 那一行 <code>infra-&gt;app</code> 是 1，方向真的反过来了。学费是 15 行代码（43 到 58），买的东西是三件事：单测不需要数据库、换实现不动 app、infra 自己重组也不动 app。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>不是每个边界都值得插抽象。</strong> 纯计算模块、工具函数、只在进程内用一次的胶水，加一层 Protocol 只多一次跳转和一页文档，换不回任何东西。</li>
+<li><strong>抽象归调用方的前提是「调用方能改」。</strong> 第三方闭源 SDK 你改不动，只能在中间写适配器，那层适配器就是你的抽象，它归你，不归厂商。</li>
+<li><strong>过度倒置会长出一堆 mapper。</strong> 每层一个端口，A 的 DTO 到 B 的 DTO 再到 C 的 DTO，转换代码比业务代码长。倒置的价值在「隔离变化」，不在「层数多」。</li>
+<li><strong>最常见的是 C，而且最难自查。</strong> 接口有了，测试过了，架构评审也能过，方向一步没动。判断方法只有一条：把 infra 的模块挪个位置，看 app 断不断。</li>
+<li><strong>反例：用依赖注入框架代替倒置。</strong> 容器能注入任何东西，包括具体的 <code>MysqlRepo</code>。注入并不改变谁 import 谁，只改变了谁 new 谁。</li>
+</ul>
+<h2 id="二、接口隔离"><a href="#二、接口隔离" class="headerlink" title="二、接口隔离"></a>二、接口隔离</h2><p>同一个 1996 年，Martin 另一篇专栏写 Interface Segregation Principle。源头是施乐的打印系统：打印、装订、传真共用一套 Job 抽象，任何一台设备的接口改动都要触发整个系统的重新编译与重新部署。他的观察是，一个「什么都能做」的接口把所有实现者绑在了一起，改动的影响面等于所有实现者的并集。</p>
+<p>道理不复杂。接口是所有实现者共同签署的契约，方法越多，最小实现者被迫写的空实现越多。空实现既不能用，也不能删，还会在运行时把「不支持」变成异常。那行异常写在别人的调用路径上。</p>
+<p><strong>本质一句话：接口的粒度由「一个调用方要用多少」决定，不是由「一个实现方能做多少」决定。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph FAT[&quot;胖接口 DocStore 13 个方法&quot;]
+        F1[&quot;只读调用方&lt;br/&gt;用 3 个&quot;] --&gt; F0[&quot;DocStore&quot;]
+        F2[&quot;编辑调用方&lt;br/&gt;用 4 个&quot;] --&gt; F0
+        F3[&quot;审计调用方&lt;br/&gt;用 3 个&quot;] --&gt; F0
+        F0 --&gt; F4[&quot;ReadOnlyFileStore&lt;br/&gt;10 个空实现&quot;]
+        F0 --&gt; F5[&quot;MysqlDocStore&quot;]
+        F0 --&gt; F6[&quot;AuditStore&quot;]
+        F0 --&gt; F7[&quot;MemDocStore&quot;]
+    end
+    subgraph SLIM[&quot;四个视图 10 个方法&quot;]
+        S1[&quot;只读调用方&quot;] --&gt; S2[&quot;ReaderView 3&quot;]
+        S3[&quot;编辑调用方&quot;] --&gt; S4[&quot;EditorView 4&quot;]
+        S5[&quot;审计调用方&quot;] --&gt; S6[&quot;AuditView 2&quot;]
+        S7[&quot;加锁场景&quot;] --&gt; S8[&quot;LockView 1&quot;]
+        S2 --&gt; S9[&quot;ReadOnlyFileStore&quot;]
+        S4 --&gt; S10[&quot;MysqlDocStore&quot;]
+        S6 --&gt; S10
+        S8 --&gt; S10
+    end</code></pre>
+
+<p>同一份文档存储，两个版本。胖接口 <code>DocStore</code> 13 个方法，四个实现类；小接口版本切成 <code>ReaderView</code>、<code>EditorView</code>、<code>AuditView</code>、<code>LockView</code>，合计 10 个方法，同样的四个实现。三个调用方加一个加锁场景各有分工，只读的那个真的只用三个方法。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">一、面宽（调用方在接口上能看到的方法）</span><br><span class="line">  形态                抽象方法总数  只读调用方看到的  多出来的</span><br><span class="line">  胖接口 DocStore     13            13                10</span><br><span class="line">  四个小接口          10            3                 0</span><br><span class="line"></span><br><span class="line">二、只读实现被迫写的空实现</span><br><span class="line">  形态                只读实现里的空实现数  为什么还有这么多</span><br><span class="line">  胖接口 DocStore     10                    13 个方法减去真用的 3 个</span><br><span class="line">  四个小接口          0                     ReaderView 里只有 3 个要写</span><br></pre></td></tr></table></figure>
+
+<p>面宽 13 对 3。只读调用方在补全列表里能看到 13 个方法，其中 10 个它永远不该调。接口宽的直接代价不在性能，在注意力——调用方得在 13 个名字里认出自己能用的 3 个，认错就是运行时异常。空实现 10 个：<code>ReadOnlyFileStore</code> 的存在意义是「文件只读」，可它被迫声明 10 个 <code>NotImplementedError</code>，每个都写着「这个角色不支持」。</p>
+<p>然后做一次很常见的改动：给接口加一个导出 PDF。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">三、给接口加一个 export_pdf</span><br><span class="line">  形态                加之前          加之后          起不来的实现</span><br><span class="line">  胖接口 DocStore     4/4 可实例化    0/4 可实例化    4 个：ReadOnlyFileStore,MysqlDocStore,AuditStore,MemDocStore</span><br><span class="line">  四个小接口          4/4 可实例化    2/4 可实例化    2 个：MysqlDocStore,MemDocStore</span><br><span class="line"></span><br><span class="line">四、只读调用方误调 purge()，测试能不能拦住</span><br><span class="line">  形态                替身                      结果</span><br><span class="line">  胖接口 DocStore     MagicMock(spec=DocStore)  放过了</span><br><span class="line">  四个小接口          手写 FakeReader           拦住了</span><br></pre></td></tr></table></figure>
+
+<p>加一个导出方法，四个实现类全部 <code>TypeError</code> 起不来——包括那个只读文件存储，也包括审计存储。加方法的人根本不知道 <code>AuditStore</code> 这个类存在，可它照样被拖下水，因为 ABC 的新抽象方法对所有子类生效。切成视图之后只有声明了 <code>EditorView</code> 的两个类受影响，只读实现一行都不用改。</p>
+<p>第四组更值得琢磨。<code>MagicMock(spec=DocStore)</code> 放过了误调 <code>purge()</code> 的只读调用方。spec 只检查属性存在，而胖接口上什么属性都存在，替身比被测代码还宽容。手写的 <code>FakeReader</code> 只有三个方法，误调当场 <code>AttributeError</code>。<strong>接口宽，替身也宽，宽到拦不住错。</strong></p>
+<p>体量上窄接口反而更短：174 行对 108 行，省下的正是那 10 个空实现。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>切太碎的账单在装配侧。</strong> 一个 <code>MysqlDocStore</code> 要实现四个接口，调用方要注入四个对象。角色视图的数量应该等于调用方角色的数量，不是方法分组的数量。</li>
+<li><strong>共用视图不要拆。</strong> 三个调用方都只用 <code>list_docs</code> 和 <code>read_doc</code>，那是同一个视图。为了「一人一个接口」复制三份，是把隔离做成了仪式。</li>
+<li><strong>语言差异很大。</strong> Go 在调用方一侧定义接口，天然按使用者切；Java、C# 要显式 <code>implements</code>，切细了就得在类名后面堆一列接口；Python 的 <code>Protocol</code> 接近 Go 的隐式满足。</li>
+<li><strong>别为未来的调用方预切。</strong> 四个视图里如果只有一个真被两个以上调用方用到，其余三个是预付，和第十二章那条 YAGNI 是同一笔账。</li>
+<li><strong>反例：把「接口隔离」做成「一个实现一个接口」。</strong> 那只是把类改名成接口，调用方该知道的一个没少。</li>
+</ul>
+<h2 id="三、里氏替换"><a href="#三、里氏替换" class="headerlink" title="三、里氏替换"></a>三、里氏替换</h2><p>1987 年 OOPSLA 的主题演讲，Barbara Liskov 给了子类型一个行为定义：对每个 S 类型的对象 o1，如果存在 T 类型的对象 o2，使得所有按 T 写的程序 P 在把 o1 换进去之后行为不变，那么 S 是 T 的子类型。1994 年她与 Jeannette Wing 把这句直觉写成了前置、后置与不变量的约束。</p>
+<p>这句话读起来像同义反复，落到代码上很具体：前置条件只能放宽或不变，后置条件只能收紧或不变，父类的不变量必须保持。多态的全部价值都建立在「调用方只按父类契约编程」上，子类一旦在契约之外加了条件，按父类写好的代码就会在运行时失败，而且失败发生在别人的模块里，堆栈上还看不到子类的名字。</p>
+<p><strong>本质一句话：子类型不是长得像，而是能顶替：前置只能放宽或不变，后置只能收紧或不变，不变量必须保持。</strong></p>
+<pre><code class="highlight mermaid">flowchart TB
+    P[&quot;基类契约&lt;br/&gt;前置：amount&gt;0 且不超透支额度&lt;br/&gt;后置：balance 等于旧值减 amount&lt;br/&gt;不变量：balance 不低于 -1000&quot;]
+    P --&gt; A[&quot;子类型可以做的&lt;br/&gt;前置放宽或不变&lt;br/&gt;后置收紧或不变&lt;br/&gt;不变量保持&quot;]
+    P --&gt; B[&quot;子类型不能做的&lt;br/&gt;前置加强 → 合法调用被拒&lt;br/&gt;后置放宽 → 结果对不上&lt;br/&gt;不变量改动 → 账目漂移&quot;]
+    A --&gt; OK[&quot;顶替成立&quot;]
+    B --&gt; NO[&quot;顶替失败&quot;]</code></pre>
+
+<p>一个账户族。基类 <code>Account</code> 约定：前置 <code>amount &gt; 0</code> 且 <code>amount &lt;= balance + 1000</code>（透支额度），后置 <code>balance == 旧值 - amount</code> 且 <code>balance &gt;= -1000</code>。四个子类各做一种改动：<code>AuditedAccount</code> 多记一条流水（合法），<code>NoOverdraftAccount</code> 不许透支（加强前置），<code>RoundingAccount</code> 余额取整（放宽后置），<code>FeeAccount</code> 收 0.5% 手续费（改不变量）。2000 组随机样本，种子固定：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">实现                  合法调用被拒  后置不符    不变量破坏    判定</span><br><span class="line">Account 基类          0             0           0             基准</span><br><span class="line">AuditedAccount        0             0           0             可以顶替</span><br><span class="line">NoOverdraftAccount    320           0           0             前置被加强</span><br><span class="line">RoundingAccount       0             1158        0             后置被放宽</span><br><span class="line">FeeAccount            0             1168        2             不变量被改</span><br></pre></td></tr></table></figure>
+
+<p><code>NoOverdraftAccount</code> 拒掉了 320 组调用。这 320 组在基类上全部合法。调用方没做错任何事，是子类擅自把「可以透支一千」改成了「不可以透支」。<code>RoundingAccount</code> 连不变量都没破坏，只是返回值被取整，1158 组与基类的等式对不上。<code>FeeAccount</code> 只有 2 组跌破透支额度，数字最小，可这类最难查：账面上差几分钱，要到审计才浮出来。</p>
+<p>真正值得看的是第二张表。把基类自带的 5 条手写用例原样套到子类上：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">基类的 5 条用例原样套到子类上</span><br><span class="line">实现                  通过    失败项</span><br><span class="line">Account 基类          5/5     无</span><br><span class="line">AuditedAccount        5/5     无</span><br><span class="line">NoOverdraftAccount    4/5     取到透支上限（ValueError）</span><br><span class="line">RoundingAccount       5/5     无</span><br><span class="line">FeeAccount            2/5     取 100 后余额减 100（得到 399.5）；取到透支上限（得到 -1005.0）；取 33 元余额为 467（得到 466.835）</span><br></pre></td></tr></table></figure>
+
+<p>5 条用例只抓住两个。<code>RoundingAccount</code> 5&#x2F;5 全过，随机样本挂 1158 组，因为手写用例挑的金额都是整数，取整对它没有影响。<strong>用你自己的测试集当判据，判据的密度就决定了你能发现多少违背。</strong> 5 条覆盖的是常见路径，抓不到取整、精度、边界这种类型的偏差。</p>
+<p>判据可以更密一点。把基类的用例换成属性测试：随机生成余额与金额，只断言契约里的前置、后置与不变量，不写死具体数字——上面那 2000 组样本就是这么来的，它抓到三个子类，而手写用例只抓到两个。差别不在断言写得对不对，在覆盖的形态。手写用例天然挑整数和常见值，随机样本会撞到取整与边界，恰恰是子类最容易越界的地方。再进一步，可以把前置条件写成运行时可检查的守卫（<code>assert</code> 或显式的 <code>if + raise</code>），让调用的那一刻就报错，而不是等对账时发现少了几毛钱。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>LSP 只管「按父类契约使用」的场景。</strong> 如果调用方显式 <code>isinstance</code> 分支，那已经不算替换，算分类，规则不适用。</li>
+<li><strong>实现继承与子类型是两件事。</strong> 为了复用代码去继承，LSP 就会和 DRY 打架：复用要求共享实现，LSP 要求行为兼容。冲突时正确答案是组合，不是把契约解释得松一点。</li>
+<li><strong>语言几乎帮不上忙。</strong> Java 的 <code>@Override</code> 查签名不查语义，Python 连签名都不查，TypeScript 的结构类型也只比字段。可执行判据只有一条——把父类的测试套件原样跑在子类上。</li>
+<li><strong>经典反例有两个。</strong> 正方形继承矩形（<code>setWidth</code> 之后 <code>setHeight</code> 的语义变了），不可变集合继承可变集合（<code>add</code> 从「总是成功」变成「总是抛异常」）。</li>
+<li><strong>反例：把 LSP 理解成「子类可以覆盖任何方法」。</strong> 覆盖是语法允许，顶替是行为要求。能编译和能替换是两件事。</li>
+</ul>
+<h2 id="四、迪米特法则"><a href="#四、迪米特法则" class="headerlink" title="四、迪米特法则"></a>四、迪米特法则</h2><p>1987 年东北大学的 Demeter 项目，Karl Lieberherr 与 Ian Holland 1989 年在 IEEE Software 上写了 Assuring Good Style for Object-Oriented Programs。原始规则比后来流传的版本硬得多：一个方法只该调用自己的字段、自己的参数、自己创建的对象，以及这些对象的字段，不许顺着返回值一路点下去。项目组当年的口号是「一个点就够」，名字取自希腊神话里的农神。</p>
+<p>道理同样朴素。链式取值把整条对象路径写进了调用方，中间任何一环改名、拆分、变懒加载、加一层缓存，调用方全断——而且断在运行时。同一份路径还会在每个调用点重复一遍，包括重复的判空。判空写一次是防御，写十二次是债。</p>
+<p><strong>本质一句话：一个方法只该知道自己的参数、字段和自己创建的对象；它不该知道从 A 怎么走到 D。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph CH[&quot;链式：12 个调用点各自走完 5 层&quot;]
+        C1[&quot;svc_delivery&lt;br/&gt;4 处&quot;] --&gt; C2[&quot;order&quot;]
+        C3[&quot;svc_tax&lt;br/&gt;4 处&quot;] --&gt; C2
+        C4[&quot;svc_report&lt;br/&gt;4 处&quot;] --&gt; C2
+        C2 --&gt; C5[&quot;customer&quot;]
+        C5 --&gt; C6[&quot;address&quot;]
+        C6 --&gt; C7[&quot;city&quot;]
+    end
+    subgraph DE[&quot;委托：12 个调用点问 1 次&quot;]
+        D1[&quot;svc_delivery&lt;br/&gt;4 处&quot;] --&gt; D2[&quot;order.shipping_city()&quot;]
+        D3[&quot;svc_tax&lt;br/&gt;4 处&quot;] --&gt; D2
+        D4[&quot;svc_report&lt;br/&gt;4 处&quot;] --&gt; D2
+        D2 --&gt; D5[&quot;内部的 5 层&lt;br/&gt;只在这里出现一次&quot;]
+    end</code></pre>
+
+<p>12 个调用点，分属 3 个服务（配送路由、税费计算、报表），取的都是同一个城市字段。两个版本：链式写 <code>order.customer.address.city.name.upper()</code>，委托版在 <code>Order</code> 上加一个 <code>shipping_city()</code>。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">形态                      最长属性链    判空语句    判空里的属性访问  Order 的方法数</span><br><span class="line">链式 order.customer.address.city  5             12          72                2</span><br><span class="line">委托 order.shipping_city()        1             0           0                 3</span><br></pre></td></tr></table></figure>
+
+<p>链式最长 5 层：<code>order.customer.address.city.name</code> 是四个属性访问，末尾的 <code>.upper</code> 也算一层，所以是 5。判空语句 12 条，判空里 72 次属性访问。委托版 1 层，调用方一侧零判空。</p>
+<p>然后是那次重构：城市从 <code>Address</code> 挪到 <code>Customer</code>。真实场景里这种改动很常见：地址被拆成省市区，城市变成客户级默认值。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">一、重构前：12 个调用点全部正常</span><br><span class="line">chain       CALLS 12 OK 12 ERR 0</span><br><span class="line">delegate    CALLS 12 OK 12 ERR 0</span><br><span class="line"></span><br><span class="line">二、重构后：城市从 Address 挪到 Customer</span><br><span class="line">链式        CALLS 12 OK 0 ERR 12</span><br><span class="line">            ERRLIST 12 处：carrier_code,hub_name,route_label,...</span><br><span class="line">            按 12 处逐一手改（共 24 行）后：CALLS 12 OK 12 ERR 0</span><br><span class="line">委托        CALLS 12 OK 12 ERR 0</span><br></pre></td></tr></table></figure>
+
+<p>链式 12 个调用点全挂，逐一手改 24 行（每处两行：判空和取值）。委托版一处没动，因为它只知道「问 Order 要城市」，不知道城市原来住在 Address 里。</p>
+<p>账单在表格最后一行：<code>Order</code> 的方法数从 2 涨到 3。一个方法不算什么，问题是它随「调用方要的投影种类」线性长。3 个服务各要两种字段，<code>Order</code> 就长 6 个转发方法；30 个字段就是 30 个 getter，<code>Order</code> 变成 <code>Address</code> 的镜像。<strong>深度换成了宽度。</strong> 迪米特法则没有让知识消失，它把 12 处的一份知识收进 1 处，从 72 次属性访问降到 Order 内部的 6 次，压缩是真的，消失是假的。</p>
+<p>「朋友」的边界值得再划一次。参数、自己的字段、自己 new 出来的对象，这三类可以直接点；从参数再往外走一层，就已经越界。实际项目里最常见的违例不是 <code>a.getB().getC()</code> 这种教科书形态，而是 DTO 拼装：把七八个对象的字段拉进一个响应体，每行跨三四层，散在十几个 handler 里。写的时候毫无痛感，等上游改了字段名，报错只有一句 <code>AttributeError</code> 和一个看不出所以然的行号——排查时间全花在还原那条路径上。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>转发方法要有人管。</strong> 投影种类超过五六个时，该考虑返回一个只读视图对象，而不是继续往 <code>Order</code> 上贴方法。否则你只是把「什么都懂的调用方」换成了「什么都懂的上帝类」。</li>
+<li><strong>贫血模型下这条规则很别扭。</strong> 逻辑都在 service 里，service 手里只有数据对象，只能顺着点下去。真正的解法是让数据和行为待在一起，不是给 DTO 加一层转发。</li>
+<li><strong>纯数据结构不受这条管。</strong> Martin 的区分是：对象暴露行为，数据结构暴露数据。对 DTO、JSON、DataFrame 要求迪米特，是把两类东西混成一类。</li>
+<li><strong>流式 API 天然违反。</strong> <code>records.stream().filter().map().collect()</code> 一节三个点，但那是同类型连续变换，链不会跨对象图，风险完全不同。</li>
+<li><strong>反例：为了合规把 30 个 getter 塞进 Order。</strong> 等于把 <code>Address</code> 整个搬过来，还多一层间接：宽度爆了，深度一点没省。</li>
+</ul>
+<h2 id="五、事件溯源"><a href="#五、事件溯源" class="headerlink" title="五、事件溯源"></a>五、事件溯源</h2><p>这个术语 2005 年前后由 Greg Young 提出，Martin Fowler 同年 12 月写了篇同名文章把它讲开。思想比名字老得多：复式记账的账本从来只追加、不修改，任何时点的余额都是把流水加起来；数据库的 audit log 也是同一个思路，只不过它旁挂在主表外面，主表仍然是唯一真相。DDD 社区后来把事件溯源和聚合、限界上下文绑在一起，才成了今天这套工程做法。</p>
+<p>它要解决的是一个当前状态表答不出的问题：怎么变成现在这样。对账、追责、复盘、给监管看，问的都是「当时是多少」。状态表只存「现在」，这类问题只能靠另外维护一份审计日志；而审计日志和状态表是两份真相，写入路径一多，它们必然不一致。事件溯源把两份合成一份：状态不再存，由事件算。</p>
+<p><strong>本质一句话：不存「现在是什么」，存「发生过什么」；当前状态是事件流的折叠结果，任何时点都能重算出来。</strong></p>
+<pre><code class="highlight mermaid">flowchart LR
+    subgraph ST[&quot;状态表&quot;]
+        W1[&quot;每笔流水&quot;] --&gt; W2[&quot;UPDATE 余额&lt;br/&gt;旧值被覆盖&quot;]
+        W2 --&gt; W3[&quot;读：SELECT 3 行&quot;]
+    end
+    subgraph EV[&quot;事件流&quot;]
+        E1[&quot;每笔流水&quot;] --&gt; E2[&quot;INSERT 事件&lt;br/&gt;只追加&quot;]
+        E2 --&gt; E3[&quot;读：重放全部事件&quot;]
+        E2 --&gt; E4[&quot;每 1000 条存快照&quot;]
+        E4 --&gt; E5[&quot;读：快照 + 尾部增量&quot;]
+        E2 --&gt; E6[&quot;任意 seq 回放&lt;br/&gt;回答当时是多少&quot;]
+    end</code></pre>
+
+<p>两个 SQLite 库，同一批 10 万笔流水，3 个账户，存取大致抵平、每十笔收一次手续费。一个库写 <code>accounts(balance)</code>，每笔 UPDATE；另一个库写 <code>events(seq, account, kind, amount)</code>，只 INSERT。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">一、写入 100000 笔</span><br><span class="line">形态            语句                  耗时        文件体积</span><br><span class="line">状态表          100000 条 UPDATE      117 ms      12 KB</span><br><span class="line">事件流          100000 条 INSERT      96 ms       2528 KB</span><br></pre></td></tr></table></figure>
+
+<p>事件流反而写得更快一点，追加只写页尾，更新要在三个页上反复改。代价在体积：2528 KB 对 12 KB，两百倍。这不是浪费，是它买下的东西：每一个中间状态。事件一旦写下就不再修改——这既是可回放的前提，也是后面所有麻烦的源头。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">二、读当前余额</span><br><span class="line">形态                读了多少行      耗时          余额 A / B / C</span><br><span class="line">状态表              3               5 微秒        3138.05 / 3158.80 / 3158.80</span><br><span class="line">事件流全量重放      100000          64252 微秒    3138.05 / 3158.80 / 3158.80</span><br><span class="line">事件流 + 快照       快照后 1000 条  706 微秒      3138.05 / 3158.80 / 3158.80</span><br><span class="line">                    99 个快照，建一遍 116 ms</span><br></pre></td></tr></table></figure>
+
+<p>5 微秒对 64252 微秒，一万倍。这是事件溯源最硬的一笔账，谁也绕不过去。快照把它拉回 706 微秒，代价是 99 个快照、建一遍 116 ms，用一次性的写换每一次读。注意快照没有让读便宜到和状态表一个量级，三者的排序一直是状态表、快照、全量重放。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">三、问「第 50000 笔办完时余额是多少」</span><br><span class="line">状态表            答不出。旧值已被覆盖，只剩当前值 3138.05 / 3158.80 / 3158.80</span><br><span class="line">事件流            回放 50000 条，36968 微秒，余额 1598.15 / 1598.15 / 1566.65</span><br></pre></td></tr></table></figure>
+
+<p>第三组是这条原则存在的全部理由。状态表不是慢，是那个值已经不存在了，它被后来的九万次 UPDATE 盖掉了。事件流回放五万条，37 毫秒，给出当时那个数。对账、纠纷、监管问询要的都是这个数。</p>
+<p>后两组是账单，写得比前几章的账单更难看。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">四、新版本要一个 currency 字段</span><br><span class="line">旧事件条数        200</span><br><span class="line">直接读新字段      200 条 KeyError，严格折叠器当场停摆</span><br><span class="line">补默认值再折叠    200 条记成 CNY——这个值在当年并不存在</span><br><span class="line">只跳过不补值      余额比补默认值少 52.00，账对不上</span><br><span class="line"></span><br><span class="line">五、一条删除请求</span><br><span class="line">状态表            1 条 DELETE，A 的行剩 0 条，原值不在了</span><br><span class="line">事件流            追加 1 条 erased，A 的事件还有 33335 条，原值仍在磁盘上</span><br></pre></td></tr></table></figure>
+
+<p>给事件加一个字段，200 条老事件全缺。补默认值能跑通，但那等于给历史事件编了一个当年不存在的属性：读出来的报表上有 <code>currency=CNY</code>，而当时那笔钱根本没有币种这个概念。只跳过不补，余额少 52 元，账对不上。两条路都不干净，这就是为什么事件的 schema 必须当成公开 API 对待：它一旦写下去就冻结了。</p>
+<p>删除更直接。状态表一条 DELETE 就结束，事件流只能追一条 <code>erased</code>，原值还在磁盘上那三万三千多条事件里。GDPR 那类「删除权」和「不可变事件流」天生冲突，常见解法是加密后丢弃密钥，可那已经是另一笔工程预算。</p>
+<p><strong>边界与反例</strong></p>
+<ul>
+<li><strong>读模型要单独建。</strong> 纯粹的事件流读不动，实践中都是事件流加投影（CQRS），投影挂了要能从事件流重建，这也是投影必须无副作用的理由。</li>
+<li><strong>事件不是消息。</strong> 事件流要有全局顺序（seq）、要能重放、消费者要幂等，缺一样就会在重建时算错。把它当消息队列用，等于放弃了它唯一的长处。</li>
+<li><strong>不适合 CRUD。</strong> 表单型应用没有「当时是多少」的问题，上事件溯源只拿到读放大和 schema 冻结两笔账。</li>
+<li><strong>快照不是优化项，是必需品。</strong> 10 万事件 64 ms，1000 万事件就是 6.4 秒，没有快照的读路径在生产上不可用。</li>
+<li><strong>事件版本要显式管。</strong> 每条事件带 schema 版本，折叠器按版本分支，比事后猜字段可靠得多。</li>
+</ul>
+<h2 id="六、横向对照"><a href="#六、横向对照" class="headerlink" title="六、横向对照"></a>六、横向对照</h2><table>
+<thead>
+<tr>
+<th>原则</th>
+<th>对知识做了什么</th>
+<th>账单付给谁</th>
+<th>一句话判据</th>
+<th>什么时候不该用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>依赖倒置</td>
+<td>删掉「高层知道低层是谁」</td>
+<td>多一层抽象，抽象的定义权归调用方</td>
+<td>这个接口是谁在改：调用方，还是实现方</td>
+<td>纯计算、一次性胶水、改不动的第三方</td>
+</tr>
+<tr>
+<td>接口隔离</td>
+<td>删掉「调用方看见用不到的方法」</td>
+<td>接口数量与装配复杂度</td>
+<td>这个调用方实际用到几个方法，占几成</td>
+<td>多个调用方共用同一视图、只有唯一调用方</td>
+</tr>
+<tr>
+<td>里氏替换</td>
+<td>删掉「调用方知道是哪个子类」</td>
+<td>继承不能拿来复用代码</td>
+<td>把子类塞进父类的测试，挂几个</td>
+<td>调用方显式分类型、纯实现复用</td>
+</tr>
+<tr>
+<td>迪米特法则</td>
+<td>删掉「从 A 走到 D 的路径」</td>
+<td>转发方法把深度换成宽度</td>
+<td>这一行里有几个点，跨了几个对象</td>
+<td>纯数据结构、同类型流式变换</td>
+</tr>
+<tr>
+<td>事件溯源</td>
+<td>反过来，多存一份「发生过什么」</td>
+<td>读放大、schema 冻结、删除变难</td>
+<td>你需要回答「当时是多少」吗</td>
+<td>表单型 CRUD、无审计需求</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>五条原则</th>
+<th>一句话判据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>依赖倒置</td>
+<td>把实现挪个位置，上层会不会断</td>
+</tr>
+<tr>
+<td>接口隔离</td>
+<td>最小实现者被迫写几个空实现</td>
+</tr>
+<tr>
+<td>里氏替换</td>
+<td>父类的测试套件跑在子类上，挂几个</td>
+</tr>
+<tr>
+<td>迪米特法则</td>
+<td>这一行里跨了几个对象</td>
+</tr>
+<tr>
+<td>事件溯源</td>
+<td>上周三的余额，你答得出来吗</td>
+</tr>
+</tbody></table>
+<p>🐾 <strong>小结</strong>：这一章的五条原则，四条在删，一条在加，落到根上是同一个问题：一个模块该知道对方多少。</p>
+<p>依赖倒置管的是方向。同一个业务的三版实现，单测通过数 0&#x2F;3、3&#x2F;3、3&#x2F;3 只能区分「有没有可注入的口子」，区分不了方向。把 infra 的模块挪进子包，直连版和「接口归实现方」版同时 <code>ModuleNotFoundError</code>，只有接口归调用方的那版 import 照旧。差异体现在边数上：app 到 infra 的 import 边，1、1、0。多出来的 15 行代码买的是这条边归零——方向反了，剩下的才是可替换。</p>
+<p>接口隔离管的是宽度。13 个方法的胖接口，只读实现被迫写 10 个空实现，只读调用方的补全列表里也有 13 项。加一个导出方法，四个实现类全部起不来，包括加方法的人根本不知道存在的那个。切成四个视图之后只影响两个，体量还从 174 行降到 108 行——空实现不用写，代码自然短。最刺眼的是测试：<code>MagicMock(spec=DocStore)</code> 放过了误调 <code>purge()</code> 的调用方，因为宽接口的替身也宽。</p>
+<p>里氏替换管的是身份。2000 组随机样本下，加强前置的子类拒掉了 320 组合法调用，放宽后置的子类有 1158 组与基类等式不符，改不变量的那个只有 2 组踩线，数字最小，最难查。而基类自带的 5 条手写用例只抓住两个，取整那个 5&#x2F;5 全过。判据不够密，等于没有判据。</p>
+<p>迪米特法则管的是距离。12 个调用点各写一遍五层路径，就多出 12 条判空、72 次属性访问。城市从 Address 挪到 Customer，链式全挂、逐一手改 24 行，委托版一处没动。账单是 <code>Order</code> 从 2 个方法涨到 3 个，并且会随投影种类线性增长：深度换宽度，知识从 12 处收进 1 处，压缩是真的，消失是假的。</p>
+<p>事件溯源管的是时态。十万笔流水，状态表 12 KB、读一次 5 微秒，事件流 2528 KB、全量重放 64 毫秒，快照压到 706 微秒。问「第 5 万笔办完时余额多少」，状态表答不出。不是慢，是那个值不存在了。代价写在最后：加一个字段，200 条老事件全缺，补默认值等于改写历史，跳过则少算 52 元；一条删除请求，原值还躺在三万三千条事件里。</p>
+<p>回头看，前四条的判据都能落成一个动作：挪一下实现看上层断不断、数一数最小实现者写了几个空实现、把父类测试跑在子类上、数这一行跨了几个对象。事件溯源没有这种便宜动作，它要求你先回答一个业务问题：你到底需不需要知道「当时」。</p>
+<hr>
+<p><strong>相关阅读</strong>：</p>
+<ul>
+<li><a href="/posts/princ-chapter-12/">计算机原则五讲（十二）：省下的开销算在谁账上</a></li>
+<li><a href="/posts/princ-chapter-11/">计算机原则五讲（十一）：状态归谁管</a></li>
+<li><a href="/posts/princ-chapter-08/">计算机原则五讲（八）：同一份东西该存在几处</a></li>
+<li><a href="/posts/princ-chapter-04/">计算机原则五讲（四）：把没说出口的约定写下来</a></li>
+<li><a href="/posts/princ-chapter-02/">计算机原则五讲（二）：故障发生时还剩什么保证</a></li>
+<li><a href="/posts/7ed059a9/">Python typing 协议与泛型深度解析</a></li>
+<li><a href="/posts/pipeline-pattern/">Pipeline 模式：流水线架构的设计与实现</a></li>
+</ul>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://Hespethorn.github.io/">Hespethorn</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://hespethorn.github.io/posts/princ-chapter-13/">https://hespethorn.github.io/posts/princ-chapter-13/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="external nofollow noreferrer" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://Hespethorn.github.io" target="_blank">HespethornのBlog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B/">软件工程</a><a class="post-meta__tags" href="/tags/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/">架构设计</a><a class="post-meta__tags" href="/tags/%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F/">设计模式</a><a class="post-meta__tags" href="/tags/%E9%9D%A2%E5%90%91%E5%AF%B9%E8%B1%A1/">面向对象</a><a class="post-meta__tags" href="/tags/%E4%BB%A3%E7%A0%81%E9%87%8D%E6%9E%84/">代码重构</a></div><div class="post-share"><div class="social-share" data-image="https://hespethorn.github.io/img/butterfly-icon.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related is-prev" href="/posts/kiss-yagni-prepaid-cost/" title="KISS 与 YAGNI：可逆的复杂度"><img class="pagination-art" src="/img/prev-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">KISS 与 YAGNI：可逆的复杂度</div></div><div class="info-2"><div class="info-item-1"> 说明：本文案例来自一个已完结的嵌入式项目复盘，与《DRY：同一份知识只留一处》同源。为遵守保密约定，模块名、文件名、提交哈希与部分实现细节均已替换为中性示意值；统计口径（提交数、行数、时间线）保持原样。  一、两条原则KISS 和 YAGNI 经常被并排提起，好像说的是同一件事：少写点。但它们的指向不同。YAG...</div></div></div></a><a class="pagination-related is-next" href="/posts/ai-news-20261127/" title="AI 新闻速递（周更精选 2026-11-27）"><img class="pagination-art" src="/img/next-chibi.png" alt="" loading='lazy'><div class="info"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">AI 新闻速递（周更精选 2026-11-27）</div></div><div class="info-2"><div class="info-item-1"> 本周精选摘要：本周主线是「机器给出的答案越来越可验证，人类能读懂的部分却越来越少」，同时算力与责任的边界被推到新地带。① 黎曼猜想的 AI 辅助证明获社区确认：11-21 晚 LeanFRO 与 Mathlib Initiative 联合声明确认约 1700 万行形式化代码通过四项检验，丘成桐称数学进入新纪元；...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/posts/c610829b/" title="设计模式真的很烂吗：读《Design Patterns Suck》有感"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-07-09</div><div class="info-item-2">设计模式真的很烂吗：读《Design Patterns Suck》有感</div></div><div class="info-2"><div class="info-item-1">一、偶然读到一篇&quot;离经叛道&quot;的文章今天偶然看到一篇标题很刺眼的文章：&quot;Design Patterns Suck&quot;（设计模式很烂）。作为一个从 C++ 起步、曾经把《设计模式》奉为圭臬的程序员，我带着好奇和一丝抵触点了进去。 文章的观点非常激进：  &quot;设计模式被高估...</div></div></div></a><a class="pagination-related" href="/posts/c4d8e219/" title="一次与 AI 的代码重构对话实录：十一个决策如何成形"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-06-14</div><div class="info-item-2">一次与 AI 的代码重构对话实录：十一个决策如何成形</div></div><div class="info-2"><div class="info-item-1"> 说明：本文案例取自一次真实的架构重构，为遵守保密约定，项目标识、类名与设备信息均已做去标识化处理（改成通用角色名或泛称）。架构问题、决策过程与技术结论均为原样。  一、起点代码库主体为 C++，运行在跨架构环境（嵌入式与 x86 双平台）上，通过消息总线与外部设备通信，并接若干串口外设。我在这个项目上工作了一段...</div></div></div></a><a class="pagination-related" href="/posts/princ-chapter-04/" title="计算机原则五讲（四）：把没说出口的约定写下来"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-25</div><div class="info-item-2">计算机原则五讲（四）：把没说出口的约定写下来</div></div><div class="info-2"><div class="info-item-1">这四条原则看似分属交互设计、安全、容错与类型理论，实际都在做同一件事：把默会的前提写成显式的、可检查的东西。  最少惊讶把「用户会怎么理解这个接口」这个隐含假设，变成对行为的硬约束； 最小权限把「每一层都可信」这个隐含假设，换成「每一层都会失守」； 快速失败把「错误迟早会被发现」这个隐含假设，改成「在错误发生的现...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="https://hespethorn.github.io/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/avatar-chibi.png'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">Hespethorn</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">825</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">1101</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">40</div></a></div><a id="card-info-btn" target="_blank" rel="noopener external nofollow noreferrer" href="https://github.com/Hespethorn"><i class="fab fa-github"></i><span>GitHub</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/Hespethorn" rel="external nofollow noreferrer" target="_blank" title="Github"><i class="fa-brands fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:17362995493@163.com" rel="external nofollow noreferrer" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #007bff;"></i></a><a class="social-icon" href="#wechat" target="_blank" title="微信"><i class="fa-brands fa-weixin" style="color: #07C160;"></i></a><a class="social-icon" href="https://www.zhihu.com/people/96-40-70-62-86" rel="external nofollow noreferrer" target="_blank" title="知乎"><i class="fa-brands fa-zhihu" style="color: #0084FF;"></i></a><a class="social-icon" href="https://personal-business-ca-wnd0.bolt.host/" rel="external nofollow noreferrer" target="_blank" title="主页"><i class="fas fa-house" style="color: #2f7d6d;"></i></a><a class="social-icon" href="/atom.xml" target="_blank" title="RSS"><i class="fas fa-rss" style="color: #f26522;"></i></a></div></div><div class="card-widget card-announcement"><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 20px;"><img class="footer-image" src="/img/fox.jpg" alt="fox" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'><div class="ecg-icon"><i class="fa-solid fa-heart-pulse"></i></div><script>document.addEventListener('DOMContentLoaded', function() {
+  const heartIcon = document.querySelector('.ecg-icon .fa-heart-pulse');
+  let intervalId;
+
+  // 初始设置为每秒 70 次跳动
+  function setHeartRate(bpm) {
+    const interval = 60000 / bpm;
+    clearInterval(intervalId);
+    heartIcon.style.animation = `pulse ${interval}ms infinite`;
+    intervalId = setInterval(() => {
+      heartIcon.classList.toggle('pulse');
+    }, interval / 2);
+  }
+
+  // 初始心率 80 次/分钟
+  setHeartRate(80);
+
+  // 鼠标移入事件，设置为 100 次/分钟
+  heartIcon.parentElement.addEventListener('mouseover', function() {
+    setHeartRate(100);
+  });
+
+  // 鼠标移出事件，恢复为 70 次/分钟
+  heartIcon.parentElement.addEventListener('mouseout', function() {
+    setHeartRate(80);
+  });
+});
+// 添加关键帧动画
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0% { transform: scale(1.5); }
+    50% { transform: scale(1.8); }
+    100% { transform: scale(1.5); }
+  }
+  .fa-heart-pulse {
+    color: red; /* 设置心图标为红色 */
+  }
+  .fa-heart-pulse.pulse {
+    animation: pulse;
+  }
+`;
+document.head.appendChild(style);</script><img class="footer-image" src="/img/ciwei.jpg" alt="ciwei" style="border-radius: 50%; transition: transform 0.3s ease; width: 50px; height: 50px;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"/ loading='lazy'></div><!-- 确保显示相爱时间元素--><div class="footer-other" style="display: flex; justify-content: center; align-items: center; gap: 15px;"><div id="love-time" style="text-align: center;" data-love-since="2021-08-08T00:00:00"></div><script>// 起点统一读 _config.butterfly.yml 的 love_since，避免与首页侧栏漂移
+const loveTimeElement = document.getElementById('love-time');
+const startDate = new Date(loveTimeElement.dataset.loveSince || '2021-08-08T00:00:00');
+
+function updateLoveTime() {
+  const now = new Date();
+  const diff = now - startDate;
+
+  const seconds = Math.floor(diff / 1000) % 60;
+  const minutes = Math.floor(diff / (1000 * 60)) % 60;
+  const hours = Math.floor(diff / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  // 使用 innerHTML 结合 <br> 实现换行
+  loveTimeElement.innerHTML = `情丝初系，相思始长<br>${days} 天 ${hours} 时 ${minutes} 分 ${seconds} 秒`;
+}
+
+// 初始调用
+updateLoveTime();
+// 每秒更新一次
+setInterval(updateLoveTime, 1000);</script></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content is-expand"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E4%BE%9D%E8%B5%96%E5%80%92%E7%BD%AE"><span class="toc-number">1.</span> <span class="toc-text">一、依赖倒置</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81%E6%8E%A5%E5%8F%A3%E9%9A%94%E7%A6%BB"><span class="toc-number">2.</span> <span class="toc-text">二、接口隔离</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E9%87%8C%E6%B0%8F%E6%9B%BF%E6%8D%A2"><span class="toc-number">3.</span> <span class="toc-text">三、里氏替换</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81%E8%BF%AA%E7%B1%B3%E7%89%B9%E6%B3%95%E5%88%99"><span class="toc-number">4.</span> <span class="toc-text">四、迪米特法则</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E4%BA%8B%E4%BB%B6%E6%BA%AF%E6%BA%90"><span class="toc-number">5.</span> <span class="toc-text">五、事件溯源</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AD%E3%80%81%E6%A8%AA%E5%90%91%E5%AF%B9%E7%85%A7"><span class="toc-number">6.</span> <span class="toc-text">六、横向对照</span></a></li></ol></div></div><div class="card-widget card-post-series"><div class="item-headline"><i class="fa-solid fa-layer-group"></i><span>系列文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-08/" title="计算机原则五讲（八）：同一份东西该存在几处">计算机原则五讲（八）：同一份东西该存在几处</a><time datetime="2026-10-22T16:00:00.000Z" title="发表于 2026-10-23 00:00:00">2026-10-23</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-02/" title="计算机原则五讲（二）：故障发生时还剩什么保证">计算机原则五讲（二）：故障发生时还剩什么保证</a><time datetime="2026-09-10T16:00:00.000Z" title="发表于 2026-09-11 00:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-09/" title="计算机原则五讲（九）：把负担摊开">计算机原则五讲（九）：把负担摊开</a><time datetime="2026-10-29T16:00:00.000Z" title="发表于 2026-10-30 00:00:00">2026-10-30</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-06/" title="计算机原则五讲（六）：没有免费的优化">计算机原则五讲（六）：没有免费的优化</a><time datetime="2026-10-08T16:00:00.000Z" title="发表于 2026-10-09 00:00:00">2026-10-09</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-07/" title="计算机原则五讲（七）：拿什么换什么">计算机原则五讲（七）：拿什么换什么</a><time datetime="2026-10-15T16:00:00.000Z" title="发表于 2026-10-16 00:00:00">2026-10-16</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-03/" title="计算机原则五讲（三）：责任放在哪一层">计算机原则五讲（三）：责任放在哪一层</a><time datetime="2026-09-17T16:00:00.000Z" title="发表于 2026-09-18 00:00:00">2026-09-18</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-10/" title="计算机原则五讲（十）：判断在什么时候做">计算机原则五讲（十）：判断在什么时候做</a><time datetime="2026-11-05T16:00:00.000Z" title="发表于 2026-11-06 00:00:00">2026-11-06</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-12/" title="计算机原则五讲（十二）：省下的开销算在谁账上">计算机原则五讲（十二）：省下的开销算在谁账上</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-13/" title="计算机原则五讲（十三）：模块之间该知道多少">计算机原则五讲（十三）：模块之间该知道多少</a><time datetime="2026-11-26T16:00:00.000Z" title="发表于 2026-11-27 00:00:00">2026-11-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-11/" title="计算机原则五讲（十一）：状态归谁管">计算机原则五讲（十一）：状态归谁管</a><time datetime="2026-11-12T16:00:00.000Z" title="发表于 2026-11-13 00:00:00">2026-11-13</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-04/" title="计算机原则五讲（四）：把没说出口的约定写下来">计算机原则五讲（四）：把没说出口的约定写下来</a><time datetime="2026-09-24T16:00:00.000Z" title="发表于 2026-09-25 00:00:00">2026-09-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-05/" title="计算机原则五讲（五）：规模一上来，系数说了算">计算机原则五讲（五）：规模一上来，系数说了算</a><time datetime="2026-10-01T16:00:00.000Z" title="发表于 2026-10-02 00:00:00">2026-10-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-01/" title="计算机原则五讲（一）：这笔投入能换回什么">计算机原则五讲（一）：这笔投入能换回什么</a><time datetime="2026-09-03T16:00:00.000Z" title="发表于 2026-09-04 00:00:00">2026-09-04</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ0001/" title="每天一个计算机原则：专栏介绍">每天一个计算机原则：专栏介绍</a><time datetime="2026-08-31T16:00:00.000Z" title="发表于 2026-09-01 00:00:00">2026-09-01</time></div></div></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-13/" title="计算机原则五讲（十三）：模块之间该知道多少">计算机原则五讲（十三）：模块之间该知道多少</a><time datetime="2026-11-26T16:00:00.000Z" title="发表于 2026-11-27 00:00:00">2026-11-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20261127/" title="AI 新闻速递（周更精选 2026-11-27）">AI 新闻速递（周更精选 2026-11-27）</a><time datetime="2026-11-26T16:00:00.000Z" title="发表于 2026-11-27 00:00:00">2026-11-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/princ-chapter-12/" title="计算机原则五讲（十二）：省下的开销算在谁账上">计算机原则五讲（十二）：省下的开销算在谁账上</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/ai-news-20261120/" title="AI 新闻速递（周更精选 2026-11-20）">AI 新闻速递（周更精选 2026-11-20）</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/posts/dry-knowledge-single-source/" title="DRY：同一份知识只留一处">DRY：同一份知识只留一处</a><time datetime="2026-11-19T16:00:00.000Z" title="发表于 2026-11-20 00:00:00">2026-11-20</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="footer-code-wrap"><div class="footer-elegant-code elegant-code" data-elegant-code="data-elegant-code"></div></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_footer" href="#footer-wrap" title="直达页脚" aria-label="直达页脚"><i class="fas fa-arrow-down"></i></a><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/utils.min.js"></script><script src="https://cdn.jsdelivr.net/npm/hexo-theme-butterfly@5.3.4/source/js/main.min.js"></script><script src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js"></script><script src="https://cdn.jsdelivr.net/npm/instant.page@5.2.0/instantpage.min.js" type="module"></script><div class="js-pjax"><script>(async () => {
+  const showKatex = () => {
+    document.querySelectorAll('#article-container .katex').forEach(el => el.classList.add('katex-show'))
+  }
+
+  if (!window.katex_js_css) {
+    window.katex_js_css = true
+    await btf.getCSS('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css')
+    if (false) {
+      await btf.getScript('https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/copy-tex.min.js')
+    }
+  }
+
+  showKatex()
+})()</script><script>(() => {
+  const runMermaid = ele => {
+    window.loadMermaid = true
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default'
+
+    ele.forEach((item, index) => {
+      const mermaidSrc = item.firstElementChild
+      const mermaidThemeConfig = `%%{init:{ 'theme':'${theme}'}}%%\n`
+      const mermaidID = `mermaid-${index}`
+      const mermaidDefinition = mermaidThemeConfig + mermaidSrc.textContent
+
+      const renderFn = mermaid.render(mermaidID, mermaidDefinition)
+      const renderMermaid = svg => {
+        mermaidSrc.insertAdjacentHTML('afterend', svg)
+      }
+
+      // mermaid v9 and v10 compatibility
+      typeof renderFn === 'string' ? renderMermaid(renderFn) : renderFn.then(({ svg }) => renderMermaid(svg))
+    })
+  }
+
+  const codeToMermaid = () => {
+    const codeMermaidEle = document.querySelectorAll('pre > code.mermaid')
+    if (codeMermaidEle.length === 0) return
+
+    codeMermaidEle.forEach(ele => {
+      const preEle = document.createElement('pre')
+      preEle.className = 'mermaid-src'
+      preEle.hidden = true
+      preEle.textContent = ele.textContent
+      const newEle = document.createElement('div')
+      newEle.className = 'mermaid-wrap'
+      newEle.appendChild(preEle)
+      ele.parentNode.replaceWith(newEle)
+    })
+  }
+
+  const loadMermaid = () => {
+    if (true) codeToMermaid()
+    const $mermaid = document.querySelectorAll('#article-container .mermaid-wrap')
+    if ($mermaid.length === 0) return
+
+    const runMermaidFn = () => runMermaid($mermaid)
+    btf.addGlobalFn('themeChange', runMermaidFn, 'mermaid')
+    window.loadMermaid ? runMermaidFn() : btf.getScript('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js').then(runMermaidFn)
+  }
+
+  btf.addGlobalFn('encrypt', loadMermaid, 'mermaid')
+  window.pjax ? loadMermaid() : document.addEventListener('DOMContentLoaded', loadMermaid)
+})()</script><script>(() => {
+  const applyThemeDefaultsConfig = theme => {
+    if (theme === 'dark-mode') {
+      Chart.defaults.color = "rgba(255, 255, 255, 0.8)"
+      Chart.defaults.borderColor = "rgba(255, 255, 255, 0.2)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    } else {
+      Chart.defaults.color = "rgba(0, 0, 0, 0.8)"
+      Chart.defaults.borderColor = "rgba(0, 0, 0, 0.1)"
+      Chart.defaults.scale.ticks.backdropColor = "transparent"
+    }
+  }
+
+  // Recursively traverse the config object and automatically apply theme-specific color schemes
+  const applyThemeConfig = (obj, theme) => {
+    if (typeof obj !== 'object' || obj === null) return
+
+    Object.keys(obj).forEach(key => {
+      const value = obj[key]
+      // If the property is an object and has theme-specific options, apply them
+      if (typeof value === 'object' && value !== null) {
+        if (value[theme]) {
+          obj[key] = value[theme] // Apply the value for the current theme
+        } else {
+          // Recursively process child objects
+          applyThemeConfig(value, theme)
+        }
+      }
+    })
+  }
+
+  const runChartJS = ele => {
+    window.loadChartJS = true
+
+    Array.from(ele).forEach((item, index) => {
+      const chartSrc = item.firstElementChild
+      const chartID = item.getAttribute('data-chartjs-id') || ('chartjs-' + index) // Use custom ID or default ID
+      const width = item.getAttribute('data-width')
+      const existingCanvas = document.getElementById(chartID)
+
+      // If a canvas already exists, remove it to avoid rendering duplicates
+      if (existingCanvas) {
+          existingCanvas.parentNode.remove()
+      }
+
+      const chartDefinition = chartSrc.textContent
+      const canvas = document.createElement('canvas')
+      canvas.id = chartID
+
+      const div = document.createElement('div')
+      div.className = 'chartjs-wrap'
+
+      if (width) {
+        div.style.width = width
+      }
+
+      div.appendChild(canvas)
+      chartSrc.insertAdjacentElement('afterend', div)
+
+      const ctx = document.getElementById(chartID).getContext('2d')
+
+      const config = JSON.parse(chartDefinition)
+
+      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark-mode' : 'light-mode'
+
+      // Set default styles (initial setup)
+      applyThemeDefaultsConfig(theme)
+
+      // Automatically traverse the config and apply dual-mode color schemes
+      applyThemeConfig(config, theme)
+
+      new Chart(ctx, config)
+    })
+  }
+
+  const loadChartJS = () => {
+    const chartJSEle = document.querySelectorAll('#article-container .chartjs-container')
+    if (chartJSEle.length === 0) return
+
+    window.loadChartJS ? runChartJS(chartJSEle) : btf.getScript('https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js').then(() => runChartJS(chartJSEle))
+  }
+
+  // Listen for theme change events
+  btf.addGlobalFn('themeChange', loadChartJS, 'chartjs')
+  btf.addGlobalFn('encrypt', loadChartJS, 'chartjs')
+
+  window.pjax ? loadChartJS() : document.addEventListener('DOMContentLoaded', loadChartJS)
+})()</script></div><script data-pjax src="/self/link-loader.js"></script><script data-pjax src="/self/bubble-animation.js"></script><script data-pjax src="/self/contact-popup.js"></script><script data-pjax src="/self/elegant-code.js"></script><script data-pjax src="/self/footer-jump.js"></script><script data-pjax src="/self/home-rail-love.js"></script><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.4/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = false;
+POWERMODE.shake = false;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script src="https://cdn.jsdelivr.net/npm/pjax@0.2.8/pjax.min.js"></script><script>(() => {
+  const pjaxSelectors = ["head > title","#config-diff","#body-wrap","#rightside-config-hide","#rightside-config-show",".js-pjax"]
+
+  window.pjax = new Pjax({
+    elements: 'a:not([target="_blank"])',
+    selectors: pjaxSelectors,
+    cacheBust: false,
+    analytics: true,
+    scrollRestoration: false
+  })
+
+  const triggerPjaxFn = (val) => {
+    if (!val) return
+    Object.values(val).forEach(fn => fn())
+  }
+
+  document.addEventListener('pjax:send', () => {
+    // removeEventListener
+    btf.removeGlobalFnEvent('pjaxSendOnce')
+    btf.removeGlobalFnEvent('themeChange')
+
+    // reset readmode
+    const $bodyClassList = document.body.classList
+    if ($bodyClassList.contains('read-mode')) $bodyClassList.remove('read-mode')
+
+    triggerPjaxFn(window.globalFn.pjaxSend)
+  })
+
+  document.addEventListener('pjax:complete', () => {
+    btf.removeGlobalFnEvent('pjaxCompleteOnce')
+    document.querySelectorAll('script[data-pjax]').forEach(item => {
+      const newScript = document.createElement('script')
+      const content = item.text || item.textContent || item.innerHTML || ""
+      Array.from(item.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value))
+      newScript.appendChild(document.createTextNode(content))
+      item.parentNode.replaceChild(newScript, item)
+    })
+
+    triggerPjaxFn(window.globalFn.pjaxComplete)
+  })
+
+  document.addEventListener('pjax:error', e => {
+    if (e.request.status === 404) {
+      const usePjax = true
+      true 
+        ? (usePjax ? pjax.loadUrl('/404') : window.location.href = '/404')
+        : window.location.href = e.request.responseURL
+    }
+  })
+})()</script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
